@@ -22,11 +22,11 @@
     "@mastra/libsql": "^0.11.0",
     "@mastra/loggers": "^0.10.3",
     "@mastra/memory": "^0.11.1",
+    "mastra": "^0.10.10",
     "zod": "^3.25.75"
   },
   "devDependencies": {
     "@types/node": "^24.0.10",
-    "mastra": "^0.10.10",
     "typescript": "^5.8.3"
   }
 }
