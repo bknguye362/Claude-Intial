@@ -2,10 +2,10 @@
 import { Mastra } from '@mastra/core/mastra';
 import { PinoLogger } from '@mastra/loggers';
 import { LibSQLStore } from '@mastra/libsql';
-import { weatherWorkflow } from './workflows/weather-workflow.ts';
-import { weatherAgent } from './agents/weather-agent.ts';
-import { assistantWorkflow } from './workflows/assistant-workflow.ts';
-import { assistantAgent } from './agents/assistant-agent.ts';
+import { weatherWorkflow } from './workflows/weather-workflow';
+import { weatherAgent } from './agents/weather-agent';
+import { assistantWorkflow } from './workflows/assistant-workflow';
+import { assistantAgent } from './agents/assistant-agent';
 
 export const mastra = new Mastra({
   workflows: { weatherWorkflow, assistantWorkflow },

@@ -1,4 +1,4 @@
-import { mastra } from './index.ts';
+import { mastra } from './index';
 
 // Simple HTTP server example for the assistant chatbot
 const PORT = 3000;
@@ -49,7 +49,7 @@ async function handleRequest(body: any) {
     console.error('Error processing request:', error);
     return {
       error: 'Failed to process request',
-      details: error.message,
+      details: error instanceof Error ? error.message : 'Unknown error',
       timestamp: new Date().toISOString()
     };
   }

@@ -1,5 +1,5 @@
 import { createServer } from 'http';
-import { handleRequest } from './api-endpoint.ts';
+import { handleRequest } from './api-endpoint';
 
 const PORT = process.env.PORT || 3000;
 
