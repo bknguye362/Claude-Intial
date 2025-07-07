@@ -1,0 +1,1 @@
+web: node src/mastra/dist/server.js
