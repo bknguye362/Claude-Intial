@@ -6,9 +6,13 @@ const PORT = 3000;
 async function handleRequest(body: any) {
   // Use agentId from request body, default to assistantAgent
   const agentId = body.agentId || 'assistantAgent';
+  console.log(`[API Endpoint] Handling request for agent: ${agentId}`);
+  console.log(`[API Endpoint] Message: ${body.message}`);
+  
   const agent = mastra.getAgent(agentId);
   
   if (!body.message) {
+    console.error('[API Endpoint] No message provided in request');
     return { error: 'Message is required' };
   }
 
@@ -18,23 +22,33 @@ async function handleRequest(body: any) {
 
   try {
     let response = '';
-    console.log('Processing message:', body.message);
+    console.log(`[API Endpoint] Starting stream processing for: "${body.message}"`);
     
     const stream = await agent.stream(messages);
     
+    let chunkCount = 0;
     for await (const chunk of stream.textStream) {
       response += chunk;
-      console.log('Chunk received:', chunk);
+      chunkCount++;
+      console.log(`[API Endpoint] Chunk ${chunkCount} (${chunk.length} chars): ${chunk.substring(0, 50)}...`);
     }
     
-    console.log('Final response:', response);
+    console.log(`[API Endpoint] Stream complete. Total chunks: ${chunkCount}`);
+    console.log(`[API Endpoint] Final response length: ${response.length} characters`);
+    console.log(`[API Endpoint] Response preview: ${response.substring(0, 200)}...`);
 
+    // Check if response is empty or invalid
+    if (!response || response.trim() === '') {
+      console.error('[API Endpoint] Empty response received from agent');
+      response = 'I apologize, but I was unable to generate a proper response. This might be due to a configuration issue with the search functionality.';
+    }
+    
     // Enhanced response format similar to Azure OpenAI
-    return {
+    const result = {
       choices: [{
         message: {
           role: 'assistant',
-          content: response || 'I apologize, but I was unable to generate a response. Please try again.'
+          content: response
         },
         finish_reason: response ? 'stop' : 'error',
         index: 0
@@ -47,12 +61,30 @@ async function handleRequest(body: any) {
         total_tokens: body.message.length + response.length
       }
     };
+    
+    console.log('[API Endpoint] Returning response format:', JSON.stringify(result).substring(0, 200) + '...');
+    return result;
   } catch (error) {
-    console.error('Error processing request:', error);
+    console.error('[API Endpoint] Error processing request:', error);
+    console.error('[API Endpoint] Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+    
+    // Try to provide a more helpful error response
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    
+    // Always return a valid response format that the client expects
     return {
-      error: 'Failed to process request',
-      details: error instanceof Error ? error.message : 'Unknown error',
-      timestamp: new Date().toISOString()
+      choices: [{
+        message: {
+          role: 'assistant',
+          content: `I apologize, but I encountered an error while processing your request. ${errorMessage.includes('API') ? 'The search functionality is not properly configured.' : 'Please try again or rephrase your question.'}`
+        },
+        finish_reason: 'error',
+        index: 0
+      }],
+      model: 'gpt-4o-mini',
+      timestamp: new Date().toISOString(),
+      error: true,
+      errorDetails: errorMessage
     };
   }
 }

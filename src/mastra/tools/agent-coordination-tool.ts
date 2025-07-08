@@ -73,10 +73,12 @@ export const agentCoordinationTool = createTool({
         }
       }
       
+      // Return an error message as the response instead of empty string
+      // This ensures the assistant agent can still provide a helpful response
       return {
-        response: '',
+        response: errorMessage,
         agentId: context.agentId,
-        error: `Failed to coordinate with agent: ${errorMessage}`,
+        error: errorMessage,
       };
     }
   },
