@@ -149,7 +149,7 @@ body {
     border-color: #667eea;
 }
 
-#send-button {
+#send-button, #file-button {
     width: 48px;
     height: 48px;
     border-radius: 50%;
@@ -162,13 +162,21 @@ body {
     justify-content: center;
 }
 
-#send-button:hover {
+#file-button {
+    background: #6c757d;
 }
 
-#send-button:active {
+#file-button.has-file {
+    background: #28a745;
 }
 
-#send-button:disabled {
+#send-button:hover, #file-button:hover {
+}
+
+#send-button:active, #file-button:active {
+}
+
+#send-button:disabled, #file-button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
 }

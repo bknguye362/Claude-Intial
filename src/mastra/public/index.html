@@ -34,12 +34,30 @@
                 placeholder="Type your message here..." 
                 autocomplete="off"
             />
+            <input 
+                type="file" 
+                id="file-input" 
+                accept=".pdf"
+                style="display: none;"
+            />
+            <button id="file-button" aria-label="Attach PDF" title="Attach PDF">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <line x1="12" y1="18" x2="12" y2="12"></line>
+                    <line x1="9" y1="15" x2="15" y2="15"></line>
+                </svg>
+            </button>
             <button id="send-button" aria-label="Send message">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="22" y1="2" x2="11" y2="13"></line>
                     <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
                 </svg>
             </button>
+        </div>
+        <div id="file-preview" style="display: none; padding: 10px; background: #f0f0f0; margin: 0 20px 10px 20px; border-radius: 5px;">
+            <span id="file-name"></span>
+            <button id="remove-file" style="margin-left: 10px; padding: 2px 8px; background: #ff4444; color: white; border: none; border-radius: 3px; cursor: pointer;">Remove</button>
         </div>
     </div>
     
