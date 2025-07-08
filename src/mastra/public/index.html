@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mastra Chatbot</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-header">
+            <h1>Mastra Assistant</h1>
+            <div class="agent-selector">
+                <label for="agent-select">Agent:</label>
+                <select id="agent-select">
+                    <option value="assistantAgent">Assistant</option>
+                    <option value="weatherAgent">Weather</option>
+                </select>
+            </div>
+        </div>
+        
+        <div class="chat-messages" id="chat-messages">
+            <div class="message assistant">
+                <div class="message-content">
+                    Hello! I'm your Mastra assistant. How can I help you today?
+                </div>
+            </div>
+        </div>
+        
+        <div class="chat-input-container">
+            <input 
+                type="text" 
+                id="chat-input" 
+                placeholder="Type your message here..." 
+                autocomplete="off"
+            />
+            <button id="send-button" aria-label="Send message">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                </svg>
+            </button>
+        </div>
+    </div>
+    
+    <script src="/chat.js"></script>
+</body>
+</html>

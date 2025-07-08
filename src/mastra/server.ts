@@ -1,5 +1,12 @@
 import { createServer } from 'http';
 import { handleRequest } from './api-endpoint.js';
+import { readFile } from 'fs/promises';
+import { join } from 'path';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const PORT = process.env.PORT || 3000;
 
@@ -22,16 +29,39 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  // Handle root endpoint
-  if (req.method === 'GET' && req.url === '/') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ 
-      message: 'Mastra Assistant API', 
-      endpoints: {
-        '/chat': 'POST - Send messages to the assistant'
+  // Serve static files
+  if (req.method === 'GET' && req.url) {
+    let filePath = req.url;
+    
+    // Default to index.html for root
+    if (filePath === '/') {
+      filePath = '/index.html';
+    }
+    
+    // Only serve files from public directory
+    const allowedExtensions = ['.html', '.css', '.js', '.json'];
+    const ext = filePath.substring(filePath.lastIndexOf('.'));
+    
+    if (allowedExtensions.includes(ext)) {
+      try {
+        const fullPath = join(__dirname, 'public', filePath);
+        const content = await readFile(fullPath);
+        
+        // Set appropriate content type
+        const contentTypes: Record<string, string> = {
+          '.html': 'text/html',
+          '.css': 'text/css',
+          '.js': 'application/javascript',
+          '.json': 'application/json'
+        };
+        
+        res.writeHead(200, { 'Content-Type': contentTypes[ext] || 'text/plain' });
+        res.end(content);
+        return;
+      } catch (error) {
+        // File not found, continue to 404
       }
-    }));
-    return;
+    }
   }
 
   // Only accept POST requests to /chat
@@ -72,6 +102,7 @@ const server = createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`🚀 Server running at http://localhost:${PORT}`);
+  console.log(`🌐 Web interface available at http://localhost:${PORT}`);
   console.log(`📝 POST /chat - Send messages to the assistant`);
   console.log(`🔑 OpenAI API Key: ${process.env.OPENAI_API_KEY ? 'Set ✓' : 'Missing ✗'}`);
 });
