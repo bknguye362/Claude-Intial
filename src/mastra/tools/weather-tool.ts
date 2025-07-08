@@ -41,30 +41,69 @@ export const weatherTool = createTool({
 });
 
 const getWeather = async (location: string) => {
-  const geocodingUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}&count=1`;
-  const geocodingResponse = await fetch(geocodingUrl);
-  const geocodingData = (await geocodingResponse.json()) as GeocodingResponse;
+  try {
+    console.log(`[Weather Tool] Fetching weather for location: ${location}`);
+    
+    // Step 1: Geocoding
+    const geocodingUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}&count=1`;
+    console.log(`[Weather Tool] Geocoding API URL: ${geocodingUrl}`);
+    
+    const geocodingResponse = await fetch(geocodingUrl);
+    
+    if (!geocodingResponse.ok) {
+      console.error(`[Weather Tool] Geocoding API error: ${geocodingResponse.status} ${geocodingResponse.statusText}`);
+      throw new Error(`Failed to fetch location data: ${geocodingResponse.statusText}`);
+    }
+    
+    const geocodingData = (await geocodingResponse.json()) as GeocodingResponse;
+    console.log(`[Weather Tool] Geocoding response:`, JSON.stringify(geocodingData));
 
-  if (!geocodingData.results?.[0]) {
-    throw new Error(`Location '${location}' not found`);
+    if (!geocodingData.results?.[0]) {
+      console.error(`[Weather Tool] Location '${location}' not found in geocoding results`);
+      throw new Error(`Location '${location}' not found. Please check the spelling or try a different location.`);
+    }
+
+    const { latitude, longitude, name } = geocodingData.results[0];
+    console.log(`[Weather Tool] Found location: ${name} (${latitude}, ${longitude})`);
+
+    // Step 2: Weather data
+    const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,weather_code`;
+    console.log(`[Weather Tool] Weather API URL: ${weatherUrl}`);
+    
+    const response = await fetch(weatherUrl);
+    
+    if (!response.ok) {
+      console.error(`[Weather Tool] Weather API error: ${response.status} ${response.statusText}`);
+      throw new Error(`Failed to fetch weather data: ${response.statusText}`);
+    }
+    
+    const data = (await response.json()) as WeatherResponse;
+    console.log(`[Weather Tool] Weather response:`, JSON.stringify(data));
+    
+    if (!data.current) {
+      console.error(`[Weather Tool] Invalid weather data structure:`, data);
+      throw new Error('Invalid weather data received from API');
+    }
+
+    const weatherData = {
+      temperature: data.current.temperature_2m,
+      feelsLike: data.current.apparent_temperature,
+      humidity: data.current.relative_humidity_2m,
+      windSpeed: data.current.wind_speed_10m,
+      windGust: data.current.wind_gusts_10m,
+      conditions: getWeatherCondition(data.current.weather_code),
+      location: name,
+    };
+    
+    console.log(`[Weather Tool] Successfully fetched weather:`, weatherData);
+    return weatherData;
+  } catch (error) {
+    console.error(`[Weather Tool] Error in getWeather:`, error);
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error('An unexpected error occurred while fetching weather data');
   }
-
-  const { latitude, longitude, name } = geocodingData.results[0];
-
-  const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,weather_code`;
-
-  const response = await fetch(weatherUrl);
-  const data = (await response.json()) as WeatherResponse;
-
-  return {
-    temperature: data.current.temperature_2m,
-    feelsLike: data.current.apparent_temperature,
-    humidity: data.current.relative_humidity_2m,
-    windSpeed: data.current.wind_speed_10m,
-    windGust: data.current.wind_gusts_10m,
-    conditions: getWeatherCondition(data.current.weather_code),
-    location: name,
-  };
 };
 
 function getWeatherCondition(code: number): string {

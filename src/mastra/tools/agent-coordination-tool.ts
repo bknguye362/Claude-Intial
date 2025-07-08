@@ -17,10 +17,13 @@ export const agentCoordinationTool = createTool({
   }),
   execute: async ({ context }) => {
     try {
+      console.log(`[Agent Coordination] Delegating to ${context.agentId} with task: ${context.task}`);
+      
       // Get the specified agent
       const agent = mastra.getAgent(context.agentId);
       
       if (!agent) {
+        console.error(`[Agent Coordination] Agent ${context.agentId} not found`);
         return {
           response: '',
           agentId: context.agentId,
@@ -36,6 +39,8 @@ export const agentCoordinationTool = createTool({
         },
       ];
 
+      console.log(`[Agent Coordination] Sending message to ${context.agentId}`);
+      
       // Get response from the agent
       const stream = await agent.stream(messages);
       
@@ -45,15 +50,33 @@ export const agentCoordinationTool = createTool({
         fullResponse += chunk;
       }
 
+      console.log(`[Agent Coordination] Received response from ${context.agentId}: ${fullResponse.substring(0, 100)}...`);
+      
       return {
         response: fullResponse,
         agentId: context.agentId,
       };
     } catch (error) {
+      console.error(`[Agent Coordination] Error delegating to ${context.agentId}:`, error);
+      
+      // Provide more specific error messages for common issues
+      let errorMessage = 'Unknown error';
+      
+      if (error instanceof Error) {
+        errorMessage = error.message;
+        
+        // Add context-specific error handling
+        if (context.agentId === 'weatherAgent' && error.message.includes('Location')) {
+          errorMessage = `Weather service error: ${error.message}. Please try a different location or check the spelling.`;
+        } else if (error.message.includes('fetch')) {
+          errorMessage = `Network error: Unable to connect to the ${context.agentId} service. Please check your internet connection.`;
+        }
+      }
+      
       return {
         response: '',
         agentId: context.agentId,
-        error: `Failed to coordinate with agent: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to coordinate with agent: ${errorMessage}`,
       };
     }
   },

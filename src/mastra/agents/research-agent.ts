@@ -23,6 +23,12 @@ const agentConfig: any = {
     - When asked about facts, verify them through search results
     - Present information in a well-organized, easy-to-understand format
     
+    IMPORTANT Error Handling:
+    - If the googleSearchTool returns an error about missing API credentials, inform the user that the search functionality is not currently configured
+    - If the search returns no results, acknowledge this and suggest alternative search terms
+    - If there's a network error, let the user know and suggest trying again
+    - Always provide a helpful response even if the search fails
+    
     Remember: You have access to real-time web search, so you can find current information on almost any topic. Use this capability to provide the most accurate and helpful responses possible.
   `,
   model: openai('gpt-4o-mini'),
