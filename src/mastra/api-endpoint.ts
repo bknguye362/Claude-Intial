@@ -4,7 +4,9 @@ import { mastra } from './index.js';
 const PORT = 3000;
 
 async function handleRequest(body: any) {
-  const agent = mastra.getAgent('assistantAgent');
+  // Use agentId from request body, default to assistantAgent
+  const agentId = body.agentId || 'assistantAgent';
+  const agent = mastra.getAgent(agentId);
   
   if (!body.message) {
     return { error: 'Message is required' };
