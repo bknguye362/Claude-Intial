@@ -2,7 +2,7 @@ import { openai } from '@ai-sdk/openai';
 import { Agent } from '@mastra/core/agent';
 import { Memory } from '@mastra/memory';
 import { LibSQLStore } from '@mastra/libsql';
-import { knowledgeTool } from '../tools/knowledge-tool';
+import { knowledgeTool } from '../tools/knowledge-tool.js';
 
 export const assistantAgent = new Agent({
   name: 'Assistant Agent',

@@ -1,4 +1,4 @@
-import { mastra } from './index';
+import { mastra } from './index.js';
 
 // Simple HTTP server example for the assistant chatbot
 const PORT = 3000;
