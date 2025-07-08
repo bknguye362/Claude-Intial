@@ -4,7 +4,8 @@ import { Memory } from '@mastra/memory';
 import { LibSQLStore } from '@mastra/libsql';
 import { knowledgeTool } from '../tools/knowledge-tool.js';
 
-export const assistantAgent = new Agent({
+// Create memory only if not in production (Heroku)
+const agentConfig: any = {
   name: 'Assistant Agent',
   instructions: `
     You are a helpful and friendly customer support assistant. Your role is to help users with questions about our company, products, and services.
@@ -31,9 +32,15 @@ export const assistantAgent = new Agent({
   `,
   model: openai('gpt-4o-mini'),
   tools: { knowledgeTool },
-  memory: new Memory({
+};
+
+// Only add memory if not in production environment
+if (process.env.NODE_ENV !== 'production') {
+  agentConfig.memory = new Memory({
     storage: new LibSQLStore({
       url: 'file:../assistant.db',
     }),
-  }),
-});
+  });
+}
+
+export const assistantAgent = new Agent(agentConfig);

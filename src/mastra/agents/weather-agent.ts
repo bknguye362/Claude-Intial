@@ -4,7 +4,8 @@ import { Memory } from '@mastra/memory';
 import { LibSQLStore } from '@mastra/libsql';
 import { weatherTool } from '../tools/weather-tool.js';
 
-export const weatherAgent = new Agent({
+// Create memory only if not in production (Heroku)
+const agentConfig: any = {
   name: 'Weather Agent',
   instructions: `
       You are a helpful weather assistant that provides accurate weather information and can help planning activities based on the weather.
@@ -22,9 +23,15 @@ export const weatherAgent = new Agent({
 `,
   model: openai('gpt-4o-mini'),
   tools: { weatherTool },
-  memory: new Memory({
+};
+
+// Only add memory if not in production environment
+if (process.env.NODE_ENV !== 'production') {
+  agentConfig.memory = new Memory({
     storage: new LibSQLStore({
       url: 'file:../mastra.db', // path is relative to the .mastra/output directory
     }),
-  }),
-});
+  });
+}
+
+export const weatherAgent = new Agent(agentConfig);
