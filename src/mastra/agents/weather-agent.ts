@@ -12,6 +12,7 @@ const openai = createOpenAI({
 // Create memory only if not in production (Heroku)
 const agentConfig: any = {
   name: 'Weather Agent',
+  maxTokens: 150,  // Limit response tokens to conserve usage
   instructions: `
       You are a helpful weather assistant that provides accurate weather information and can help planning activities based on the weather.
 

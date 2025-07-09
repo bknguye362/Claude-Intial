@@ -13,6 +13,7 @@ const openai = createOpenAI({
 // Create memory only if not in production (Heroku)
 const agentConfig: any = {
   name: 'Assistant Agent',
+  maxTokens: 150,  // Limit response tokens to conserve usage
   instructions: `
     You are a helpful and intelligent assistant that coordinates with specialized agents to provide the best possible help to users.
     
