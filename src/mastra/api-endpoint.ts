@@ -24,13 +24,29 @@ async function handleRequest(body: any) {
     let response = '';
     console.log(`[API Endpoint] Starting stream processing for: "${body.message}"`);
     
+    // Add error checking for OpenAI API key
+    if (!process.env.OPENAI_API_KEY) {
+      console.error('[API Endpoint] OPENAI_API_KEY is not set!');
+      throw new Error('OpenAI API key is not configured');
+    }
+    
+    console.log(`[API Endpoint] OpenAI API Key present: ${process.env.OPENAI_API_KEY ? 'Yes' : 'No'}`);
+    console.log(`[API Endpoint] Creating stream for agent: ${agentId}`);
+    
     const stream = await agent.stream(messages);
     
     let chunkCount = 0;
-    for await (const chunk of stream.textStream) {
-      response += chunk;
-      chunkCount++;
-      console.log(`[API Endpoint] Chunk ${chunkCount} (${chunk.length} chars): ${chunk.substring(0, 50)}...`);
+    try {
+      console.log(`[API Endpoint] Stream object created, starting iteration...`);
+      for await (const chunk of stream.textStream) {
+        response += chunk;
+        chunkCount++;
+        console.log(`[API Endpoint] Chunk ${chunkCount} (${chunk.length} chars): ${chunk.substring(0, 50)}...`);
+      }
+    } catch (streamError) {
+      console.error('[API Endpoint] Error during stream iteration:', streamError);
+      console.error('[API Endpoint] Stream error details:', streamError instanceof Error ? streamError.stack : 'Unknown stream error');
+      throw streamError;
     }
     
     console.log(`[API Endpoint] Stream complete. Total chunks: ${chunkCount}`);
