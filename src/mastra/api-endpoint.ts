@@ -60,7 +60,15 @@ async function handleRequest(body: any) {
     } catch (streamError) {
       console.error('[API Endpoint] Error during stream iteration:', streamError);
       console.error('[API Endpoint] Stream error details:', streamError instanceof Error ? streamError.stack : 'Unknown stream error');
-      throw streamError;
+      
+      // Check if it's a rate limit error
+      if (streamError instanceof Error && streamError.message.includes('Rate limit')) {
+        console.error('[API Endpoint] Rate limit error detected');
+        response = 'I apologize, but I\'m currently experiencing high demand. Please try again in about 20 seconds. (OpenAI rate limit reached)';
+        break; // Exit the stream iteration loop
+      } else {
+        throw streamError;
+      }
     }
     
     console.log(`[API Endpoint] Stream complete. Total chunks: ${chunkCount}`);
@@ -70,7 +78,11 @@ async function handleRequest(body: any) {
     // Check if response is empty or invalid
     if (!response || response.trim() === '') {
       console.error('[API Endpoint] Empty response received from agent');
-      response = 'I apologize, but I was unable to generate a proper response. This might be due to a configuration issue with the search functionality.';
+      // Check if we're hitting rate limits
+      const errorMessage = chunkCount === 0 
+        ? 'I apologize, but I\'m unable to process your request right now. This might be due to rate limiting. Please try again in 20-30 seconds.'
+        : 'I apologize, but I was unable to generate a proper response. Please try again.';
+      response = errorMessage;
     }
     
     // Enhanced response format similar to Azure OpenAI
