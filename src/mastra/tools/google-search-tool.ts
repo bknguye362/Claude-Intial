@@ -20,7 +20,7 @@ export const googleSearchTool = createTool({
   description: 'Search the web using Google Search API to find current information',
   inputSchema: z.object({
     query: z.string().describe('The search query'),
-    numResults: z.number().optional().default(5).describe('Number of results to return (max 10)'),
+    numResults: z.number().optional().default(3).describe('Number of results to return (max 10)'),
   }),
   outputSchema: z.object({
     results: z.array(z.object({
