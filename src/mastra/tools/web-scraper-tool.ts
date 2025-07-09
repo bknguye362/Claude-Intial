@@ -1,6 +1,6 @@
 import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
-import cheerio from 'cheerio';
+import { load } from 'cheerio';
 
 // Context window limit for GPT-4o-mini (approximately 128k tokens, but we'll use a conservative character limit)
 const CONTEXT_WINDOW_CHARS = 100000;
@@ -51,7 +51,7 @@ export const webScraperTool = createTool({
         }
         
         const html = await response.text();
-        const $ = cheerio.load(html);
+        const $ = load(html);
         
         // Remove script and style elements
         $('script, style').remove();
