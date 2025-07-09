@@ -18,14 +18,16 @@
     "@types/cheerio": "^0.22.35",
     "@types/node": "^24.0.10",
     "ts-node": "^10.9.2",
-    "tsx": "^4.20.3",
-    "typescript": "^5.8.3"
+    "tsx": "^4.20.3"
   },
   "dependencies": {
     "@mastra/core": "^0.10.10",
     "@mastra/libsql": "^0.11.0",
     "@mastra/loggers": "^0.10.3",
-    "cheerio": "^1.1.0"
+    "@mastra/memory": "^0.11.2",
+    "cheerio": "^1.1.0",
+    "typescript": "^5.8.3",
+    "zod": "^3.25.76"
   },
   "engines": {
     "node": ">=18.0.0"
