@@ -58,7 +58,7 @@ const agentConfig: any = {
     
     Maintain a helpful, professional tone throughout all interactions.
   `,
-  model: openai.chat('gpt-4o-mini'),
+  model: openai('gpt-4o-mini'),
   tools: { knowledgeTool, agentCoordinationTool },
 };
 

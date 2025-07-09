@@ -45,7 +45,7 @@ const agentConfig: any = {
     
     Remember: The superdocument content is your primary source for answering questions. Use it to provide detailed, accurate responses based on real web content.
   `,
-  model: openai.chat('gpt-4o-mini'),
+  model: openai('gpt-4o-mini'),
   tools: { googleSearchTool, webScraperTool },
 };
 
