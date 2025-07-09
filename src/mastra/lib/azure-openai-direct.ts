@@ -88,7 +88,7 @@ export function createOpenAI(options?: any) {
 
           return {
             textStream: generateText(),
-            usage: { promptTokens: messages.length * 10, completionTokens: 50, totalTokens: messages.length * 10 + 50 }
+            usage: Promise.resolve({ promptTokens: messages.length * 10, completionTokens: 50, totalTokens: messages.length * 10 + 50 })
           };
         } catch (error) {
           console.error('[Azure Direct] Stream error:', error);
@@ -96,7 +96,8 @@ export function createOpenAI(options?: any) {
           return {
             textStream: (async function* () {
               yield 'I apologize, but I encountered an error connecting to Azure OpenAI.';
-            })()
+            })(),
+            usage: Promise.resolve({ promptTokens: 0, completionTokens: 0, totalTokens: 0 })
           };
         }
       }
