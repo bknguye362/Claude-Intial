@@ -26,7 +26,7 @@ const agentConfig: any = {
 
       Use the weatherTool to fetch current weather data.
 `,
-  model: openai('gpt-4o-mini'),
+  model: openai.chat('gpt-4o-mini'),
   tools: { weatherTool },
 };
 

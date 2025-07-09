@@ -33,11 +33,25 @@ async function handleRequest(body: any) {
     console.log(`[API Endpoint] OpenAI API Key present: ${process.env.OPENAI_API_KEY ? 'Yes' : 'No'}`);
     console.log(`[API Endpoint] Creating stream for agent: ${agentId}`);
     
-    const stream = await agent.stream(messages);
+    let stream;
+    try {
+      stream = await agent.stream(messages);
+      console.log(`[API Endpoint] Stream created successfully`);
+    } catch (streamCreationError) {
+      console.error('[API Endpoint] Failed to create stream:', streamCreationError);
+      throw streamCreationError;
+    }
     
     let chunkCount = 0;
     try {
       console.log(`[API Endpoint] Stream object created, starting iteration...`);
+      console.log(`[API Endpoint] Stream object type:`, typeof stream);
+      console.log(`[API Endpoint] Stream has textStream:`, stream && 'textStream' in stream);
+      
+      if (!stream || !stream.textStream) {
+        throw new Error('Stream object is missing textStream property');
+      }
+      
       for await (const chunk of stream.textStream) {
         response += chunk;
         chunkCount++;
