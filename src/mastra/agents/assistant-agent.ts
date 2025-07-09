@@ -1,14 +1,12 @@
-import { createOpenAI } from '@ai-sdk/openai';
+import { createOpenAI } from '../lib/azure-openai-adapter.js';
 import { Agent } from '@mastra/core/agent';
 import { Memory } from '@mastra/memory';
 import { LibSQLStore } from '@mastra/libsql';
 import { knowledgeTool } from '../tools/knowledge-tool.js';
 import { agentCoordinationTool } from '../tools/agent-coordination-tool.js';
 
-// Initialize OpenAI with explicit API key
-const openai = createOpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Initialize Azure OpenAI
+const openai = createOpenAI();
 
 // Create memory only if not in production (Heroku)
 const agentConfig: any = {
@@ -65,7 +63,7 @@ const agentConfig: any = {
     
     Maintain a helpful, professional tone throughout all interactions.
   `,
-  model: openai('gpt-4.1'),
+  model: openai('gpt-4.1-test'),
   tools: { knowledgeTool, agentCoordinationTool },
 };
 

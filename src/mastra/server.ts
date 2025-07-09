@@ -74,9 +74,13 @@ async function parseMultipartData(req: any, boundary: string): Promise<{ fields:
 }
 
 // Check for required environment variables
-if (!process.env.OPENAI_API_KEY) {
-  console.error('ERROR: OPENAI_API_KEY environment variable is not set');
-  console.error('Please set it on Heroku using: heroku config:set OPENAI_API_KEY=your-api-key');
+const azureKey = process.env.AZURE_OPENAI_API_KEY || process.env.AZURE_API_KEY;
+const openaiKey = process.env.OPENAI_API_KEY;
+
+if (!azureKey && !openaiKey) {
+  console.error('ERROR: No API key found. Set either AZURE_OPENAI_API_KEY or OPENAI_API_KEY');
+  console.error('For Azure: heroku config:set AZURE_OPENAI_API_KEY=your-azure-key');
+  console.error('For OpenAI: heroku config:set OPENAI_API_KEY=your-openai-key');
 }
 
 if (!process.env.GOOGLE_API_KEY || !process.env.GOOGLE_SEARCH_ENGINE_ID) {
@@ -227,6 +231,8 @@ server.listen(PORT, () => {
   console.log(`🚀 Server running at http://localhost:${PORT}`);
   console.log(`🌐 Web interface available at http://localhost:${PORT}`);
   console.log(`📝 POST /chat - Send messages to the assistant`);
+  console.log(`🔑 Azure OpenAI API Key: ${(process.env.AZURE_OPENAI_API_KEY || process.env.AZURE_API_KEY) ? 'Set ✓' : 'Missing ✗'}`);
   console.log(`🔑 OpenAI API Key: ${process.env.OPENAI_API_KEY ? 'Set ✓' : 'Missing ✗'}`);
+  console.log(`🌐 Azure Endpoint: ${process.env.AZURE_OPENAI_ENDPOINT || 'Using default'}`);
   console.log(`🔍 Google Search API: ${process.env.GOOGLE_API_KEY && process.env.GOOGLE_SEARCH_ENGINE_ID ? 'Set ✓' : 'Missing ✗'}`);
 });

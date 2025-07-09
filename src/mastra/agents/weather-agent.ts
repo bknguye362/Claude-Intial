@@ -1,13 +1,11 @@
-import { createOpenAI } from '@ai-sdk/openai';
+import { createOpenAI } from '../lib/azure-openai-adapter.js';
 import { Agent } from '@mastra/core/agent';
 import { Memory } from '@mastra/memory';
 import { LibSQLStore } from '@mastra/libsql';
 import { weatherTool } from '../tools/weather-tool.js';
 
-// Initialize OpenAI with explicit API key
-const openai = createOpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Initialize Azure OpenAI
+const openai = createOpenAI();
 
 // Create memory only if not in production (Heroku)
 const agentConfig: any = {
@@ -27,7 +25,7 @@ const agentConfig: any = {
 
       Use the weatherTool to fetch current weather data.
 `,
-  model: openai('gpt-4.1'),
+  model: openai('gpt-4.1-test'),
   tools: { weatherTool },
 };
 
