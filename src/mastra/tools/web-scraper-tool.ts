@@ -1,6 +1,6 @@
 import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
-import * as cheerio from 'cheerio';
+import cheerio from 'cheerio';
 
 // Context window limit for GPT-4o-mini (approximately 128k tokens, but we'll use a conservative character limit)
 const CONTEXT_WINDOW_CHARS = 100000;
