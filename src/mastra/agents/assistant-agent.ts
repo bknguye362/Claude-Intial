@@ -64,6 +64,7 @@ const agentConfig: any = {
     Maintain a helpful, professional tone throughout all interactions.
   `,
   model: openai('gpt-4.1-test'),
+  provider: 'AZURE_OPENAI',
   tools: { knowledgeTool, agentCoordinationTool },
 };
 

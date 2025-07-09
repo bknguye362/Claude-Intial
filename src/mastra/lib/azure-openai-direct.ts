@@ -23,20 +23,24 @@ export function createOpenAI(options?: any) {
       // The key method that agents use
       async stream(messages: any[]) {
         console.log('[Azure Direct] Stream called with messages:', messages.length);
+        console.log('[Azure Direct] Messages content:', JSON.stringify(messages));
         
         try {
+          const requestBody = {
+            messages: messages.length > 0 ? messages : [{ role: 'user', content: 'Hello' }],
+            max_tokens: 150,
+            temperature: 0.7,
+            stream: true,
+          };
+          console.log('[Azure Direct] Sending request body:', JSON.stringify(requestBody));
+          
           const response = await fetch(`${baseURL}/chat/completions?api-version=${apiVersion}`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
               'api-key': apiKey,
             },
-            body: JSON.stringify({
-              messages: messages.length > 0 ? messages : [{ role: 'user', content: 'Hello' }],
-              max_tokens: 150,
-              temperature: 0.7,
-              stream: true,
-            }),
+            body: JSON.stringify(requestBody),
           });
 
           if (!response.ok) {
@@ -107,6 +111,7 @@ export function createOpenAI(options?: any) {
     Object.assign(model, {
       // For Vercel AI SDK compatibility if needed
       doStream: async (params: any) => {
+        console.log('[Azure Direct] doStream called with params:', JSON.stringify(params));
         const result = await model.stream(params.messages || []);
         return {
           stream: new ReadableStream({
