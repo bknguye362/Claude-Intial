@@ -15,7 +15,6 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "@types/cheerio": "^0.22.35",
     "@types/node": "^24.0.10",
     "ts-node": "^10.9.2",
     "tsx": "^4.20.3"
@@ -25,6 +24,7 @@
     "@mastra/libsql": "^0.11.0",
     "@mastra/loggers": "^0.10.3",
     "@mastra/memory": "^0.11.2",
+    "@types/cheerio": "^0.22.35",
     "cheerio": "^1.1.0",
     "typescript": "^5.8.3",
     "zod": "^3.25.76"
