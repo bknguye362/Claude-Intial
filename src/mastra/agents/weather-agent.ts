@@ -1,8 +1,13 @@
-import { openai } from '@ai-sdk/openai';
+import { createOpenAI } from '@ai-sdk/openai';
 import { Agent } from '@mastra/core/agent';
 import { Memory } from '@mastra/memory';
 import { LibSQLStore } from '@mastra/libsql';
 import { weatherTool } from '../tools/weather-tool.js';
+
+// Initialize OpenAI with explicit API key
+const openai = createOpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 // Create memory only if not in production (Heroku)
 const agentConfig: any = {
