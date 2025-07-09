@@ -87,6 +87,18 @@ export function createOpenAI(options?: any) {
                         if (content) {
                           controller.enqueue({ type: 'text-delta', textDelta: content });
                         }
+                        
+                        // If this is the first chunk, send usage metadata
+                        if (json.usage) {
+                          controller.enqueue({ 
+                            type: 'usage',
+                            usage: {
+                              promptTokens: json.usage.prompt_tokens || 0,
+                              completionTokens: json.usage.completion_tokens || 0,
+                              totalTokens: json.usage.total_tokens || 0
+                            }
+                          });
+                        }
                       } catch (e) {
                         console.error('[Azure OpenAI Simple] Parse error:', e);
                       }
@@ -105,7 +117,12 @@ export function createOpenAI(options?: any) {
           return {
             stream,
             rawCall: { rawPrompt: messages, rawSettings: {} },
-            warnings: []
+            warnings: [],
+            usage: Promise.resolve({
+              promptTokens: 0,
+              completionTokens: 0,
+              totalTokens: 0
+            })
           };
         } catch (error) {
           console.error('[Azure OpenAI Simple] Error:', error);
