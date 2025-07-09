@@ -1,4 +1,4 @@
-import { createOpenAI } from '../lib/azure-openai-simple.js';
+import { createOpenAI } from '../lib/azure-openai-direct.js';
 import { Agent } from '@mastra/core/agent';
 import { Memory } from '@mastra/memory';
 import { LibSQLStore } from '@mastra/libsql';
