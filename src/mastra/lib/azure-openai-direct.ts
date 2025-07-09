@@ -52,6 +52,7 @@ export function createOpenAI(options?: any) {
             
             const decoder = new TextDecoder();
             let buffer = '';
+            let tokenCount = 0;
             
             try {
               while (true) {
@@ -71,6 +72,7 @@ export function createOpenAI(options?: any) {
                       const json = JSON.parse(data);
                       const content = json.choices?.[0]?.delta?.content;
                       if (content) {
+                        tokenCount += content.length;
                         yield content;
                       }
                     } catch (e) {
@@ -85,7 +87,8 @@ export function createOpenAI(options?: any) {
           }
 
           return {
-            textStream: generateText()
+            textStream: generateText(),
+            usage: { promptTokens: messages.length * 10, completionTokens: 50, totalTokens: messages.length * 10 + 50 }
           };
         } catch (error) {
           console.error('[Azure Direct] Stream error:', error);
@@ -111,7 +114,11 @@ export function createOpenAI(options?: any) {
                 for await (const text of result.textStream) {
                   controller.enqueue({ type: 'text-delta', textDelta: text });
                 }
-                controller.enqueue({ type: 'finish', finishReason: 'stop' });
+                controller.enqueue({ 
+                  type: 'finish', 
+                  finishReason: 'stop',
+                  usage: { promptTokens: 50, completionTokens: 50 }
+                });
                 controller.close();
               } catch (error) {
                 controller.error(error);

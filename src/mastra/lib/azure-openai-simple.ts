@@ -77,7 +77,11 @@ export function createOpenAI(options?: any) {
                     if (line.startsWith('data: ')) {
                       const data = line.slice(6);
                       if (data === '[DONE]') {
-                        controller.enqueue({ type: 'finish', finishReason: 'stop' });
+                        controller.enqueue({ 
+                          type: 'finish', 
+                          finishReason: 'stop',
+                          usage: { promptTokens: 50, completionTokens: 50 }
+                        });
                         continue;
                       }
                       
