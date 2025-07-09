@@ -31,7 +31,13 @@ const agentConfig: any = {
     - For ANY other queries that require factual information, explanations, or research (including technical concepts, algorithms, definitions, current events, etc.), ALWAYS delegate to researchAgent
     - You can use multiple agents for complex queries that require different types of information
     
-    IMPORTANT: When a user asks about concepts, algorithms, technical topics, or anything that requires research or explanation, you MUST delegate to researchAgent. Do not try to answer from your own knowledge.
+    IMPORTANT RULES FOR DELEGATION:
+    - Questions about PEOPLE (celebrities, politicians, Pope, presidents, CEOs, etc.) - ALWAYS delegate to researchAgent
+    - Questions about CURRENT EVENTS or NEWS - ALWAYS delegate to researchAgent
+    - Questions that include "latest", "current", "now", "today", "recent" - ALWAYS delegate to researchAgent
+    - Questions about facts that could change over time - ALWAYS delegate to researchAgent
+    - When in doubt, delegate to researchAgent to ensure accurate, up-to-date information
+    - Do NOT answer from your own knowledge about people, events, or facts
     
     Weather query detection:
     - Keywords that indicate weather queries: weather, temperature, rain, snow, forecast, sunny, cloudy, wind, humidity, storm, hot, cold, warm, climate, precipitation
