@@ -30,6 +30,8 @@ export function createOpenAI(options?: any) {
         const maxTokens = params.maxTokens || 150;
         
         console.log(`[Azure OpenAI Simple] Streaming from ${deploymentName}`);
+        console.log(`[Azure OpenAI Simple] Messages:`, JSON.stringify(messages));
+        console.log(`[Azure OpenAI Simple] Params:`, JSON.stringify({ maxTokens, temperature: params.temperature }));
         
         try {
           const response = await fetch(`${baseURL}/chat/completions?api-version=${apiVersion}`, {
@@ -39,7 +41,7 @@ export function createOpenAI(options?: any) {
               'api-key': apiKey,
             },
             body: JSON.stringify({
-              messages,
+              messages: messages.length > 0 ? messages : [{ role: 'system', content: 'You are a helpful assistant.' }],
               max_tokens: maxTokens,
               temperature: params.temperature || 0.7,
               stream: true,
