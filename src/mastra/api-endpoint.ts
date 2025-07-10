@@ -9,12 +9,75 @@ async function handleRequest(body: any) {
   console.log(`[API Endpoint] Handling request for agent: ${agentId}`);
   console.log(`[API Endpoint] Message: ${body.message}`);
   
-  const agent = mastra.getAgent(agentId);
-  
   if (!body.message) {
     console.error('[API Endpoint] No message provided in request');
     return { error: 'Message is required' };
   }
+  
+  // Use workflow for assistant agent to ensure proper delegation
+  if (agentId === 'assistantAgent') {
+    console.log(`[API Endpoint] Using assistant workflow for delegation`);
+    const workflow = mastra.getWorkflow('assistant-workflow');
+    if (!workflow) {
+      console.error('[API Endpoint] Assistant workflow not found');
+      return { error: 'Assistant workflow not configured' };
+    }
+    
+    // Store logs for this request
+    const requestLogs: any[] = [];
+    
+    // Intercept console logs for this request
+    const originalLog = console.log;
+    const logInterceptor = (...args: any[]) => {
+      originalLog(...args);
+      const message = args.join(' ');
+      if (message.includes('[Workflow]') || message.includes('[Agent Coordination]') || message.includes('[Azure Direct]') || message.includes('Agent]')) {
+        requestLogs.push({
+          timestamp: new Date().toISOString(),
+          message: message
+        });
+      }
+    };
+    console.log = logInterceptor;
+    
+    try {
+      // Execute the workflow
+      const result = await workflow.run({
+        message: body.message
+      });
+      
+      // Restore original console.log
+      console.log = originalLog;
+      
+      // Return the workflow result in the expected format
+      return {
+        choices: [{
+          message: {
+            role: 'assistant',
+            content: result.response
+          },
+          finish_reason: 'stop',
+          index: 0
+        }],
+        model: 'gpt-4.1-test',
+        timestamp: new Date().toISOString(),
+        usage: {
+          prompt_tokens: body.message.length,
+          completion_tokens: result.response.length,
+          total_tokens: body.message.length + result.response.length
+        },
+        agentLogs: requestLogs
+      };
+    } catch (error) {
+      // Restore original console.log
+      console.log = originalLog;
+      console.error('[API Endpoint] Workflow error:', error);
+      throw error;
+    }
+  }
+  
+  // For other agents, use direct agent call
+  const agent = mastra.getAgent(agentId);
 
   const messages = [
     { role: 'user' as const, content: body.message }
