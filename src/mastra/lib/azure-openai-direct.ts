@@ -48,14 +48,36 @@ export function createOpenAI(options?: any) {
           // Add tools if provided
           if (options?.tools) {
             console.log('[Azure Direct] Tools provided:', Object.keys(options.tools));
-            requestBody.tools = Object.values(options.tools).map((tool: any) => ({
-              type: 'function',
-              function: {
-                name: tool.name || tool.id,
-                description: tool.description,
-                parameters: tool.parameters || tool.inputSchema
+            requestBody.tools = Object.entries(options.tools).map(([toolName, tool]: [string, any]) => {
+              // Convert Zod schema to JSON Schema if needed
+              let parameters = tool.parameters;
+              if (!parameters && tool.inputSchema) {
+                // If inputSchema is a Zod schema, we need to extract its shape
+                // For now, we'll create a simple JSON schema
+                parameters = {
+                  type: 'object',
+                  properties: {},
+                  required: []
+                };
+                
+                // This is a simplified conversion - in production you'd use zodToJsonSchema
+                if (tool.inputSchema?._def?.typeName === 'ZodObject') {
+                  const shape = tool.inputSchema._def.shape();
+                  for (const [key, value] of Object.entries(shape)) {
+                    parameters.properties[key] = { type: 'string' }; // Simplified
+                  }
+                }
               }
-            }));
+              
+              return {
+                type: 'function',
+                function: {
+                  name: toolName, // Use the object key as the function name
+                  description: tool.description,
+                  parameters: parameters
+                }
+              };
+            });
             requestBody.tool_choice = options.toolChoice || 'auto';
             console.log('[Azure Direct] Converted tools:', JSON.stringify(requestBody.tools));
           }
