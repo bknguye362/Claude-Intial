@@ -14,52 +14,7 @@ async function handleRequest(body: any) {
     return { error: 'Message is required' };
   }
   
-  // Special handling for assistant agent to ensure it uses research/weather agents
-  if (agentId === 'assistantAgent') {
-    console.log(`[API Endpoint] Processing assistant agent request`);
-    
-    const message = body.message.toLowerCase();
-    let targetAgent = 'assistantAgent';
-    
-    // Determine which agent to use based on the message
-    if (message.match(/weather|temperature|rain|snow|forecast|sunny|cloudy|wind|humidity|storm|hot|cold|warm|climate/)) {
-      targetAgent = 'weatherAgent';
-      console.log(`[API Endpoint] Detected weather query, using weatherAgent`);
-    } else if (
-      message.includes('who') || 
-      message.includes('what') || 
-      message.includes('when') ||
-      message.includes('where') ||
-      message.includes('how') ||
-      message.includes('latest') ||
-      message.includes('current') ||
-      message.includes('news') ||
-      message.includes('today') ||
-      message.includes('pope') ||
-      message.includes('president') ||
-      message.includes('tell me about') ||
-      !message.match(/^(hello|hi|hey|good morning|good afternoon)$/)
-    ) {
-      targetAgent = 'researchAgent';
-      console.log(`[API Endpoint] Detected research query, using researchAgent`);
-    }
-    
-    // Get the appropriate agent
-    const agent = mastra.getAgent(targetAgent);
-    if (!agent) {
-      console.error(`[API Endpoint] Agent ${targetAgent} not found`);
-      return { error: `Agent ${targetAgent} not configured` };
-    }
-    
-    // Use the determined agent
-    agentId = targetAgent;
-  }
-  
   const agent = mastra.getAgent(agentId);
-  if (!agent) {
-    console.error(`[API Endpoint] Agent ${agentId} not found`);
-    return { error: `Agent ${agentId} not configured` };
-  }
 
   const messages = [
     { role: 'user' as const, content: body.message }
