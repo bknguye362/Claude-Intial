@@ -55,12 +55,21 @@ async function handleRequest(body: any) {
     
     console.log(`[API Endpoint] OpenAI API Key present: ${process.env.OPENAI_API_KEY ? 'Yes' : 'No'}`);
     console.log(`[API Endpoint] Creating stream for agent: ${agentId}`);
+    console.log(`[API Endpoint] Agent has tools:`, agent.tools ? Object.keys(agent.tools) : 'none');
+    console.log(`[API Endpoint] Agent toolChoice:`, agent.toolChoice || 'not set');
+    console.log(`[API Endpoint] Agent getTools:`, typeof agent.getTools === 'function' ? 'available' : 'not available');
     
     let stream;
     try {
       console.log(`[API Endpoint] Calling agent.stream with message content:`, body.message);
       // Pass the message as a string directly, not as an array
-      stream = await agent.stream(body.message);
+      // Also pass options to ensure tools are included
+      const streamOptions = {
+        toolChoice: 'auto',
+        // Add any other options that might be needed
+      };
+      console.log(`[API Endpoint] Stream options:`, streamOptions);
+      stream = await agent.stream(body.message, streamOptions);
       console.log(`[API Endpoint] Stream created successfully`);
     } catch (streamCreationError) {
       console.error('[API Endpoint] Failed to create stream:', streamCreationError);
