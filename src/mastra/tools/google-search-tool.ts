@@ -54,12 +54,16 @@ export const googleSearchTool = createTool({
       const url = `https://www.googleapis.com/customsearch/v1?key=${apiKey}&cx=${searchEngineId}&q=${encodeURIComponent(context.query)}&num=${numResults}`;
       
       console.log(`[Google Search Tool] API URL: ${url.replace(apiKey, 'API_KEY_HIDDEN')}`);
+      console.log(`[Google Search Tool] API Key length: ${apiKey.length} characters`);
+      console.log(`[Google Search Tool] Search Engine ID: ${searchEngineId}`);
       
       const response = await fetch(url);
       console.log(`[Google Search Tool] Response status: ${response.status}`);
       
       if (!response.ok) {
         console.error(`[Google Search Tool] API error response: ${response.status} ${response.statusText}`);
+        const errorText = await response.text();
+        console.error(`[Google Search Tool] Error details:`, errorText);
       }
       
       const data = await response.json() as GoogleSearchResponse;
