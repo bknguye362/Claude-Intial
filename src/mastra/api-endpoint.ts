@@ -20,6 +20,23 @@ async function handleRequest(body: any) {
     { role: 'user' as const, content: body.message }
   ];
 
+  // Store logs for this request
+  const requestLogs: any[] = [];
+  
+  // Intercept console logs for this request
+  const originalLog = console.log;
+  const logInterceptor = (...args: any[]) => {
+    originalLog(...args);
+    const message = args.join(' ');
+    if (message.includes('[Agent Coordination]') || message.includes('[Azure Direct]') || message.includes('Agent]')) {
+      requestLogs.push({
+        timestamp: new Date().toISOString(),
+        message: message
+      });
+    }
+  };
+  console.log = logInterceptor;
+
   try {
     let response = '';
     console.log(`[API Endpoint] Starting stream processing for: "${body.message}"`);
@@ -89,6 +106,9 @@ async function handleRequest(body: any) {
       response = errorMessage;
     }
     
+    // Restore original console.log
+    console.log = originalLog;
+    
     // Enhanced response format similar to Azure OpenAI
     const result = {
       choices: [{
@@ -105,12 +125,17 @@ async function handleRequest(body: any) {
         prompt_tokens: body.message.length, // Approximate
         completion_tokens: response.length, // Approximate
         total_tokens: body.message.length + response.length
-      }
+      },
+      // Include agent communication logs
+      agentLogs: requestLogs
     };
     
     console.log('[API Endpoint] Returning response format:', JSON.stringify(result).substring(0, 200) + '...');
     return result;
   } catch (error) {
+    // Restore original console.log
+    console.log = originalLog;
+    
     console.error('[API Endpoint] Error processing request:', error);
     console.error('[API Endpoint] Error stack:', error instanceof Error ? error.stack : 'No stack trace');
     

@@ -115,6 +115,29 @@ async function sendMessage() {
         const data = await response.json();
         console.log('[Client] Response received:', data);
         
+        // Display agent communication logs if present
+        if (data.agentLogs && data.agentLogs.length > 0) {
+            console.log('%c=== Agent Communication Logs ===', 'color: #2196F3; font-size: 14px; font-weight: bold');
+            data.agentLogs.forEach(log => {
+                const timestamp = new Date(log.timestamp).toLocaleTimeString();
+                
+                if (log.message.includes('[Agent Coordination]')) {
+                    console.log(`%c${timestamp} - ${log.message}`, 'color: #4CAF50; font-weight: bold');
+                } else if (log.message.includes('[Azure Direct]')) {
+                    console.log(`%c${timestamp} - ${log.message}`, 'color: #9C27B0');
+                } else if (log.message.includes('Research Agent')) {
+                    console.log(`%c${timestamp} - ${log.message}`, 'color: #FF5722; font-weight: bold');
+                } else if (log.message.includes('Assistant Agent')) {
+                    console.log(`%c${timestamp} - ${log.message}`, 'color: #FF9800; font-weight: bold');
+                } else if (log.message.includes('Weather Agent')) {
+                    console.log(`%c${timestamp} - ${log.message}`, 'color: #00BCD4; font-weight: bold');
+                } else {
+                    console.log(`${timestamp} - ${log.message}`);
+                }
+            });
+            console.log('%c================================', 'color: #2196F3; font-size: 14px; font-weight: bold');
+        }
+        
         // Remove typing indicator
         typingIndicator.remove();
         
