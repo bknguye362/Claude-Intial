@@ -4,6 +4,8 @@ import { Memory } from '@mastra/memory';
 import { LibSQLStore } from '@mastra/libsql';
 import { knowledgeTool } from '../tools/knowledge-tool.js';
 import { agentCoordinationTool } from '../tools/agent-coordination-tool.js';
+import { googleSearchTool } from '../tools/google-search-tool.js';
+import { webScraperTool } from '../tools/web-scraper-tool.js';
 
 // Initialize Azure OpenAI
 const openai = createOpenAI();
@@ -13,31 +15,36 @@ const agentConfig: any = {
   name: 'Assistant Agent',
   maxTokens: 150,  // Limit response tokens to conserve usage
   instructions: `
-    You are a helpful assistant that uses tools to answer questions. You have access to agentCoordinationTool and knowledgeTool.
+    You are a helpful assistant with direct access to search and web scraping tools.
     
-    For EVERY user query, you MUST use agentCoordinationTool to get the answer:
+    TOOLS AVAILABLE:
+    - googleSearchTool: Search Google for current information
+    - webScraperTool: Extract content from web pages
+    - knowledgeTool: Search internal knowledge base
+    - agentCoordinationTool: Delegate to other agents (weather/research)
     
-    1. WEATHER QUERIES → Use agentCoordinationTool with agentId: "weatherAgent"
-       Examples: weather, temperature, rain, forecast, "should I bring an umbrella?"
+    WORKFLOW FOR RESEARCH QUERIES:
+    1. When asked about current events, news, facts, or people:
+       - First use googleSearchTool to find relevant information
+       - Then use webScraperTool on the most relevant URLs from search results
+       - Analyze the scraped content and provide a comprehensive answer
     
-    2. ALL OTHER QUERIES → Use agentCoordinationTool with agentId: "researchAgent"
-       Examples: people, news, facts, definitions, "who is", "what is", "tell me about"
+    2. For weather queries:
+       - Use agentCoordinationTool with agentId: "weatherAgent"
     
-    3. Only use knowledgeTool if asked about your internal knowledge base
+    3. For internal knowledge:
+       - Use knowledgeTool
     
-    IMPORTANT: You have tools available. Use them as FUNCTION CALLS, not as text output.
+    IMPORTANT: These are FUNCTION CALLS, not text to output!
     
-    For example, if the user asks "Who is the pope?":
-    - DO: Use the agentCoordinationTool function with parameters {agentId: "researchAgent", task: "Who is the pope?"}
-    - DON'T: Output text like "agentCoordinationTool with {agentId: 'researchAgent'..."
+    Example workflow for "Who is the current pope?":
+    1. Call googleSearchTool with query: "current pope 2024"
+    2. Get search results with URLs
+    3. Call webScraperTool on 1-2 most relevant URLs
+    4. Analyze the scraped content
+    5. Provide answer based on the scraped information
     
-    The tools are FUNCTIONS you can call. When you use a tool, the system will:
-    1. Execute the tool function
-    2. Get the response from the other agent
-    3. Return that response to you
-    4. You then present that information to the user
-    
-    Remember: Tools are executed as function calls, not written as text!
+    Always cite your sources when using web data!
     
     Weather query detection:
     - Keywords that indicate weather queries: weather, temperature, rain, snow, forecast, sunny, cloudy, wind, humidity, storm, hot, cold, warm, climate, precipitation
@@ -76,7 +83,12 @@ const agentConfig: any = {
   `,
   model: openai('gpt-4.1-test'),
   provider: 'AZURE_OPENAI',
-  tools: { knowledgeTool, agentCoordinationTool },
+  tools: { 
+    googleSearchTool, 
+    webScraperTool, 
+    knowledgeTool, 
+    agentCoordinationTool 
+  },
   toolChoice: 'auto', // Allow the model to decide when to use tools
 };
 
