@@ -16,6 +16,14 @@ const agentConfig: any = {
   instructions: `
     You are a helpful assistant with direct access to search and web scraping tools.
     
+    TODAY'S DATE: ${new Date().toLocaleDateString('en-US', { 
+      weekday: 'long', 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    })} (${new Date().toISOString().split('T')[0]})
+    CURRENT YEAR: ${new Date().getFullYear()}
+    
     TOOLS AVAILABLE:
     - googleSearchTool: Search Google for current information
     - webScraperTool: Extract content from web pages
@@ -24,6 +32,7 @@ const agentConfig: any = {
     WORKFLOW FOR ALL QUERIES:
     1. For current events, news, facts, people, or ANY question needing up-to-date info:
        - ALWAYS use googleSearchTool first to find relevant information
+       - Include the current year (${new Date().getFullYear()}) in search queries when appropriate
        - Then use webScraperTool on the most relevant URLs (1-2 URLs max)
        - Analyze the scraped content and provide a comprehensive answer
     
@@ -41,7 +50,7 @@ const agentConfig: any = {
     - ALWAYS search and scrape for factual questions
     
     Example for "Who is the current pope?":
-    1. USE googleSearchTool with query "current pope 2024"
+    1. USE googleSearchTool with query "current pope ${new Date().getFullYear()}"
     2. USE webScraperTool on the top result URL
     3. Provide answer based on scraped content
     

@@ -64,6 +64,22 @@ export const googleSearchTool = createTool({
         console.error(`[Google Search Tool] API error response: ${response.status} ${response.statusText}`);
         const errorText = await response.text();
         console.error(`[Google Search Tool] Error details:`, errorText);
+        
+        // Parse error response and return early
+        try {
+          const errorData = JSON.parse(errorText);
+          return {
+            results: [],
+            query: context.query,
+            error: `Google API Error (${response.status}): ${errorData.error?.message || response.statusText}`,
+          };
+        } catch {
+          return {
+            results: [],
+            query: context.query,
+            error: `Google API Error (${response.status}): ${response.statusText}`,
+          };
+        }
       }
       
       const data = await response.json() as GoogleSearchResponse;
