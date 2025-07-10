@@ -22,17 +22,28 @@ export function createOpenAI(options?: any) {
       
       // The key method that agents use
       async stream(messages: any[]) {
-        console.log('[Azure Direct] Stream called with messages:', messages.length);
-        console.log('[Azure Direct] Messages content:', JSON.stringify(messages));
+        console.log('[Azure Direct] Stream called with:', typeof messages, 'value:', messages);
+        
+        // Handle both array and string inputs
+        let messageArray = [];
+        if (Array.isArray(messages)) {
+          messageArray = messages;
+        } else if (typeof messages === 'string') {
+          messageArray = [{ role: 'user', content: messages }];
+        } else if (messages && typeof messages === 'object' && messages.content) {
+          messageArray = [messages];
+        }
+        
+        console.log('[Azure Direct] Processed messages:', JSON.stringify(messageArray));
         
         try {
           const requestBody = {
-            messages: messages.length > 0 ? messages : [{ role: 'user', content: 'Hello' }],
+            messages: messageArray.length > 0 ? messageArray : [{ role: 'user', content: 'Hello' }],
             max_tokens: 150,
             temperature: 0.7,
             stream: true,
           };
-          console.log('[Azure Direct] Sending request body:', JSON.stringify(requestBody));
+          console.log('[Azure Direct] Sending to Azure:', JSON.stringify(requestBody));
           
           const response = await fetch(`${baseURL}/chat/completions?api-version=${apiVersion}`, {
             method: 'POST',

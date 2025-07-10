@@ -203,16 +203,18 @@ const server = createServer(async (req, res) => {
         req.on('error', reject);
       });
       
-      console.log('Received request body:', body);
+      console.log('[Server] Received request body:', body);
       requestData = JSON.parse(body);
     }
     
-    console.log('Processing message:', requestData.message);
+    console.log('[Server] Processing message:', requestData.message);
+    console.log('[Server] Agent ID:', requestData.agentId);
     if (uploadedFiles.length > 0) {
-      console.log('With uploaded files:', uploadedFiles.map(f => f.originalName));
+      console.log('[Server] With uploaded files:', uploadedFiles.map(f => f.originalName));
     }
     
     const result = await handleRequest(requestData);
+    console.log('[Server] Result from handleRequest:', JSON.stringify(result).substring(0, 200) + '...');
     
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(result));

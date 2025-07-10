@@ -73,6 +73,11 @@ async function sendMessage() {
         // Get selected agent
         const agentId = agentSelect.value;
         
+        // Log what we're sending
+        console.log('[Client] Sending message:', message);
+        console.log('[Client] Using agent:', agentId);
+        console.log('[Client] Has file:', !!selectedFile);
+        
         let response;
         
         if (selectedFile) {
@@ -108,14 +113,17 @@ async function sendMessage() {
         }
         
         const data = await response.json();
+        console.log('[Client] Response received:', data);
         
         // Remove typing indicator
         typingIndicator.remove();
         
         // Add assistant response
         if (data.choices && data.choices[0] && data.choices[0].message) {
+            console.log('[Client] Assistant response:', data.choices[0].message.content);
             addMessage(data.choices[0].message.content);
         } else {
+            console.error('[Client] Invalid response format:', data);
             throw new Error('Invalid response format');
         }
         
