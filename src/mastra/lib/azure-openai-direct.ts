@@ -26,7 +26,7 @@ export function createOpenAI(options?: any) {
         console.log('[Azure Direct] Stream options:', options);
         
         // Handle both array and string inputs
-        let messageArray = [];
+        let messageArray: any[] = [];
         if (Array.isArray(messages)) {
           messageArray = messages;
         } else if (typeof messages === 'string') {
@@ -77,58 +77,190 @@ export function createOpenAI(options?: any) {
             throw new Error(`Azure OpenAI error: ${response.status}`);
           }
 
-          // Create text stream generator
-          async function* generateText() {
-            const reader = response.body?.getReader();
-            if (!reader) throw new Error('No response body');
-            
-            const decoder = new TextDecoder();
-            let buffer = '';
-            let tokenCount = 0;
-            
-            try {
-              while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                
-                buffer += decoder.decode(value, { stream: true });
-                const lines = buffer.split('\n');
-                buffer = lines.pop() || '';
-                
-                for (const line of lines) {
-                  if (line.startsWith('data: ')) {
-                    const data = line.slice(6);
-                    if (data === '[DONE]') continue;
+          // First, process the initial response to collect any tool calls
+          const toolCalls: any[] = [];
+          let currentToolCall: any = null;
+          let hasContent = false;
+          let contentBuffer = '';
+          
+          // Read the entire response first
+          const reader = response.body?.getReader();
+          if (!reader) throw new Error('No response body');
+          
+          const decoder = new TextDecoder();
+          let buffer = '';
+          
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split('\n');
+              buffer = lines.pop() || '';
+              
+              for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                  const data = line.slice(6);
+                  if (data === '[DONE]') continue;
+                  
+                  try {
+                    const json = JSON.parse(data);
+                    const delta = json.choices?.[0]?.delta;
                     
-                    try {
-                      const json = JSON.parse(data);
-                      const delta = json.choices?.[0]?.delta;
-                      
-                      // Handle regular content
-                      if (delta?.content) {
-                        tokenCount += delta.content.length;
-                        yield delta.content;
-                      }
-                      
-                      // Handle tool calls
-                      if (delta?.tool_calls) {
-                        console.log('[Azure Direct] Tool call detected:', JSON.stringify(delta.tool_calls));
-                        // For now, we'll yield a message about the tool call
-                        // In a full implementation, this would trigger actual tool execution
-                        for (const toolCall of delta.tool_calls) {
-                          if (toolCall.function?.name && toolCall.function?.arguments) {
-                            yield `\n[Calling tool: ${toolCall.function.name} with ${toolCall.function.arguments}]\n`;
+                    // Handle regular content
+                    if (delta?.content) {
+                      hasContent = true;
+                      contentBuffer += delta.content;
+                    }
+                    
+                    // Handle tool calls
+                    if (delta?.tool_calls) {
+                      for (const toolCall of delta.tool_calls) {
+                        if (toolCall.index !== undefined) {
+                          // New tool call or update existing one
+                          if (!toolCalls[toolCall.index]) {
+                            toolCalls[toolCall.index] = {
+                              id: toolCall.id || `tool_${toolCall.index}`,
+                              type: 'function',
+                              function: { name: '', arguments: '' }
+                            };
+                          }
+                          currentToolCall = toolCalls[toolCall.index];
+                          
+                          if (toolCall.function?.name) {
+                            currentToolCall.function.name = toolCall.function.name;
+                          }
+                          if (toolCall.function?.arguments) {
+                            currentToolCall.function.arguments += toolCall.function.arguments;
                           }
                         }
                       }
-                    } catch (e) {
-                      // Ignore parse errors
                     }
+                  } catch (e) {
+                    // Ignore parse errors
                   }
                 }
               }
-            } finally {
-              reader.releaseLock();
+            }
+          } finally {
+            reader.releaseLock();
+          }
+          
+          // Create text stream generator
+          async function* generateText() {
+            // If we have content and no tool calls, just yield the content
+            if (hasContent && toolCalls.length === 0) {
+              yield contentBuffer;
+              return;
+            }
+            
+            // If we have tool calls, execute them
+            if (toolCalls.length > 0) {
+              console.log('[Azure Direct] Tool calls detected:', toolCalls);
+              
+              // Append the assistant's message with tool calls
+              const assistantMessage = {
+                role: 'assistant',
+                content: contentBuffer || null,
+                tool_calls: toolCalls
+              };
+              messageArray.push(assistantMessage);
+              
+              // Execute each tool and collect results
+              for (const toolCall of toolCalls) {
+                const toolName = toolCall.function.name;
+                const tool = options?.tools?.[toolName];
+                
+                if (tool) {
+                  try {
+                    console.log(`[Azure Direct] Executing tool: ${toolName}`);
+                    const args = JSON.parse(toolCall.function.arguments);
+                    const result = await tool.execute({ context: args });
+                    
+                    // Add tool result message
+                    messageArray.push({
+                      tool_call_id: toolCall.id,
+                      role: 'tool',
+                      name: toolName,
+                      content: JSON.stringify(result)
+                    });
+                  } catch (error) {
+                    console.error(`[Azure Direct] Error executing tool ${toolName}:`, error);
+                    messageArray.push({
+                      tool_call_id: toolCall.id,
+                      role: 'tool',
+                      name: toolName,
+                      content: JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' })
+                    });
+                  }
+                } else {
+                  console.error(`[Azure Direct] Tool not found: ${toolName}`);
+                }
+              }
+              
+              // Make second API call with tool results
+              console.log('[Azure Direct] Making second API call with tool results');
+              const secondRequestBody = {
+                messages: messageArray,
+                max_tokens: 150,
+                temperature: 0.7,
+                stream: true,
+                // Don't include tools in the second call
+              };
+              
+              const secondResponse = await fetch(`${baseURL}/chat/completions?api-version=${apiVersion}`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'api-key': apiKey,
+                },
+                body: JSON.stringify(secondRequestBody),
+              });
+              
+              if (!secondResponse.ok) {
+                const error = await secondResponse.text();
+                console.error('[Azure Direct] Second API Error:', error);
+                yield 'I apologize, but I encountered an error processing the tool results.';
+                return;
+              }
+              
+              // Stream the final response
+              const secondReader = secondResponse.body?.getReader();
+              if (!secondReader) throw new Error('No response body for second call');
+              
+              const secondDecoder = new TextDecoder();
+              let secondBuffer = '';
+              
+              try {
+                while (true) {
+                  const { done, value } = await secondReader.read();
+                  if (done) break;
+                  
+                  secondBuffer += secondDecoder.decode(value, { stream: true });
+                  const lines = secondBuffer.split('\n');
+                  secondBuffer = lines.pop() || '';
+                  
+                  for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                      const data = line.slice(6);
+                      if (data === '[DONE]') continue;
+                      
+                      try {
+                        const json = JSON.parse(data);
+                        const content = json.choices?.[0]?.delta?.content;
+                        if (content) {
+                          yield content;
+                        }
+                      } catch (e) {
+                        // Ignore parse errors
+                      }
+                    }
+                  }
+                }
+              } finally {
+                secondReader.releaseLock();
+              }
             }
           }
 
