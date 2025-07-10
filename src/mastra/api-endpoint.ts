@@ -6,7 +6,7 @@ const PORT = 3000;
 async function handleRequest(body: any) {
   // Use agentId from request body, default to assistantAgent
   const agentId = body.agentId || 'assistantAgent';
-  console.log(`[API Endpoint] Handling request for agent: ${agentId}`);
+  console.log(`[API Endpoint] >>> Handling request for agent: ${agentId.toUpperCase()} <<<`);
   console.log(`[API Endpoint] Message: ${body.message}`);
   
   if (!body.message) {

@@ -32,7 +32,7 @@ export const googleSearchTool = createTool({
     error: z.string().optional(),
   }),
   execute: async ({ context }) => {
-    console.log(`[Google Search Tool] Searching for: ${context.query}`);
+    console.log(`[Google Search Tool] >>> RESEARCH AGENT is searching for: ${context.query}`);
     
     const apiKey = process.env.GOOGLE_API_KEY;
     const searchEngineId = process.env.GOOGLE_SEARCH_ENGINE_ID;

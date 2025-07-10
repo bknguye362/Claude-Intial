@@ -17,7 +17,7 @@ export const agentCoordinationTool = createTool({
   }),
   execute: async ({ context }) => {
     try {
-      console.log(`[Agent Coordination] Delegating to ${context.agentId} with task: ${context.task}`);
+      console.log(`[Agent Coordination] >>> ASSISTANT AGENT is delegating to ${context.agentId} with task: ${context.task}`);
       
       // Get the specified agent
       const agent = mastra.getAgent(context.agentId);

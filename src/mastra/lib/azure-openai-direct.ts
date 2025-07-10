@@ -68,6 +68,16 @@ export function createOpenAI(options?: any) {
             msg.content.includes('Google Search')
           );
           
+          // Determine which agent is making the call
+          let callingAgent = 'Unknown';
+          if (isResearchAgent) {
+            callingAgent = 'Research Agent';
+          } else if (messageArray.some(msg => msg.content && typeof msg.content === 'string' && msg.content.includes('helpful assistant'))) {
+            callingAgent = 'Assistant Agent';
+          }
+          
+          console.log(`[Azure Direct] === AGENT IDENTIFICATION: ${callingAgent} ===`);
+          
           // If no tools provided and this is for the research agent, manually add them
           if ((!tools || Object.keys(tools).length === 0) && isResearchAgent) {
             console.log('[Azure Direct] No tools provided, adding manual tools for research agent');
@@ -276,6 +286,7 @@ export function createOpenAI(options?: any) {
           
           // Create text stream generator
           async function* generateText() {
+            // Access callingAgent from outer scope
             // If we have content and no tool calls, just yield the content
             if (hasContent && toolCalls.length === 0) {
               console.log('[Azure Direct] No tool calls detected, returning content directly');
@@ -303,7 +314,7 @@ export function createOpenAI(options?: any) {
                 
                 if (tool) {
                   try {
-                    console.log(`[Azure Direct] Executing tool: ${toolName}`);
+                    console.log(`[Azure Direct] >>> ${callingAgent} is calling tool: ${toolName}`);
                     console.log(`[Azure Direct] Environment check - GOOGLE_API_KEY:`, process.env.GOOGLE_API_KEY ? 'Present' : 'Missing');
                     console.log(`[Azure Direct] Environment check - GOOGLE_SEARCH_ENGINE_ID:`, process.env.GOOGLE_SEARCH_ENGINE_ID ? 'Present' : 'Missing');
                     const args = JSON.parse(toolCall.function.arguments);

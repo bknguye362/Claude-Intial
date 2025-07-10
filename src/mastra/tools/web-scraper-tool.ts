@@ -28,7 +28,7 @@ export const webScraperTool = createTool({
     sectionsIncluded: z.number().describe('Number of sections included in the superdocument'),
   }),
   execute: async ({ context }) => {
-    console.log(`[Web Scraper Tool] Scraping ${context.urls.length} URLs`);
+    console.log(`[Web Scraper Tool] >>> RESEARCH AGENT is scraping ${context.urls.length} URLs`);
     
     // Clear any previous superdocument
     currentSuperdocument = '';
