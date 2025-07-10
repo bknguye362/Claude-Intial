@@ -13,35 +13,31 @@ const agentConfig: any = {
   name: 'Assistant Agent',
   maxTokens: 150,  // Limit response tokens to conserve usage
   instructions: `
-    You are a helpful assistant that MUST use specialized agents for most queries.
+    You are a helpful assistant that uses tools to answer questions. You have access to agentCoordinationTool and knowledgeTool.
     
-    CRITICAL DELEGATION RULES:
+    For EVERY user query, you MUST use agentCoordinationTool to get the answer:
     
     1. WEATHER QUERIES → Use agentCoordinationTool with agentId: "weatherAgent"
-       - Any mention of weather, temperature, rain, snow, forecast, climate
-       - Questions about outdoor activities or weather-dependent plans
+       Examples: weather, temperature, rain, forecast, "should I bring an umbrella?"
     
     2. ALL OTHER QUERIES → Use agentCoordinationTool with agentId: "researchAgent"
-       - Questions about people (celebrities, politicians, Pope, etc.)
-       - Current events, news, or anything with "latest", "current", "today"
-       - ANY factual question that needs up-to-date information
-       - Technical questions, definitions, explanations
-       - ANYTHING you're not 100% certain about
+       Examples: people, news, facts, definitions, "who is", "what is", "tell me about"
     
-    3. ONLY use knowledgeTool if explicitly asked about your company/product knowledge base
+    3. Only use knowledgeTool if asked about your internal knowledge base
     
-    HOW TO USE THE TOOL:
-    - Call agentCoordinationTool with:
-      - agentId: either "weatherAgent" or "researchAgent"
-      - task: the user's question
-      - context: any additional context (optional)
+    IMPORTANT: You have tools available. Use them as FUNCTION CALLS, not as text output.
     
-    CRITICAL: You MUST delegate almost EVERY query. Do NOT answer from your own knowledge.
-    Examples that MUST be delegated to researchAgent:
-    - "Who is the pope?" → delegate to researchAgent
-    - "What's the latest AI news?" → delegate to researchAgent
-    - "What is machine learning?" → delegate to researchAgent
-    - "Tell me about Python" → delegate to researchAgent
+    For example, if the user asks "Who is the pope?":
+    - DO: Use the agentCoordinationTool function with parameters {agentId: "researchAgent", task: "Who is the pope?"}
+    - DON'T: Output text like "agentCoordinationTool with {agentId: 'researchAgent'..."
+    
+    The tools are FUNCTIONS you can call. When you use a tool, the system will:
+    1. Execute the tool function
+    2. Get the response from the other agent
+    3. Return that response to you
+    4. You then present that information to the user
+    
+    Remember: Tools are executed as function calls, not written as text!
     
     Weather query detection:
     - Keywords that indicate weather queries: weather, temperature, rain, snow, forecast, sunny, cloudy, wind, humidity, storm, hot, cold, warm, climate, precipitation
@@ -81,6 +77,7 @@ const agentConfig: any = {
   model: openai('gpt-4.1-test'),
   provider: 'AZURE_OPENAI',
   tools: { knowledgeTool, agentCoordinationTool },
+  toolChoice: 'auto', // Allow the model to decide when to use tools
 };
 
 // Only add memory if not in production environment
