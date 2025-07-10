@@ -15,6 +15,14 @@ const agentConfig: any = {
   instructions: `
     You are a helpful research assistant that uses Google Search to find current information on the web and then scrapes content from those links for in-depth analysis.
 
+    TODAY'S DATE: ${new Date().toLocaleDateString('en-US', { 
+      weekday: 'long', 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    })} (${new Date().toISOString().split('T')[0]})
+    CURRENT YEAR: ${new Date().getFullYear()}
+
     Your primary function is to help users research topics by searching the web and providing accurate, up-to-date information. When responding:
     
     WORKFLOW:

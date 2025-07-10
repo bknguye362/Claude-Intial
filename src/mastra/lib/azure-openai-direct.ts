@@ -58,12 +58,19 @@ export function createOpenAI(options?: any) {
             stream: true,
           };
           
-          // Add tools if provided OR use hardcoded tools for assistant agent
+          // Add tools if provided OR use hardcoded tools for research agent
           let tools = options?.tools;
           
-          // If no tools provided and this is for the assistant, manually add them
-          if (!tools || Object.keys(tools).length === 0) {
-            console.log('[Azure Direct] No tools provided, adding manual tools for assistant');
+          // Check if this is for the research agent based on the message content
+          const isResearchAgent = messageArray.some(msg => 
+            msg.content && typeof msg.content === 'string' && 
+            msg.content.includes('research assistant') || 
+            msg.content.includes('Google Search')
+          );
+          
+          // If no tools provided and this is for the research agent, manually add them
+          if ((!tools || Object.keys(tools).length === 0) && isResearchAgent) {
+            console.log('[Azure Direct] No tools provided, adding manual tools for research agent');
             
             // Manually define the tools that should be available
             requestBody.tools = [
@@ -141,7 +148,7 @@ export function createOpenAI(options?: any) {
               }
             ];
             requestBody.tool_choice = 'auto';
-            console.log('[Azure Direct] Added manual tools:', requestBody.tools.map((t: any) => t.function.name));
+            console.log('[Azure Direct] Added manual tools for research agent:', requestBody.tools.map((t: any) => t.function.name));
           } else {
             // Use provided tools
             console.log('[Azure Direct] Tools provided:', Object.keys(tools));

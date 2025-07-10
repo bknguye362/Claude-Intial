@@ -3,8 +3,7 @@ import { Agent } from '@mastra/core/agent';
 import { Memory } from '@mastra/memory';
 import { LibSQLStore } from '@mastra/libsql';
 import { knowledgeTool } from '../tools/knowledge-tool.js';
-import { googleSearchTool } from '../tools/google-search-tool.js';
-import { webScraperTool } from '../tools/web-scraper-tool.js';
+import { agentCoordinationTool } from '../tools/agent-coordination-tool.js';
 
 // Initialize Azure OpenAI
 const openai = createOpenAI();
@@ -14,7 +13,7 @@ const agentConfig: any = {
   name: 'Assistant Agent',
   maxTokens: 150,  // Limit response tokens to conserve usage
   instructions: `
-    You are a helpful assistant with direct access to search and web scraping tools.
+    You are a helpful assistant that coordinates with specialized agents to provide accurate information.
     
     TODAY'S DATE: ${new Date().toLocaleDateString('en-US', { 
       weekday: 'long', 
@@ -25,36 +24,37 @@ const agentConfig: any = {
     CURRENT YEAR: ${new Date().getFullYear()}
     
     TOOLS AVAILABLE:
-    - googleSearchTool: Search Google for current information
-    - webScraperTool: Extract content from web pages
+    - agentCoordinationTool: Delegate tasks to specialized agents (researchAgent, weatherAgent)
     - knowledgeTool: Search internal knowledge base
     
     WORKFLOW FOR ALL QUERIES:
     1. For current events, news, facts, people, or ANY question needing up-to-date info:
-       - ALWAYS use googleSearchTool first to find relevant information
-       - Include the current year (${new Date().getFullYear()}) in search queries when appropriate
-       - Then use webScraperTool on the most relevant URLs (1-2 URLs max)
-       - Analyze the scraped content and provide a comprehensive answer
+       - USE agentCoordinationTool with agentId: "researchAgent"
+       - Include context about the current year (${new Date().getFullYear()}) in your task description
+       - WAIT for the response from researchAgent
+       - Present the information from the response to the user
     
     2. For internal company/product knowledge only:
        - Use knowledgeTool
     
     3. For weather queries:
-       - Use googleSearchTool to search for weather information
-       - Scrape weather websites if needed
+       - USE agentCoordinationTool with agentId: "weatherAgent"
+       - WAIT for the response
+       - Present the weather information to the user
     
     CRITICAL RULES:
-    - These are FUNCTION CALLS that you MUST use
-    - Do NOT output tool names as text
-    - Do NOT mention other agents
-    - ALWAYS search and scrape for factual questions
+    - ALWAYS use agentCoordinationTool as a FUNCTION CALL, not text output
+    - WAIT for the agent's response before answering the user
+    - Do NOT answer questions yourself - delegate to appropriate agents
+    - Do NOT say "I'll check with the research agent" - just do it silently
+    - Present the information naturally as if you found it yourself
     
     Example for "Who is the current pope?":
-    1. USE googleSearchTool with query "current pope ${new Date().getFullYear()}"
-    2. USE webScraperTool on the top result URL
-    3. Provide answer based on scraped content
+    1. USE agentCoordinationTool with {agentId: "researchAgent", task: "Find information about who is the current pope in ${new Date().getFullYear()}"}
+    2. WAIT for response
+    3. Present the information from researchAgent's response
     
-    You MUST use these tools. They are your only source of current information!
+    The research agent has access to Google Search and web scraping tools to find current information.
     
     Weather query detection:
     - Keywords that indicate weather queries: weather, temperature, rain, snow, forecast, sunny, cloudy, wind, humidity, storm, hot, cold, warm, climate, precipitation
@@ -94,8 +94,7 @@ const agentConfig: any = {
   model: openai('gpt-4.1-test'),
   provider: 'AZURE_OPENAI',
   tools: { 
-    googleSearchTool, 
-    webScraperTool, 
+    agentCoordinationTool,
     knowledgeTool
   },
   toolChoice: 'auto', // Allow the model to decide when to use tools

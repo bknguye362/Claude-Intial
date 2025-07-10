@@ -6,7 +6,7 @@ export const agentCoordinationTool = createTool({
   id: 'coordinate-with-agent',
   description: 'Delegate a task to another specialized agent and get their response',
   inputSchema: z.object({
-    agentId: z.enum(['weatherAgent', 'researchAgent']).describe('The ID of the agent to delegate to'),
+    agentId: z.enum(['researchAgent']).describe('The ID of the agent to delegate to'),
     task: z.string().describe('The task or question to delegate to the agent'),
     context: z.string().optional().describe('Additional context for the agent'),
   }),
@@ -75,9 +75,7 @@ export const agentCoordinationTool = createTool({
         errorMessage = error.message;
         
         // Add context-specific error handling
-        if (context.agentId === 'weatherAgent' && error.message.includes('Location')) {
-          errorMessage = `Weather service error: ${error.message}. Please try a different location or check the spelling.`;
-        } else if (error.message.includes('fetch')) {
+        if (error.message.includes('fetch')) {
           errorMessage = `Network error: Unable to connect to the ${context.agentId} service. Please check your internet connection.`;
         }
       }
