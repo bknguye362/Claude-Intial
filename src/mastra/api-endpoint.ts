@@ -35,26 +35,12 @@ async function handleRequest(body: any) {
     
     let stream;
     try {
-      // Try Mastra's generate method instead of stream
-      console.log(`[API Endpoint] Calling agent.generate with messages:`, JSON.stringify(messages));
-      const result = await agent.generate(messages);
-      console.log(`[API Endpoint] Generate result:`, result);
+      // Log the agent structure to understand what methods it has
+      console.log(`[API Endpoint] Agent methods:`, Object.getOwnPropertyNames(Object.getPrototypeOf(agent)));
       
-      // Create a stream from the result
-      stream = {
-        textStream: (async function* () {
-          if (result && result.text) {
-            yield result.text;
-          } else if (result && result.content) {
-            yield result.content;
-          } else if (typeof result === 'string') {
-            yield result;
-          } else {
-            console.error('[API Endpoint] Unexpected result format:', result);
-            yield 'I encountered an error processing your request.';
-          }
-        })()
-      };
+      // Try the streamText method which Mastra agents might use
+      console.log(`[API Endpoint] Calling agent.streamText with messages:`, JSON.stringify(messages));
+      stream = await agent.streamText(messages);
       console.log(`[API Endpoint] Stream created successfully`);
     } catch (streamCreationError) {
       console.error('[API Endpoint] Failed to create stream:', streamCreationError);
