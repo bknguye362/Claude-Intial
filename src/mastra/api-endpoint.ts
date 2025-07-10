@@ -14,72 +14,52 @@ async function handleRequest(body: any) {
     return { error: 'Message is required' };
   }
   
-  // Use workflow for assistant agent to ensure proper delegation
+  // Special handling for assistant agent to ensure it uses research/weather agents
   if (agentId === 'assistantAgent') {
-    console.log(`[API Endpoint] Using assistant workflow for delegation`);
-    const workflow = mastra.getWorkflow('assistantWorkflow');
-    if (!workflow) {
-      console.error('[API Endpoint] Assistant workflow not found');
-      return { error: 'Assistant workflow not configured' };
+    console.log(`[API Endpoint] Processing assistant agent request`);
+    
+    const message = body.message.toLowerCase();
+    let targetAgent = 'assistantAgent';
+    
+    // Determine which agent to use based on the message
+    if (message.match(/weather|temperature|rain|snow|forecast|sunny|cloudy|wind|humidity|storm|hot|cold|warm|climate/)) {
+      targetAgent = 'weatherAgent';
+      console.log(`[API Endpoint] Detected weather query, using weatherAgent`);
+    } else if (
+      message.includes('who') || 
+      message.includes('what') || 
+      message.includes('when') ||
+      message.includes('where') ||
+      message.includes('how') ||
+      message.includes('latest') ||
+      message.includes('current') ||
+      message.includes('news') ||
+      message.includes('today') ||
+      message.includes('pope') ||
+      message.includes('president') ||
+      message.includes('tell me about') ||
+      !message.match(/^(hello|hi|hey|good morning|good afternoon)$/)
+    ) {
+      targetAgent = 'researchAgent';
+      console.log(`[API Endpoint] Detected research query, using researchAgent`);
     }
     
-    // Store logs for this request
-    const requestLogs: any[] = [];
-    
-    // Intercept console logs for this request
-    const originalLog = console.log;
-    const logInterceptor = (...args: any[]) => {
-      originalLog(...args);
-      const message = args.join(' ');
-      if (message.includes('[Workflow]') || message.includes('[Agent Coordination]') || message.includes('[Azure Direct]') || message.includes('Agent]')) {
-        requestLogs.push({
-          timestamp: new Date().toISOString(),
-          message: message
-        });
-      }
-    };
-    console.log = logInterceptor;
-    
-    try {
-      // Execute the workflow
-      const result = await workflow.execute({
-        inputData: {
-          message: body.message
-        }
-      });
-      
-      // Restore original console.log
-      console.log = originalLog;
-      
-      // Return the workflow result in the expected format
-      return {
-        choices: [{
-          message: {
-            role: 'assistant',
-            content: result.response
-          },
-          finish_reason: 'stop',
-          index: 0
-        }],
-        model: 'gpt-4.1-test',
-        timestamp: new Date().toISOString(),
-        usage: {
-          prompt_tokens: body.message.length,
-          completion_tokens: result.response.length,
-          total_tokens: body.message.length + result.response.length
-        },
-        agentLogs: requestLogs
-      };
-    } catch (error) {
-      // Restore original console.log
-      console.log = originalLog;
-      console.error('[API Endpoint] Workflow error:', error);
-      throw error;
+    // Get the appropriate agent
+    const agent = mastra.getAgent(targetAgent);
+    if (!agent) {
+      console.error(`[API Endpoint] Agent ${targetAgent} not found`);
+      return { error: `Agent ${targetAgent} not configured` };
     }
+    
+    // Use the determined agent
+    agentId = targetAgent;
   }
   
-  // For other agents, use direct agent call
   const agent = mastra.getAgent(agentId);
+  if (!agent) {
+    console.error(`[API Endpoint] Agent ${agentId} not found`);
+    return { error: `Agent ${agentId} not configured` };
+  }
 
   const messages = [
     { role: 'user' as const, content: body.message }
