@@ -1,0 +1,12 @@
+import { createOpenAI } from '../lib/azure-openai-direct.js';
+import { Agent } from '@mastra/core/agent';
+
+const openai = createOpenAI();
+
+export const testAgent = new Agent({
+  name: 'Test Agent',
+  maxTokens: 150,
+  instructions: 'You are a helpful assistant. Answer questions directly and concisely.',
+  model: openai('gpt-4.1-test'),
+  provider: 'AZURE_OPENAI',
+});
