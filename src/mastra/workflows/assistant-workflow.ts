@@ -42,6 +42,25 @@ const analyzeIntent = createStep({
       confidence = 0.8;
       keywords.push('support');
     }
+    
+    // Mark as general (research-needed) for current events and factual queries
+    if (
+      message.includes('news') ||
+      message.includes('latest') ||
+      message.includes('current') ||
+      message.includes('today') ||
+      message.includes('recent') ||
+      message.includes('who is') ||
+      message.includes('what is') ||
+      message.includes('tell me about') ||
+      message.includes('pope') ||
+      message.includes('president') ||
+      message.includes('happening')
+    ) {
+      intent = 'general';  // This will trigger research in the assistant
+      confidence = 0.9;
+      keywords.push('research', 'current-info');
+    }
 
     return { message: inputData.message, intent, confidence, keywords };
   },
@@ -77,6 +96,8 @@ const generateResponse = createStep({
       context = 'The user is asking about pricing. Be clear about our pricing tiers.';
     } else if (inputData.intent === 'support') {
       context = 'The user needs support. Be especially helpful and empathetic.';
+    } else if (inputData.intent === 'general' && inputData.keywords.includes('research')) {
+      context = 'The user is asking about current events or factual information. You MUST use your agentCoordinationTool to delegate this to researchAgent for accurate, up-to-date information.';
     }
 
     const response = await agent.stream([
