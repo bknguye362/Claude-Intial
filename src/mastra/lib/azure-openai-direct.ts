@@ -22,6 +22,7 @@ export function createOpenAI(options?: any) {
       
       // The key method that agents use
       async stream(messages: any[], options?: any) {
+        console.log('[Azure Direct] *** STREAM METHOD CALLED DIRECTLY ***');
         console.log('[Azure Direct] Stream called with messages:', JSON.stringify(messages).substring(0, 200));
         console.log('[Azure Direct] Stream options:', JSON.stringify(options).substring(0, 200));
         
@@ -382,14 +383,16 @@ export function createOpenAI(options?: any) {
         
         // Extract messages from params.prompt which contains the system message and user messages
         const messages = params.prompt || params.messages || [];
-        console.log('[Azure Direct] Extracted messages:', JSON.stringify(messages).substring(0, 500));
+        console.log('[Azure Direct] doStream - messages:', JSON.stringify(messages).substring(0, 500));
+        console.log('[Azure Direct] doStream - tools provided:', params.tools ? Object.keys(params.tools) : 'none');
+        console.log('[Azure Direct] doStream - toolChoice:', params.toolChoice);
         
         // Pass tools and options if available
         const options: any = {};
         if (params.tools) {
           options.tools = params.tools;
-          options.toolChoice = params.toolChoice;
-          console.log('[Azure Direct] Passing tools to stream:', Object.keys(params.tools || {}));
+          options.toolChoice = params.toolChoice || 'auto';
+          console.log('[Azure Direct] doStream - Passing tools to stream:', Object.keys(params.tools));
         }
         
         const result = await model.stream(messages, options);
