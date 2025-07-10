@@ -17,7 +17,7 @@ async function handleRequest(body: any) {
   // Use workflow for assistant agent to ensure proper delegation
   if (agentId === 'assistantAgent') {
     console.log(`[API Endpoint] Using assistant workflow for delegation`);
-    const workflow = mastra.getWorkflow('assistant-workflow');
+    const workflow = mastra.getWorkflow('assistantWorkflow');
     if (!workflow) {
       console.error('[API Endpoint] Assistant workflow not found');
       return { error: 'Assistant workflow not configured' };
@@ -42,7 +42,7 @@ async function handleRequest(body: any) {
     
     try {
       // Execute the workflow
-      const result = await workflow.run({
+      const result = await workflow.execute({
         message: body.message
       });
       
