@@ -4,7 +4,7 @@
 export function createOpenAI(options?: any) {
   const apiKey = process.env.AZURE_OPENAI_API_KEY || process.env.AZURE_API_KEY || process.env.OPENAI_API_KEY;
   const endpoint = process.env.AZURE_OPENAI_ENDPOINT || 'https://franklin-open-ai-test.openai.azure.com';
-  const apiVersion = process.env.AZURE_OPENAI_API_VERSION || '2025-01-01-preview';
+  const apiVersion = process.env.AZURE_OPENAI_API_VERSION || '2023-12-01-preview'; // This version supports function calling
   
   if (!apiKey) {
     throw new Error('API key required. Set AZURE_OPENAI_API_KEY or AZURE_API_KEY');
@@ -21,8 +21,9 @@ export function createOpenAI(options?: any) {
       provider: 'azure-openai',
       
       // The key method that agents use
-      async stream(messages: any[]) {
+      async stream(messages: any[], options?: any) {
         console.log('[Azure Direct] Stream called with:', typeof messages, 'value:', messages);
+        console.log('[Azure Direct] Stream options:', options);
         
         // Handle both array and string inputs
         let messageArray = [];
@@ -37,12 +38,28 @@ export function createOpenAI(options?: any) {
         console.log('[Azure Direct] Processed messages:', JSON.stringify(messageArray));
         
         try {
-          const requestBody = {
+          const requestBody: any = {
             messages: messageArray.length > 0 ? messageArray : [{ role: 'user', content: 'Hello' }],
             max_tokens: 150,
             temperature: 0.7,
             stream: true,
           };
+          
+          // Add tools if provided
+          if (options?.tools) {
+            console.log('[Azure Direct] Tools provided:', Object.keys(options.tools));
+            requestBody.tools = Object.values(options.tools).map((tool: any) => ({
+              type: 'function',
+              function: {
+                name: tool.name || tool.id,
+                description: tool.description,
+                parameters: tool.parameters || tool.inputSchema
+              }
+            }));
+            requestBody.tool_choice = options.toolChoice || 'auto';
+            console.log('[Azure Direct] Converted tools:', JSON.stringify(requestBody.tools));
+          }
+          
           console.log('[Azure Direct] Sending to Azure:', JSON.stringify(requestBody));
           
           const response = await fetch(`${baseURL}/chat/completions?api-version=${apiVersion}`, {
@@ -85,10 +102,24 @@ export function createOpenAI(options?: any) {
                     
                     try {
                       const json = JSON.parse(data);
-                      const content = json.choices?.[0]?.delta?.content;
-                      if (content) {
-                        tokenCount += content.length;
-                        yield content;
+                      const delta = json.choices?.[0]?.delta;
+                      
+                      // Handle regular content
+                      if (delta?.content) {
+                        tokenCount += delta.content.length;
+                        yield delta.content;
+                      }
+                      
+                      // Handle tool calls
+                      if (delta?.tool_calls) {
+                        console.log('[Azure Direct] Tool call detected:', JSON.stringify(delta.tool_calls));
+                        // For now, we'll yield a message about the tool call
+                        // In a full implementation, this would trigger actual tool execution
+                        for (const toolCall of delta.tool_calls) {
+                          if (toolCall.function?.name && toolCall.function?.arguments) {
+                            yield `\n[Calling tool: ${toolCall.function.name} with ${toolCall.function.arguments}]\n`;
+                          }
+                        }
                       }
                     } catch (e) {
                       // Ignore parse errors
@@ -120,6 +151,29 @@ export function createOpenAI(options?: any) {
     
     // Add any additional methods the AI SDK might expect
     Object.assign(model, {
+      // The method Mastra's Agent actually calls
+      __stream: async (params: any) => {
+        console.log('[Azure Direct] __stream called with params:', JSON.stringify(params).substring(0, 500));
+        
+        const messages = params.messages || [];
+        const tools = params.tools || {};
+        const toolChoice = params.toolChoice || 'auto';
+        
+        console.log('[Azure Direct] __stream - messages:', messages.length);
+        console.log('[Azure Direct] __stream - tools:', Object.keys(tools));
+        console.log('[Azure Direct] __stream - toolChoice:', toolChoice);
+        
+        // Call our stream method with tools
+        const result = await model.stream(messages, { tools, toolChoice });
+        
+        // Return in the format Mastra expects
+        return {
+          textStream: result.textStream,
+          usage: result.usage,
+          // Add any other properties Mastra might expect
+        };
+      },
+      
       // For generate compatibility
       doGenerate: async (params: any) => {
         console.log('[Azure Direct] doGenerate called with params:', JSON.stringify(params));
@@ -167,13 +221,21 @@ export function createOpenAI(options?: any) {
       
       // For Vercel AI SDK compatibility if needed
       doStream: async (params: any) => {
-        console.log('[Azure Direct] doStream called');
+        console.log('[Azure Direct] doStream called with params:', JSON.stringify(params).substring(0, 500));
         
         // Extract messages from params.prompt which contains the system message and user messages
         const messages = params.prompt || params.messages || [];
         console.log('[Azure Direct] Extracted messages:', JSON.stringify(messages).substring(0, 500));
         
-        const result = await model.stream(messages);
+        // Pass tools and options if available
+        const options: any = {};
+        if (params.tools) {
+          options.tools = params.tools;
+          options.toolChoice = params.toolChoice;
+          console.log('[Azure Direct] Passing tools to stream:', Object.keys(params.tools || {}));
+        }
+        
+        const result = await model.stream(messages, options);
         return {
           stream: new ReadableStream({
             async start(controller) {

@@ -28,7 +28,13 @@ async function handleRequest(body: any) {
   const logInterceptor = (...args: any[]) => {
     originalLog(...args);
     const message = args.join(' ');
-    if (message.includes('[Agent Coordination]') || message.includes('[Azure Direct]') || message.includes('Agent]')) {
+    if (message.includes('[Agent Coordination]') || 
+        message.includes('[Azure Direct]') || 
+        message.includes('Agent]') ||
+        message.includes('[Google Search Tool]') ||
+        message.includes('[Web Scraper Tool]') ||
+        message.includes('Tool call detected') ||
+        message.includes('Calling tool:')) {
       requestLogs.push({
         timestamp: new Date().toISOString(),
         message: message
