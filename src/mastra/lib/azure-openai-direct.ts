@@ -1,6 +1,18 @@
 // Direct Azure OpenAI integration for Mastra agents
 // This bypasses complex Vercel AI SDK requirements
 
+// Import tools for manual execution
+import { googleSearchTool } from '../tools/google-search-tool.js';
+import { webScraperTool } from '../tools/web-scraper-tool.js';
+import { knowledgeTool } from '../tools/knowledge-tool.js';
+
+// Manual tool registry
+const manualTools = {
+  googleSearchTool,
+  webScraperTool,
+  knowledgeTool
+};
+
 export function createOpenAI(options?: any) {
   const apiKey = process.env.AZURE_OPENAI_API_KEY || process.env.AZURE_API_KEY || process.env.OPENAI_API_KEY;
   const endpoint = process.env.AZURE_OPENAI_ENDPOINT || 'https://franklin-open-ai-test.openai.azure.com';
@@ -46,10 +58,94 @@ export function createOpenAI(options?: any) {
             stream: true,
           };
           
-          // Add tools if provided
-          if (options?.tools) {
-            console.log('[Azure Direct] Tools provided:', Object.keys(options.tools));
-            requestBody.tools = Object.entries(options.tools).map(([toolName, tool]: [string, any]) => {
+          // Add tools if provided OR use hardcoded tools for assistant agent
+          let tools = options?.tools;
+          
+          // If no tools provided and this is for the assistant, manually add them
+          if (!tools || Object.keys(tools).length === 0) {
+            console.log('[Azure Direct] No tools provided, adding manual tools for assistant');
+            
+            // Manually define the tools that should be available
+            requestBody.tools = [
+              {
+                type: 'function',
+                function: {
+                  name: 'googleSearchTool',
+                  description: 'Search the web using Google Search API to find current information',
+                  parameters: {
+                    type: 'object',
+                    properties: {
+                      query: {
+                        type: 'string',
+                        description: 'The search query'
+                      },
+                      numResults: {
+                        type: 'number',
+                        description: 'Number of results to return (max 10)',
+                        default: 3
+                      }
+                    },
+                    required: ['query']
+                  }
+                }
+              },
+              {
+                type: 'function',
+                function: {
+                  name: 'webScraperTool',
+                  description: 'Scrape web content from URLs and extract text content',
+                  parameters: {
+                    type: 'object',
+                    properties: {
+                      urls: {
+                        type: 'array',
+                        items: { type: 'string' },
+                        description: 'Array of URLs to scrape'
+                      },
+                      maxContentLength: {
+                        type: 'number',
+                        description: 'Maximum characters to extract per page',
+                        default: 5000
+                      }
+                    },
+                    required: ['urls']
+                  }
+                }
+              },
+              {
+                type: 'function',
+                function: {
+                  name: 'knowledgeTool',
+                  description: 'Search and retrieve information from the internal knowledge base',
+                  parameters: {
+                    type: 'object',
+                    properties: {
+                      query: {
+                        type: 'string',
+                        description: 'Query to search for'
+                      },
+                      numResults: {
+                        type: 'number',
+                        description: 'Maximum number of results to return',
+                        default: 5
+                      },
+                      rerank: {
+                        type: 'boolean',
+                        description: 'Whether to rerank results',
+                        default: true
+                      }
+                    },
+                    required: ['query']
+                  }
+                }
+              }
+            ];
+            requestBody.tool_choice = 'auto';
+            console.log('[Azure Direct] Added manual tools:', requestBody.tools.map((t: any) => t.function.name));
+          } else {
+            // Use provided tools
+            console.log('[Azure Direct] Tools provided:', Object.keys(tools));
+            requestBody.tools = Object.entries(tools).map(([toolName, tool]: [string, any]) => {
               // Convert Zod schema to JSON Schema if needed
               let parameters = tool.parameters;
               if (!parameters && tool.inputSchema) {
@@ -195,7 +291,8 @@ export function createOpenAI(options?: any) {
               // Execute each tool and collect results
               for (const toolCall of toolCalls) {
                 const toolName = toolCall.function.name;
-                const tool = options?.tools?.[toolName];
+                // Try to get tool from options first, then fallback to manual tools
+                const tool = options?.tools?.[toolName] || (manualTools as any)[toolName];
                 
                 if (tool) {
                   try {
