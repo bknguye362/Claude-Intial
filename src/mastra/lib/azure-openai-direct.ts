@@ -135,7 +135,7 @@ export function createOpenAI(options?: any) {
             throw new Error(`Azure OpenAI error: ${response.status}`);
           }
 
-          const data = await response.json();
+          const data: any = await response.json();
           const content = data.choices?.[0]?.message?.content || '';
           
           return {
