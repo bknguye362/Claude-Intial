@@ -167,8 +167,13 @@ export function createOpenAI(options?: any) {
       
       // For Vercel AI SDK compatibility if needed
       doStream: async (params: any) => {
-        console.log('[Azure Direct] doStream called with params:', JSON.stringify(params));
-        const result = await model.stream(params.messages || []);
+        console.log('[Azure Direct] doStream called');
+        
+        // Extract messages from params.prompt which contains the system message and user messages
+        const messages = params.prompt || params.messages || [];
+        console.log('[Azure Direct] Extracted messages:', JSON.stringify(messages).substring(0, 500));
+        
+        const result = await model.stream(messages);
         return {
           stream: new ReadableStream({
             async start(controller) {

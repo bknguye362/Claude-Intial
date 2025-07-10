@@ -99,7 +99,7 @@ async function handleRequest(body: any) {
         finish_reason: response ? 'stop' : 'error',
         index: 0
       }],
-      model: 'gpt-4o-mini',
+      model: 'gpt-4.1-test',
       timestamp: new Date().toISOString(),
       usage: {
         prompt_tokens: body.message.length, // Approximate
@@ -127,7 +127,7 @@ async function handleRequest(body: any) {
         finish_reason: 'error',
         index: 0
       }],
-      model: 'gpt-4o-mini',
+      model: 'gpt-4.1-test',
       timestamp: new Date().toISOString(),
       error: true,
       errorDetails: errorMessage
