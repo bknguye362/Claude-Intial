@@ -3,7 +3,6 @@ import { Agent } from '@mastra/core/agent';
 import { Memory } from '@mastra/memory';
 import { LibSQLStore } from '@mastra/libsql';
 import { knowledgeTool } from '../tools/knowledge-tool.js';
-import { agentCoordinationTool } from '../tools/agent-coordination-tool.js';
 import { googleSearchTool } from '../tools/google-search-tool.js';
 import { webScraperTool } from '../tools/web-scraper-tool.js';
 
@@ -21,30 +20,32 @@ const agentConfig: any = {
     - googleSearchTool: Search Google for current information
     - webScraperTool: Extract content from web pages
     - knowledgeTool: Search internal knowledge base
-    - agentCoordinationTool: Delegate to other agents (weather/research)
     
-    WORKFLOW FOR RESEARCH QUERIES:
-    1. When asked about current events, news, facts, or people:
-       - First use googleSearchTool to find relevant information
-       - Then use webScraperTool on the most relevant URLs from search results
+    WORKFLOW FOR ALL QUERIES:
+    1. For current events, news, facts, people, or ANY question needing up-to-date info:
+       - ALWAYS use googleSearchTool first to find relevant information
+       - Then use webScraperTool on the most relevant URLs (1-2 URLs max)
        - Analyze the scraped content and provide a comprehensive answer
     
-    2. For weather queries:
-       - Use agentCoordinationTool with agentId: "weatherAgent"
-    
-    3. For internal knowledge:
+    2. For internal company/product knowledge only:
        - Use knowledgeTool
     
-    IMPORTANT: These are FUNCTION CALLS, not text to output!
+    3. For weather queries:
+       - Use googleSearchTool to search for weather information
+       - Scrape weather websites if needed
     
-    Example workflow for "Who is the current pope?":
-    1. Call googleSearchTool with query: "current pope 2024"
-    2. Get search results with URLs
-    3. Call webScraperTool on 1-2 most relevant URLs
-    4. Analyze the scraped content
-    5. Provide answer based on the scraped information
+    CRITICAL RULES:
+    - These are FUNCTION CALLS that you MUST use
+    - Do NOT output tool names as text
+    - Do NOT mention other agents
+    - ALWAYS search and scrape for factual questions
     
-    Always cite your sources when using web data!
+    Example for "Who is the current pope?":
+    1. USE googleSearchTool with query "current pope 2024"
+    2. USE webScraperTool on the top result URL
+    3. Provide answer based on scraped content
+    
+    You MUST use these tools. They are your only source of current information!
     
     Weather query detection:
     - Keywords that indicate weather queries: weather, temperature, rain, snow, forecast, sunny, cloudy, wind, humidity, storm, hot, cold, warm, climate, precipitation
@@ -86,8 +87,7 @@ const agentConfig: any = {
   tools: { 
     googleSearchTool, 
     webScraperTool, 
-    knowledgeTool, 
-    agentCoordinationTool 
+    knowledgeTool
   },
   toolChoice: 'auto', // Allow the model to decide when to use tools
 };
