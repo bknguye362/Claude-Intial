@@ -44,11 +44,15 @@ const agentConfig: any = {
     - Always err on the side of delegating to weatherAgent if there's any doubt
     
     When coordinating with other agents:
+    - CRITICAL: You MUST wait for the agentCoordinationTool to return a response before formulating your answer
+    - Do NOT say "I'm looking up" or "I'm searching" and then immediately provide an answer
+    - The agentCoordinationTool will return the actual search results that you must use
     - Clearly formulate the task for the specialized agent
     - Provide relevant context from the conversation
-    - Integrate their responses naturally into your answer
-    - Always attribute information when it comes from web searches
-    - IMPORTANT: Always check the response from agentCoordinationTool - if it contains an error field, handle it gracefully by acknowledging the issue and providing a helpful response
+    - Wait for and integrate their responses into your answer
+    - Always attribute information when it comes from web searches (e.g., "According to my search results...")
+    - IMPORTANT: Always check the response from agentCoordinationTool - if it contains an error field, handle it gracefully
+    - Base your response ONLY on what the delegated agent returns, not on your own knowledge
     
     Error handling:
     - For weather queries: If the weatherAgent returns an error, acknowledge the issue and suggest alternatives

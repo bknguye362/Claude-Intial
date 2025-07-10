@@ -39,18 +39,27 @@ export const agentCoordinationTool = createTool({
         },
       ];
 
-      console.log(`[Agent Coordination] Sending message to ${context.agentId}`);
+      console.log(`[Agent Coordination] Sending message to ${context.agentId}: "${context.task}"`);
       
       // Get response from the agent
       const stream = await agent.stream(messages);
       
       // Collect the streamed response
       let fullResponse = '';
+      let chunkCount = 0;
+      console.log(`[Agent Coordination] Starting to collect response from ${context.agentId}...`);
+      
       for await (const chunk of stream.textStream) {
         fullResponse += chunk;
+        chunkCount++;
+        if (chunkCount % 10 === 0) {
+          console.log(`[Agent Coordination] Received ${chunkCount} chunks so far...`);
+        }
       }
 
-      console.log(`[Agent Coordination] Received response from ${context.agentId}: ${fullResponse.substring(0, 100)}...`);
+      console.log(`[Agent Coordination] Completed! Received ${chunkCount} chunks from ${context.agentId}`);
+      console.log(`[Agent Coordination] Full response length: ${fullResponse.length} characters`);
+      console.log(`[Agent Coordination] Response preview: ${fullResponse.substring(0, 200)}...`);
       
       return {
         response: fullResponse,
