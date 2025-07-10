@@ -22,8 +22,8 @@ export function createOpenAI(options?: any) {
       
       // The key method that agents use
       async stream(messages: any[], options?: any) {
-        console.log('[Azure Direct] Stream called with:', typeof messages, 'value:', messages);
-        console.log('[Azure Direct] Stream options:', options);
+        console.log('[Azure Direct] Stream called with messages:', JSON.stringify(messages).substring(0, 200));
+        console.log('[Azure Direct] Stream options:', JSON.stringify(options).substring(0, 200));
         
         // Handle both array and string inputs
         let messageArray: any[] = [];
@@ -82,7 +82,8 @@ export function createOpenAI(options?: any) {
             console.log('[Azure Direct] Converted tools:', JSON.stringify(requestBody.tools));
           }
           
-          console.log('[Azure Direct] Sending to Azure:', JSON.stringify(requestBody));
+          console.log('[Azure Direct] Request body preview:', JSON.stringify(requestBody).substring(0, 500));
+          console.log('[Azure Direct] Tools in request:', requestBody.tools?.length || 0);
           
           const response = await fetch(`${baseURL}/chat/completions?api-version=${apiVersion}`, {
             method: 'POST',
@@ -173,6 +174,7 @@ export function createOpenAI(options?: any) {
           async function* generateText() {
             // If we have content and no tool calls, just yield the content
             if (hasContent && toolCalls.length === 0) {
+              console.log('[Azure Direct] No tool calls detected, returning content directly');
               yield contentBuffer;
               return;
             }
@@ -313,9 +315,10 @@ export function createOpenAI(options?: any) {
         const tools = params.tools || {};
         const toolChoice = params.toolChoice || 'auto';
         
-        console.log('[Azure Direct] __stream - messages:', messages.length);
-        console.log('[Azure Direct] __stream - tools:', Object.keys(tools));
+        console.log('[Azure Direct] __stream - messages count:', messages.length);
+        console.log('[Azure Direct] __stream - tools available:', Object.keys(tools));
         console.log('[Azure Direct] __stream - toolChoice:', toolChoice);
+        console.log('[Azure Direct] __stream - First message:', JSON.stringify(messages[0]).substring(0, 200));
         
         // Call our stream method with tools
         const result = await model.stream(messages, { tools, toolChoice });
