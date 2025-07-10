@@ -43,7 +43,9 @@ async function handleRequest(body: any) {
     try {
       // Execute the workflow
       const result = await workflow.execute({
-        message: body.message
+        inputData: {
+          message: body.message
+        }
       });
       
       // Restore original console.log
