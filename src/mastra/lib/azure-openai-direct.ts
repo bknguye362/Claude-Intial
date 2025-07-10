@@ -109,6 +109,51 @@ export function createOpenAI(options?: any) {
     
     // Add any additional methods the AI SDK might expect
     Object.assign(model, {
+      // For generate compatibility
+      doGenerate: async (params: any) => {
+        console.log('[Azure Direct] doGenerate called with params:', JSON.stringify(params));
+        const messages = params.prompt || params.messages || [];
+        
+        try {
+          const response = await fetch(`${baseURL}/chat/completions?api-version=${apiVersion}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'api-key': apiKey,
+            },
+            body: JSON.stringify({
+              messages: messages,
+              max_tokens: params.maxTokens || 150,
+              temperature: params.temperature || 0.7,
+              stream: false,
+            }),
+          });
+
+          if (!response.ok) {
+            const error = await response.text();
+            console.error('[Azure Direct] Generate API Error:', error);
+            throw new Error(`Azure OpenAI error: ${response.status}`);
+          }
+
+          const data = await response.json();
+          const content = data.choices?.[0]?.message?.content || '';
+          
+          return {
+            text: content,
+            usage: {
+              promptTokens: data.usage?.prompt_tokens || 0,
+              completionTokens: data.usage?.completion_tokens || 0,
+              totalTokens: data.usage?.total_tokens || 0,
+            },
+            finishReason: data.choices?.[0]?.finish_reason || 'stop',
+            rawResponse: { headers: {} },
+          };
+        } catch (error) {
+          console.error('[Azure Direct] doGenerate error:', error);
+          throw error;
+        }
+      },
+      
       // For Vercel AI SDK compatibility if needed
       doStream: async (params: any) => {
         console.log('[Azure Direct] doStream called with params:', JSON.stringify(params));
