@@ -30,7 +30,7 @@ export function createOpenAI(options?: any) {
           messageArray = messages;
         } else if (typeof messages === 'string') {
           messageArray = [{ role: 'user', content: messages }];
-        } else if (messages && typeof messages === 'object' && messages.content) {
+        } else if (messages && typeof messages === 'object' && (messages as any).content) {
           messageArray = [messages];
         }
         
