@@ -108,6 +108,22 @@ const server = createServer(async (req, res) => {
   if (req.method === 'GET' && req.url) {
     let filePath = req.url;
     
+    // Health check endpoint
+    if (filePath === '/health') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ 
+        status: 'ok', 
+        timestamp: new Date().toISOString(),
+        env: {
+          hasAzureKey: !!(process.env.AZURE_OPENAI_API_KEY || process.env.AZURE_API_KEY),
+          hasOpenAIKey: !!process.env.OPENAI_API_KEY,
+          hasGoogleKey: !!process.env.GOOGLE_API_KEY,
+          nodeVersion: process.version
+        }
+      }));
+      return;
+    }
+    
     // Default to index.html for root
     if (filePath === '/') {
       filePath = '/index.html';

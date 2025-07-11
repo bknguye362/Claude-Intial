@@ -2,7 +2,12 @@ import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
 import { readFile } from 'fs/promises';
 import { join, basename } from 'path';
-import pdf from 'pdf-parse';
+
+// Dynamic import to avoid initialization errors
+const pdf = async (dataBuffer: Buffer) => {
+  const pdfParse = (await import('pdf-parse')).default;
+  return pdfParse(dataBuffer);
+};
 
 export const pdfReaderTool = createTool({
   id: 'pdf-reader',
