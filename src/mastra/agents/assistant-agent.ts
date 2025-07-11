@@ -4,6 +4,8 @@ import { Memory } from '@mastra/memory';
 import { LibSQLStore } from '@mastra/libsql';
 import { knowledgeTool } from '../tools/knowledge-tool.js';
 import { agentCoordinationTool } from '../tools/agent-coordination-tool.js';
+import { pdfReaderTool } from '../tools/pdf-reader-tool.js';
+import { textReaderTool } from '../tools/text-reader-tool.js';
 
 // Initialize Azure OpenAI
 const openai = createOpenAI();
@@ -26,18 +28,26 @@ const agentConfig: any = {
     TOOLS AVAILABLE:
     - agentCoordinationTool: Delegate tasks to specialized agents (researchAgent, weatherAgent)
     - knowledgeTool: Search internal knowledge base
+    - pdfReaderTool: Read PDF files from uploaded files
+    - textReaderTool: Read text files from uploaded files
     
     WORKFLOW FOR ALL QUERIES:
-    1. For current events, news, facts, people, or ANY question needing up-to-date info:
+    1. When files are uploaded (indicated by [Uploaded files: ...] in the message):
+       - Extract the file path from the message
+       - Use pdfReaderTool for PDF files (.pdf extension)
+       - Use textReaderTool for text files (.txt extension)
+       - Read the file content and analyze/summarize based on user's request
+    
+    2. For current events, news, facts, people, or ANY question needing up-to-date info:
        - USE agentCoordinationTool with agentId: "researchAgent"
        - Include context about the current year (${new Date().getFullYear()}) in your task description
        - WAIT for the response from researchAgent
        - Present the information from the response to the user
     
-    2. For internal company/product knowledge only:
+    3. For internal company/product knowledge only:
        - Use knowledgeTool
     
-    3. For weather queries:
+    4. For weather queries:
        - USE agentCoordinationTool with agentId: "weatherAgent"
        - WAIT for the response
        - Present the weather information to the user
@@ -62,11 +72,18 @@ const agentConfig: any = {
     - Always err on the side of delegating to weatherAgent if there's any doubt
     
     WHEN YOU RECEIVE A USER QUERY:
-    1. First, determine if it's about weather → use weatherAgent
-    2. Otherwise → use researchAgent
-    3. Call the agentCoordinationTool immediately
-    4. Wait for the response
-    5. Present the information from the response
+    1. First, check if files were uploaded (look for [Uploaded files: ...]) → use appropriate file reader tool
+    2. If it's about weather → use weatherAgent
+    3. Otherwise → use researchAgent
+    4. Call the appropriate tool immediately
+    5. Wait for the response
+    6. Present the information from the response
+    
+    FILE HANDLING:
+    - When you see [Uploaded files: filename.pdf (saved as /path/to/file.pdf)], extract the full path
+    - Use pdfReaderTool with {filepath: "/path/to/file.pdf"} for PDFs
+    - Use textReaderTool with {filepath: "/path/to/file.txt"} for text files
+    - Summarize or analyze the content based on what the user asks
     
     DO NOT:
     - Answer questions yourself
@@ -95,7 +112,9 @@ const agentConfig: any = {
   provider: 'AZURE_OPENAI',
   tools: { 
     agentCoordinationTool,
-    knowledgeTool
+    knowledgeTool,
+    pdfReaderTool,
+    textReaderTool
   },
   toolChoice: 'auto', // Allow the model to decide when to use tools
 };
