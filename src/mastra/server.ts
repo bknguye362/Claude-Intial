@@ -166,10 +166,11 @@ const server = createServer(async (req, res) => {
       
       // Process uploaded files
       for (const file of files) {
-        if (file.contentType === 'application/pdf') {
-          // Save PDF file
+        if (file.contentType === 'application/pdf' || file.contentType === 'text/plain') {
+          // Save file with appropriate extension
           const fileId = randomBytes(16).toString('hex');
-          const filename = `${fileId}.pdf`;
+          const extension = file.contentType === 'application/pdf' ? '.pdf' : '.txt';
+          const filename = `${fileId}${extension}`;
           const filepath = join(UPLOAD_DIR, filename);
           
           await writeFile(filepath, file.data);
@@ -181,7 +182,7 @@ const server = createServer(async (req, res) => {
             size: file.data.length
           });
           
-          console.log(`Saved PDF file: ${file.filename} as ${filename}`);
+          console.log(`Saved ${extension.toUpperCase()} file: ${file.filename} as ${filename}`);
         }
       }
       
