@@ -4,9 +4,6 @@ import { Memory } from '@mastra/memory';
 import { LibSQLStore } from '@mastra/libsql';
 import { knowledgeTool } from '../tools/knowledge-tool.js';
 import { agentCoordinationTool } from '../tools/agent-coordination-tool.js';
-import { pdfReaderTool } from '../tools/pdf-reader-tool.js';
-import { textReaderTool } from '../tools/text-reader-tool.js';
-import { s3ListTool } from '../tools/s3-list-tool.js';
 
 // Initialize Azure OpenAI
 const openai = createOpenAI();
@@ -27,23 +24,15 @@ const agentConfig: any = {
     CURRENT YEAR: ${new Date().getFullYear()}
     
     TOOLS AVAILABLE:
-    - agentCoordinationTool: Delegate tasks to specialized agents (researchAgent, weatherAgent)
+    - agentCoordinationTool: Delegate tasks to specialized agents (researchAgent, weatherAgent, fileAgent)
     - knowledgeTool: Search internal knowledge base
-    - pdfReaderTool: Read PDF files from uploaded files
-    - textReaderTool: Read text files from uploaded files
-    - s3ListTool: List available files in S3 bucket
     
     WORKFLOW FOR ALL QUERIES:
-    1. When user asks about available files or what files are in the bucket:
-       - Use s3ListTool to list files in the S3 bucket
-       - Show the user the available files with their names and sizes
-       - If user wants to read a specific file, use the s3Path from the listing
-    
-    2. When files are uploaded (indicated by [Uploaded files: ...] in the message):
-       - Extract the file path from the message
-       - Use pdfReaderTool for PDF files (.pdf extension)
-       - Use textReaderTool for text files (.txt extension)
-       - Read the file content and analyze/summarize based on user's request
+    1. For FILE-RELATED queries (listing files, reading files, uploaded files):
+       - USE agentCoordinationTool with agentId: "fileAgent"
+       - Pass the entire user message as the task
+       - WAIT for the response from fileAgent
+       - Present the information from the response to the user
     
     2. For current events, news, facts, people, or ANY question needing up-to-date info:
        - USE agentCoordinationTool with agentId: "researchAgent"
@@ -60,8 +49,10 @@ const agentConfig: any = {
        - Present the weather information to the user
     
     CRITICAL RULES:
-    - For FILE-RELATED queries: Use your own file tools (s3ListTool, pdfReaderTool, textReaderTool) directly
-    - For OTHER queries: Delegate to appropriate agents using agentCoordinationTool
+    - ALWAYS delegate to specialized agents using agentCoordinationTool
+    - For FILE queries → use fileAgent
+    - For WEATHER queries → use weatherAgent  
+    - For OTHER queries → use researchAgent
     - ALWAYS use tools as FUNCTION CALLS, not text output
     - WAIT for the response before answering the user
     - Do NOT say "I'll check" or "Let me look" - just do it silently
@@ -70,9 +61,9 @@ const agentConfig: any = {
     EXAMPLES:
     
     For "What files are available?":
-    1. USE s3ListTool directly (DO NOT delegate to researchAgent)
+    1. USE agentCoordinationTool with {agentId: "fileAgent", task: "What files are available?"}
     2. WAIT for response
-    3. Present the list of files with their details
+    3. Present the list of files from fileAgent's response
     
     For "Who is the current pope?":
     1. USE agentCoordinationTool with {agentId: "researchAgent", task: "Find information about who is the current pope in ${new Date().getFullYear()}"}
@@ -89,26 +80,23 @@ const agentConfig: any = {
     WHEN YOU RECEIVE A USER QUERY:
     
     PRIORITY ORDER (STOP at the first match):
-    1. FILE QUERIES (use YOUR tools directly, don't delegate):
-       - "What files are available?" → use s3ListTool
-       - "Show me the files" → use s3ListTool
-       - "List files in bucket" → use s3ListTool
-       - [Uploaded files: ...] → use pdfReaderTool or textReaderTool
-       - Requests to read specific files → use appropriate reader tool
+    1. FILE QUERIES → delegate to fileAgent:
+       - "What files are available?"
+       - "Show me the files"
+       - "List files in bucket"
+       - [Uploaded files: ...]
+       - Requests to read specific files
     
     2. WEATHER QUERIES → delegate to weatherAgent
     
     3. ALL OTHER QUERIES → delegate to researchAgent
     
-    Always call the tool immediately and present the response naturally.
+    Always call agentCoordinationTool immediately and present the response naturally.
     
     FILE HANDLING:
-    - When you see [Uploaded files: filename.pdf (saved as /path/to/file.pdf)], extract the full path
-    - Use pdfReaderTool with {filepath: "/path/to/file.pdf"} for PDFs
-    - Use textReaderTool with {filepath: "/path/to/file.txt"} for text files
-    - Use s3ListTool when user asks "what files are available" or "show me the files"
-    - When listing files, you can then read specific files using their s3Path
-    - Summarize or analyze the content based on what the user asks
+    - When user asks about files, delegate to fileAgent
+    - Pass the complete user message including any file paths
+    - The fileAgent will handle listing, reading, and analyzing files
     
     DO NOT:
     - Answer questions yourself
@@ -137,10 +125,7 @@ const agentConfig: any = {
   provider: 'AZURE_OPENAI',
   tools: { 
     agentCoordinationTool,
-    knowledgeTool,
-    pdfReaderTool,
-    textReaderTool,
-    s3ListTool
+    knowledgeTool
   },
   toolChoice: 'auto', // Allow the model to decide when to use tools
 };

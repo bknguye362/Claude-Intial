@@ -6,7 +6,7 @@ export const agentCoordinationTool = createTool({
   id: 'coordinate-with-agent',
   description: 'Delegate a task to another specialized agent and get their response',
   inputSchema: z.object({
-    agentId: z.enum(['researchAgent']).describe('The ID of the agent to delegate to'),
+    agentId: z.enum(['researchAgent', 'fileAgent']).describe('The ID of the agent to delegate to'),
     task: z.string().describe('The task or question to delegate to the agent'),
     context: z.string().optional().describe('Additional context for the agent'),
   }),
