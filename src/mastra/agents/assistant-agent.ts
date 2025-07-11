@@ -6,6 +6,7 @@ import { knowledgeTool } from '../tools/knowledge-tool.js';
 import { agentCoordinationTool } from '../tools/agent-coordination-tool.js';
 import { pdfReaderTool } from '../tools/pdf-reader-tool.js';
 import { textReaderTool } from '../tools/text-reader-tool.js';
+import { s3ListTool } from '../tools/s3-list-tool.js';
 
 // Initialize Azure OpenAI
 const openai = createOpenAI();
@@ -30,9 +31,15 @@ const agentConfig: any = {
     - knowledgeTool: Search internal knowledge base
     - pdfReaderTool: Read PDF files from uploaded files
     - textReaderTool: Read text files from uploaded files
+    - s3ListTool: List available files in S3 bucket
     
     WORKFLOW FOR ALL QUERIES:
-    1. When files are uploaded (indicated by [Uploaded files: ...] in the message):
+    1. When user asks about available files or what files are in the bucket:
+       - Use s3ListTool to list files in the S3 bucket
+       - Show the user the available files with their names and sizes
+       - If user wants to read a specific file, use the s3Path from the listing
+    
+    2. When files are uploaded (indicated by [Uploaded files: ...] in the message):
        - Extract the file path from the message
        - Use pdfReaderTool for PDF files (.pdf extension)
        - Use textReaderTool for text files (.txt extension)
@@ -72,17 +79,20 @@ const agentConfig: any = {
     - Always err on the side of delegating to weatherAgent if there's any doubt
     
     WHEN YOU RECEIVE A USER QUERY:
-    1. First, check if files were uploaded (look for [Uploaded files: ...]) → use appropriate file reader tool
-    2. If it's about weather → use weatherAgent
-    3. Otherwise → use researchAgent
-    4. Call the appropriate tool immediately
-    5. Wait for the response
-    6. Present the information from the response
+    1. First, check if user asks about available files → use s3ListTool
+    2. Check if files were uploaded (look for [Uploaded files: ...]) → use appropriate file reader tool
+    3. If it's about weather → use weatherAgent
+    4. Otherwise → use researchAgent
+    5. Call the appropriate tool immediately
+    6. Wait for the response
+    7. Present the information from the response
     
     FILE HANDLING:
     - When you see [Uploaded files: filename.pdf (saved as /path/to/file.pdf)], extract the full path
     - Use pdfReaderTool with {filepath: "/path/to/file.pdf"} for PDFs
     - Use textReaderTool with {filepath: "/path/to/file.txt"} for text files
+    - Use s3ListTool when user asks "what files are available" or "show me the files"
+    - When listing files, you can then read specific files using their s3Path
     - Summarize or analyze the content based on what the user asks
     
     DO NOT:
@@ -114,7 +124,8 @@ const agentConfig: any = {
     agentCoordinationTool,
     knowledgeTool,
     pdfReaderTool,
-    textReaderTool
+    textReaderTool,
+    s3ListTool
   },
   toolChoice: 'auto', // Allow the model to decide when to use tools
 };
