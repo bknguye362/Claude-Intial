@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { existsSync } from 'fs';
 import { randomBytes } from 'crypto';
+import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -13,8 +14,18 @@ const __dirname = dirname(__filename);
 const PORT = process.env.PORT || 3000;
 const UPLOAD_DIR = join(__dirname, 'uploads');
 
-// Ensure upload directory exists
-if (!existsSync(UPLOAD_DIR)) {
+// S3 Configuration
+const USE_S3 = process.env.AWS_S3_BUCKET ? true : false;
+const s3Client = USE_S3 ? new S3Client({
+  region: process.env.AWS_REGION || 'us-east-1',
+  credentials: process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY ? {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  } : undefined, // Use IAM role if no credentials provided
+}) : null;
+
+// Ensure upload directory exists (for local development)
+if (!USE_S3 && !existsSync(UPLOAD_DIR)) {
   await mkdir(UPLOAD_DIR, { recursive: true });
 }
 
@@ -118,7 +129,16 @@ const server = createServer(async (req, res) => {
           hasAzureKey: !!(process.env.AZURE_OPENAI_API_KEY || process.env.AZURE_API_KEY),
           hasOpenAIKey: !!process.env.OPENAI_API_KEY,
           hasGoogleKey: !!process.env.GOOGLE_API_KEY,
-          nodeVersion: process.version
+          nodeVersion: process.version,
+          storage: USE_S3 ? {
+            type: 's3',
+            bucket: process.env.AWS_S3_BUCKET,
+            region: process.env.AWS_REGION || 'us-east-1',
+            hasCredentials: !!process.env.AWS_ACCESS_KEY_ID
+          } : {
+            type: 'local',
+            path: UPLOAD_DIR
+          }
         }
       }));
       return;
@@ -187,18 +207,50 @@ const server = createServer(async (req, res) => {
           const fileId = randomBytes(16).toString('hex');
           const extension = file.contentType === 'application/pdf' ? '.pdf' : '.txt';
           const filename = `${fileId}${extension}`;
-          const filepath = join(UPLOAD_DIR, filename);
           
-          await writeFile(filepath, file.data);
-          
-          uploadedFiles.push({
-            originalName: file.filename,
-            savedName: filename,
-            path: filepath,
-            size: file.data.length
-          });
-          
-          console.log(`Saved ${extension.toUpperCase()} file: ${file.filename} as ${filename}`);
+          if (USE_S3 && s3Client) {
+            // Upload to S3
+            const s3Key = `uploads/${filename}`;
+            const uploadParams = {
+              Bucket: process.env.AWS_S3_BUCKET!,
+              Key: s3Key,
+              Body: file.data,
+              ContentType: file.contentType,
+              Metadata: {
+                originalName: file.filename,
+              }
+            };
+            
+            try {
+              await s3Client.send(new PutObjectCommand(uploadParams));
+              
+              uploadedFiles.push({
+                originalName: file.filename,
+                savedName: filename,
+                path: `s3://${process.env.AWS_S3_BUCKET}/${s3Key}`,
+                s3Key: s3Key,
+                size: file.data.length
+              });
+              
+              console.log(`Uploaded ${extension.toUpperCase()} file to S3: ${file.filename} as ${s3Key}`);
+            } catch (s3Error) {
+              console.error('S3 upload error:', s3Error);
+              throw new Error('Failed to upload file to S3');
+            }
+          } else {
+            // Save locally
+            const filepath = join(UPLOAD_DIR, filename);
+            await writeFile(filepath, file.data);
+            
+            uploadedFiles.push({
+              originalName: file.filename,
+              savedName: filename,
+              path: filepath,
+              size: file.data.length
+            });
+            
+            console.log(`Saved ${extension.toUpperCase()} file locally: ${file.filename} as ${filename}`);
+          }
         }
       }
       
@@ -254,4 +306,9 @@ server.listen(PORT, () => {
   console.log(`🔑 OpenAI API Key: ${process.env.OPENAI_API_KEY ? 'Set ✓' : 'Missing ✗'}`);
   console.log(`🌐 Azure Endpoint: ${process.env.AZURE_OPENAI_ENDPOINT || 'Using default'}`);
   console.log(`🔍 Google Search API: ${process.env.GOOGLE_API_KEY && process.env.GOOGLE_SEARCH_ENGINE_ID ? 'Set ✓' : 'Missing ✗'}`);
+  console.log(`📦 S3 Storage: ${USE_S3 ? `Enabled (${process.env.AWS_S3_BUCKET}) ✓` : 'Using local storage'}`);
+  if (USE_S3) {
+    console.log(`   AWS Region: ${process.env.AWS_REGION || 'us-east-1'}`);
+    console.log(`   Credentials: ${process.env.AWS_ACCESS_KEY_ID ? 'Using keys' : 'Using IAM role'}`);
+  }
 });
