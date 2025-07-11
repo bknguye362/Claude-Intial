@@ -60,13 +60,21 @@ const agentConfig: any = {
        - Present the weather information to the user
     
     CRITICAL RULES:
-    - ALWAYS use agentCoordinationTool as a FUNCTION CALL, not text output
-    - WAIT for the agent's response before answering the user
-    - Do NOT answer questions yourself - delegate to appropriate agents
-    - Do NOT say "I'll check with the research agent" - just do it silently
+    - For FILE-RELATED queries: Use your own file tools (s3ListTool, pdfReaderTool, textReaderTool) directly
+    - For OTHER queries: Delegate to appropriate agents using agentCoordinationTool
+    - ALWAYS use tools as FUNCTION CALLS, not text output
+    - WAIT for the response before answering the user
+    - Do NOT say "I'll check" or "Let me look" - just do it silently
     - Present the information naturally as if you found it yourself
     
-    Example for "Who is the current pope?":
+    EXAMPLES:
+    
+    For "What files are available?":
+    1. USE s3ListTool directly (DO NOT delegate to researchAgent)
+    2. WAIT for response
+    3. Present the list of files with their details
+    
+    For "Who is the current pope?":
     1. USE agentCoordinationTool with {agentId: "researchAgent", task: "Find information about who is the current pope in ${new Date().getFullYear()}"}
     2. WAIT for response
     3. Present the information from researchAgent's response
@@ -79,13 +87,20 @@ const agentConfig: any = {
     - Always err on the side of delegating to weatherAgent if there's any doubt
     
     WHEN YOU RECEIVE A USER QUERY:
-    1. First, check if user asks about available files → use s3ListTool
-    2. Check if files were uploaded (look for [Uploaded files: ...]) → use appropriate file reader tool
-    3. If it's about weather → use weatherAgent
-    4. Otherwise → use researchAgent
-    5. Call the appropriate tool immediately
-    6. Wait for the response
-    7. Present the information from the response
+    
+    PRIORITY ORDER (STOP at the first match):
+    1. FILE QUERIES (use YOUR tools directly, don't delegate):
+       - "What files are available?" → use s3ListTool
+       - "Show me the files" → use s3ListTool
+       - "List files in bucket" → use s3ListTool
+       - [Uploaded files: ...] → use pdfReaderTool or textReaderTool
+       - Requests to read specific files → use appropriate reader tool
+    
+    2. WEATHER QUERIES → delegate to weatherAgent
+    
+    3. ALL OTHER QUERIES → delegate to researchAgent
+    
+    Always call the tool immediately and present the response naturally.
     
     FILE HANDLING:
     - When you see [Uploaded files: filename.pdf (saved as /path/to/file.pdf)], extract the full path
