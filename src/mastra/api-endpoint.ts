@@ -16,8 +16,18 @@ async function handleRequest(body: any) {
   
   const agent = mastra.getAgent(agentId);
 
+  // Handle uploaded files if present
+  let enhancedMessage = body.message;
+  if (body.files && body.files.length > 0) {
+    const fileInfo = body.files.map((file: any) => 
+      `${file.originalName} (${file.filePath || file.location})`
+    ).join(', ');
+    enhancedMessage = `[Uploaded files: ${fileInfo}]\n${body.message}`;
+    console.log(`[API Endpoint] Files detected, enhanced message with file info`);
+  }
+  
   const messages = [
-    { role: 'user' as const, content: body.message }
+    { role: 'user' as const, content: enhancedMessage }
   ];
 
   // Store logs for this request
@@ -69,7 +79,7 @@ async function handleRequest(body: any) {
         // Add any other options that might be needed
       };
       console.log(`[API Endpoint] Stream options:`, streamOptions);
-      stream = await agent.stream(body.message, streamOptions);
+      stream = await agent.stream(enhancedMessage, streamOptions);
       console.log(`[API Endpoint] Stream created successfully`);
     } catch (streamCreationError) {
       console.error('[API Endpoint] Failed to create stream:', streamCreationError);
