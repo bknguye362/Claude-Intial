@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { existsSync } from 'fs';
 import { randomBytes } from 'crypto';
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+// S3 imports removed - using local storage only
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -14,19 +14,14 @@ const __dirname = dirname(__filename);
 const PORT = process.env.PORT || 3000;
 const UPLOAD_DIR = join(__dirname, 'uploads');
 
-// S3 Configuration
-const USE_S3 = process.env.AWS_S3_BUCKET ? true : false;
-const s3Client = USE_S3 ? new S3Client({
-  region: process.env.AWS_REGION || 'us-east-1',
-  credentials: process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY ? {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-  } : undefined, // Use IAM role if no credentials provided
-}) : null;
+// S3 Configuration - DISABLED, always use local storage
+const USE_S3 = false; // Always use local storage, even on Heroku
+const s3Client = null; // No S3 client needed
 
-// Ensure upload directory exists (for local development)
-if (!USE_S3 && !existsSync(UPLOAD_DIR)) {
+// Ensure upload directory exists (always create it)
+if (!existsSync(UPLOAD_DIR)) {
   await mkdir(UPLOAD_DIR, { recursive: true });
+  console.log(`Created uploads directory at: ${UPLOAD_DIR}`);
 }
 
 // Parse multipart form data
@@ -208,49 +203,19 @@ const server = createServer(async (req, res) => {
           const extension = file.contentType === 'application/pdf' ? '.pdf' : '.txt';
           const filename = `${fileId}${extension}`;
           
-          if (USE_S3 && s3Client) {
-            // Upload to S3
-            const s3Key = `uploads/${filename}`;
-            const uploadParams = {
-              Bucket: process.env.AWS_S3_BUCKET!,
-              Key: s3Key,
-              Body: file.data,
-              ContentType: file.contentType,
-              Metadata: {
-                originalName: file.filename,
-              }
-            };
-            
-            try {
-              await s3Client.send(new PutObjectCommand(uploadParams));
-              
-              uploadedFiles.push({
-                originalName: file.filename,
-                savedName: filename,
-                path: `s3://${process.env.AWS_S3_BUCKET}/${s3Key}`,
-                s3Key: s3Key,
-                size: file.data.length
-              });
-              
-              console.log(`Uploaded ${extension.toUpperCase()} file to S3: ${file.filename} as ${s3Key}`);
-            } catch (s3Error) {
-              console.error('S3 upload error:', s3Error);
-              throw new Error('Failed to upload file to S3');
-            }
-          } else {
-            // Save locally
-            const filepath = join(UPLOAD_DIR, filename);
-            await writeFile(filepath, file.data);
-            
-            uploadedFiles.push({
-              originalName: file.filename,
-              savedName: filename,
-              path: filepath,
-              size: file.data.length
-            });
-            
-            console.log(`Saved ${extension.toUpperCase()} file locally: ${file.filename} as ${filename}`);
-          }
+          // Always save locally
+          const filepath = join(UPLOAD_DIR, filename);
+          await writeFile(filepath, file.data);
+          
+          uploadedFiles.push({
+            originalName: file.filename,
+            savedName: filename,
+            path: filepath,
+            filePath: filepath, // Add filePath for compatibility
+            size: file.data.length
+          });
+          
+          console.log(`Saved ${extension.toUpperCase()} file locally: ${file.filename} as ${filename}`);
         }
       }
       

@@ -5,7 +5,7 @@ import { LibSQLStore } from '@mastra/libsql';
 import { pdfReaderTool } from '../tools/pdf-reader-tool.js';
 import { pdfChunkerTool } from '../tools/pdf-chunker-tool.js';
 import { textReaderTool } from '../tools/text-reader-tool.js';
-import { s3ListTool } from '../tools/s3-list-tool.js';
+import { localListTool } from '../tools/local-list-tool.js';
 
 // Initialize Azure OpenAI
 const openai = createOpenAI();
@@ -18,21 +18,21 @@ const agentConfig: any = {
     You are a specialized file management assistant that handles all file-related operations with advanced PDF processing capabilities.
     
     Your capabilities:
-    - List files available in the S3 bucket
+    - List files available in the local uploads directory
     - Read and analyze PDF files with intelligent chunking
     - Read and analyze text files
     - Answer questions about PDF document contents
     - Provide summaries and insights from file contents
     
     TOOLS AVAILABLE:
-    - s3ListTool: List files in the S3 bucket
+    - localListTool: List files in the local uploads directory
     - pdfReaderTool: Read entire PDF files (basic reading)
     - pdfChunkerTool: Advanced PDF processing with chunking and Q&A capabilities
     - textReaderTool: Read text files
     
     WORKFLOW:
     1. When asked about available files or to list files:
-       - Use s3ListTool to get the list of files
+       - Use localListTool to get the list of files
        - Present the files in a clear, organized format
        - Include file names, sizes, and when they were last modified
     
@@ -76,7 +76,7 @@ const agentConfig: any = {
     - If no relevant chunks are found, the tool will show the first few chunks for context
     
     ERROR HANDLING:
-    - If S3 is not configured, explain that file storage is not available
+    - If the uploads directory is empty, explain that no files have been uploaded yet
     - If a file cannot be read, provide a clear error message
     - If no files are found, state this clearly
     - If PDF hasn't been processed yet, process it first before querying
@@ -86,7 +86,7 @@ const agentConfig: any = {
   `,
   model: openai('gpt-4.1-test'),
   tools: { 
-    s3ListTool,
+    localListTool,
     pdfReaderTool,
     pdfChunkerTool,
     textReaderTool

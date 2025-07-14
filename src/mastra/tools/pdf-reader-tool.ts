@@ -2,7 +2,7 @@ import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
 import { readFile } from 'fs/promises';
 import { join, basename } from 'path';
-import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
+// S3 imports removed - using local storage only
 
 // Dynamic import to avoid initialization errors
 const pdf = async (dataBuffer: Buffer) => {
@@ -10,14 +10,8 @@ const pdf = async (dataBuffer: Buffer) => {
   return pdfParse(dataBuffer);
 };
 
-// S3 client for reading files
-const s3Client = process.env.AWS_S3_BUCKET ? new S3Client({
-  region: process.env.AWS_REGION || 'us-east-1',
-  credentials: process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY ? {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-  } : undefined,
-}) : null;
+// S3 client disabled - using local storage only
+const s3Client = null;
 
 export const pdfReaderTool = createTool({
   id: 'pdf-reader',
@@ -48,47 +42,17 @@ export const pdfReaderTool = createTool({
       let dataBuffer: Buffer;
       let filename: string;
       
-      // Check if this is an S3 path
-      if (context.filepath.startsWith('s3://')) {
-        // Parse S3 path
-        const s3PathMatch = context.filepath.match(/^s3:\/\/([^\/]+)\/(.+)$/);
-        if (!s3PathMatch || !s3Client) {
-          throw new Error('Invalid S3 path or S3 not configured');
-        }
-        
-        const [, bucket, key] = s3PathMatch;
-        filename = basename(key);
-        
-        console.log(`[PDF Reader Tool] Reading from S3: ${bucket}/${key}`);
-        
-        // Get object from S3
-        const getObjectCommand = new GetObjectCommand({
-          Bucket: bucket,
-          Key: key,
-        });
-        
-        const response = await s3Client.send(getObjectCommand);
-        const chunks: Uint8Array[] = [];
-        
-        // Read the stream
-        for await (const chunk of response.Body as any) {
-          chunks.push(chunk);
-        }
-        
-        dataBuffer = Buffer.concat(chunks);
-      } else {
-        // Local file path
-        // Security check: ensure the file is in the uploads directory
-        const normalizedPath = context.filepath.replace(/\\/g, '/');
-        if (!normalizedPath.includes('/uploads/')) {
-          throw new Error('File must be in the uploads directory');
-        }
-        
-        filename = basename(context.filepath);
-        
-        // Read the PDF file
-        dataBuffer = await readFile(context.filepath);
+      // Local file path only
+      // Security check: ensure the file is in the uploads directory
+      const normalizedPath = context.filepath.replace(/\\/g, '/');
+      if (!normalizedPath.includes('/uploads/')) {
+        throw new Error('File must be in the uploads directory');
       }
+      
+      filename = basename(context.filepath);
+      
+      // Read the PDF file
+      dataBuffer = await readFile(context.filepath);
       
       // Parse the PDF
       const pdfData = await pdf(dataBuffer);
