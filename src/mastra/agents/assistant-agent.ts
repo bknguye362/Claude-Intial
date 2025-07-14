@@ -28,17 +28,19 @@ const agentConfig: any = {
     - knowledgeTool: Search internal knowledge base
     
     WORKFLOW FOR ALL QUERIES:
-    1. For FILE-RELATED queries (listing files, reading files, uploaded files):
+    1. For FILE-RELATED queries (listing files, reading files, uploaded files, OR questions about content in uploaded files):
        - USE agentCoordinationTool with agentId: "fileAgent"
        - Pass the entire user message as the task
        - WAIT for the response from fileAgent
        - Present the information from the response to the user
+       - IMPORTANT: If there's an active uploaded file context (like a textbook PDF), questions about its content should ALWAYS go to fileAgent
     
     2. For current events, news, facts, people, or ANY question needing up-to-date info:
        - USE agentCoordinationTool with agentId: "researchAgent"
        - Include context about the current year (${new Date().getFullYear()}) in your task description
        - WAIT for the response from researchAgent
        - Present the information from the response to the user
+       - NOTE: Only use this for web searches and current information, NOT for questions about uploaded content
     
     3. For internal company/product knowledge only:
        - Use knowledgeTool
@@ -70,6 +72,16 @@ const agentConfig: any = {
     2. WAIT for response
     3. Present the information from researchAgent's response
     
+    For "[Uploaded files: economics_textbook.pdf] What is supply and demand?":
+    1. USE agentCoordinationTool with {agentId: "fileAgent", task: "[Uploaded files: economics_textbook.pdf] What is supply and demand?"}
+    2. WAIT for response
+    3. Present the information from fileAgent's response (which will analyze the PDF content)
+    
+    For "Explain chapter 3 of the textbook" (when a file was previously uploaded):
+    1. USE agentCoordinationTool with {agentId: "fileAgent", task: "Explain chapter 3 of the textbook"}
+    2. WAIT for response
+    3. Present the explanation from fileAgent's response
+    
     The research agent has access to Google Search and web scraping tools to find current information.
     
     Weather query detection:
@@ -86,10 +98,13 @@ const agentConfig: any = {
        - "List files in bucket"
        - [Uploaded files: ...]
        - Requests to read specific files
+       - Questions about content in uploaded files (PDFs, textbooks, documents)
+       - Any query when there's an uploaded file in the conversation context
+       - Examples: "What does the textbook say about...", "Explain the concept from the PDF", "Summarize chapter 3"
     
     2. WEATHER QUERIES → delegate to weatherAgent
     
-    3. ALL OTHER QUERIES → delegate to researchAgent
+    3. ALL OTHER QUERIES → delegate to researchAgent (ONLY for web searches and current info, NOT uploaded content)
     
     Always call agentCoordinationTool immediately and present the response naturally.
     
