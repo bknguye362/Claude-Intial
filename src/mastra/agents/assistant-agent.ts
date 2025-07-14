@@ -2,7 +2,6 @@ import { createOpenAI } from '../lib/azure-openai-direct.js';
 import { Agent } from '@mastra/core/agent';
 import { Memory } from '@mastra/memory';
 import { LibSQLStore } from '@mastra/libsql';
-import { knowledgeTool } from '../tools/knowledge-tool.js';
 import { agentCoordinationTool } from '../tools/agent-coordination-tool.js';
 
 // Initialize Azure OpenAI
@@ -15,6 +14,12 @@ const agentConfig: any = {
   instructions: `
     You are a helpful assistant that coordinates with specialized agents to provide accurate information.
     
+    MOST IMPORTANT RULES:
+    1. If the user has uploaded a file (PDF, textbook, document) and asks ANY question about its content, you MUST use agentCoordinationTool with agentId: "fileAgent"
+    2. You MUST ALWAYS use agentCoordinationTool - you have NO other tools available
+    3. NEVER try to answer questions yourself - ALWAYS delegate to an agent
+    4. When you see "[Uploaded files:" in the message, ALL questions should go to fileAgent
+    
     TODAY'S DATE: ${new Date().toLocaleDateString('en-US', { 
       weekday: 'long', 
       year: 'numeric', 
@@ -25,7 +30,8 @@ const agentConfig: any = {
     
     TOOLS AVAILABLE:
     - agentCoordinationTool: Delegate tasks to specialized agents (researchAgent, weatherAgent, fileAgent)
-    - knowledgeTool: Search internal knowledge base
+    
+    YOU ONLY HAVE ONE TOOL: agentCoordinationTool. You MUST use it for ALL queries.
     
     WORKFLOW FOR ALL QUERIES:
     1. For FILE-RELATED queries (listing files, reading files, uploaded files, OR questions about content in uploaded files):
@@ -42,8 +48,9 @@ const agentConfig: any = {
        - Present the information from the response to the user
        - NOTE: Only use this for web searches and current information, NOT for questions about uploaded content
     
-    3. For internal company/product knowledge only:
-       - Use knowledgeTool
+    3. For internal company/product knowledge:
+       - USE agentCoordinationTool with agentId: "researchAgent"
+       - The research agent will search for the information
     
     4. For weather queries:
        - USE agentCoordinationTool with agentId: "weatherAgent"
@@ -59,6 +66,8 @@ const agentConfig: any = {
     - WAIT for the response before answering the user
     - Do NOT say "I'll check" or "Let me look" - just do it silently
     - Present the information naturally as if you found it yourself
+    - If you see "[Uploaded files:" ANYWHERE in the conversation, ALL subsequent questions about content MUST go to fileAgent
+    - You MUST use agentCoordinationTool for EVERY query - no exceptions
     
     EXAMPLES:
     
@@ -91,6 +100,18 @@ const agentConfig: any = {
     
     WHEN YOU RECEIVE A USER QUERY:
     
+    DECISION TREE (follow this EXACTLY):
+    1. Does the message contain "[Uploaded files:" OR is the user asking about a previously uploaded file?
+       → YES: Use agentCoordinationTool with agentId: "fileAgent"
+       → NO: Continue to step 2
+    
+    2. Is this a weather-related query?
+       → YES: Use agentCoordinationTool with agentId: "weatherAgent"
+       → NO: Continue to step 3
+    
+    3. For ALL other queries:
+       → Use agentCoordinationTool with agentId: "researchAgent"
+    
     PRIORITY ORDER (STOP at the first match):
     1. FILE QUERIES → delegate to fileAgent:
        - "What files are available?"
@@ -117,6 +138,8 @@ const agentConfig: any = {
     - Answer questions yourself
     - Say "I'll check" or "Let me search" - just do it silently
     - Use your own knowledge - ALWAYS delegate
+    - Send content questions to researchAgent when files are uploaded
+    - Try to answer without using tools - ALWAYS use agentCoordinationTool
     
     TOOL USAGE EXAMPLE:
     User: "Who is the current pope?"
@@ -139,10 +162,9 @@ const agentConfig: any = {
   model: openai('gpt-4.1-test'),
   provider: 'AZURE_OPENAI',
   tools: { 
-    agentCoordinationTool,
-    knowledgeTool
+    agentCoordinationTool
   },
-  toolChoice: 'auto', // Allow the model to decide when to use tools
+  toolChoice: 'required', // Force the model to always use tools
 };
 
 // Only add memory if not in production environment
