@@ -61,6 +61,13 @@ const analyzeIntent = createStep({
       confidence = 0.9;
       keywords.push('research', 'current-info');
     }
+    
+    // Check for PDF file uploads
+    if (message.includes('[uploaded files:') || message.includes('.pdf')) {
+      intent = 'general';  // Use general intent to handle with special context
+      confidence = 0.9;
+      keywords.push('pdf-upload');
+    }
 
     return { message: inputData.message, intent, confidence, keywords };
   },
@@ -98,6 +105,8 @@ const generateResponse = createStep({
       context = 'The user needs support. Be especially helpful and empathetic.';
     } else if (inputData.intent === 'general' && inputData.keywords.includes('research')) {
       context = 'The user is asking about current events or factual information. You MUST use your agentCoordinationTool to delegate this to researchAgent for accurate, up-to-date information.';
+    } else if (inputData.intent === 'general' && inputData.keywords.includes('pdf-upload')) {
+      context = 'The user has uploaded a PDF file. You MUST use your agentCoordinationTool to delegate this to fileAgent for PDF processing. The fileAgent has access to PDF reading and processing tools.';
     }
 
     const response = await agent.stream([
