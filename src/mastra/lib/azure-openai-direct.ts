@@ -19,7 +19,11 @@ export function createOpenAI(options?: any) {
   const apiVersion = process.env.AZURE_OPENAI_API_VERSION || '2023-12-01-preview'; // This version supports function calling
   
   if (!apiKey) {
-    throw new Error('API key required. Set AZURE_OPENAI_API_KEY or AZURE_API_KEY');
+    console.error('[Azure Direct] No API key found. Checked environment variables:');
+    console.error('[Azure Direct] - AZURE_OPENAI_API_KEY:', process.env.AZURE_OPENAI_API_KEY ? 'Set' : 'Not set');
+    console.error('[Azure Direct] - AZURE_API_KEY:', process.env.AZURE_API_KEY ? 'Set' : 'Not set');
+    console.error('[Azure Direct] - OPENAI_API_KEY:', process.env.OPENAI_API_KEY ? 'Set' : 'Not set');
+    throw new Error('API key required. Set AZURE_OPENAI_API_KEY, AZURE_API_KEY, or OPENAI_API_KEY');
   }
 
   // Return a function that creates model configurations
@@ -199,7 +203,11 @@ export function createOpenAI(options?: any) {
           console.log('[Azure Direct] Request body preview:', JSON.stringify(requestBody).substring(0, 500));
           console.log('[Azure Direct] Tools in request:', requestBody.tools?.length || 0);
           
-          const response = await fetch(`${baseURL}/chat/completions?api-version=${apiVersion}`, {
+          const fullURL = `${baseURL}/chat/completions?api-version=${apiVersion}`;
+          console.log('[Azure Direct] Making request to:', fullURL);
+          console.log('[Azure Direct] Using API key:', apiKey ? `${apiKey.substring(0, 6)}...` : 'MISSING');
+          
+          const response = await fetch(fullURL, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -209,9 +217,12 @@ export function createOpenAI(options?: any) {
           });
 
           if (!response.ok) {
-            const error = await response.text();
-            console.error('[Azure Direct] API Error:', error);
-            throw new Error(`Azure OpenAI error: ${response.status}`);
+            const errorText = await response.text();
+            console.error('[Azure Direct] API Error Response:', response.status, response.statusText);
+            console.error('[Azure Direct] Error Details:', errorText);
+            console.error('[Azure Direct] Request URL:', fullURL);
+            console.error('[Azure Direct] Deployment Name:', deploymentName);
+            throw new Error(`Azure OpenAI error: ${response.status} ${response.statusText} - ${errorText}`);
           }
 
           // First, process the initial response to collect any tool calls
@@ -413,10 +424,29 @@ export function createOpenAI(options?: any) {
           };
         } catch (error) {
           console.error('[Azure Direct] Stream error:', error);
-          // Return empty stream on error
+          console.error('[Azure Direct] Error type:', error instanceof Error ? error.constructor.name : typeof error);
+          console.error('[Azure Direct] Error message:', error instanceof Error ? error.message : String(error));
+          
+          // Provide more specific error messages
+          let errorMessage = 'I apologize, but I encountered an error connecting to Azure OpenAI.';
+          
+          if (error instanceof Error) {
+            if (error.message.includes('fetch')) {
+              errorMessage += ' Network connection failed. Please check your internet connection and Azure endpoint.';
+              console.error('[Azure Direct] Network error - Endpoint:', endpoint);
+            } else if (error.message.includes('401')) {
+              errorMessage += ' Authentication failed. Please check your API key configuration.';
+            } else if (error.message.includes('404')) {
+              errorMessage += ' The deployment or endpoint was not found. Please check your Azure OpenAI configuration.';
+            } else if (error.message.includes('API key required')) {
+              errorMessage += ' No API key found. Please set AZURE_OPENAI_API_KEY, AZURE_API_KEY, or OPENAI_API_KEY environment variable.';
+            }
+          }
+          
+          // Return error message stream
           return {
             textStream: (async function* () {
-              yield 'I apologize, but I encountered an error connecting to Azure OpenAI.';
+              yield errorMessage;
             })(),
             usage: Promise.resolve({ promptTokens: 0, completionTokens: 0, totalTokens: 0 })
           };
