@@ -24,12 +24,8 @@ const agentConfig: any = {
     - This creates a recursive summary of the entire document
     
     For SPECIFIC QUESTIONS (e.g., "what's the last paragraph", "find information about X"):
-    YOU MUST ALWAYS DO BOTH STEPS IN ORDER:
-    1. FIRST: ALWAYS call pdfChunkerTool with action: "process" to chunk the PDF
-    2. THEN: ONLY AFTER processing succeeds, call pdfChunkerTool with action: "query"
-    
-    IMPORTANT: If you try to query without processing first, it will fail with "PDF not found in cache"
-    NEVER skip the process step - even if you think the PDF was already processed!
+    - Use pdfChunkerTool with action: "query" and include the question
+    - The tool will automatically process the PDF if needed
     
     ALWAYS use tools - do not just describe what you would do!
     
@@ -63,14 +59,11 @@ const agentConfig: any = {
        b) This creates a recursive summary of the entire document
        
        FOR SPECIFIC QUESTIONS ("what's the last paragraph", "find info about X"):
-       YOU MUST DO BOTH STEPS:
-       a) STEP 1: Call pdfChunkerTool({action: "process", filepath: "/path/to/file.pdf"})
-       b) WAIT for success response
-       c) STEP 2: Call pdfChunkerTool({action: "query", filepath: "/path/to/file.pdf", query: "the user's question"})
+       a) Call pdfChunkerTool({action: "query", filepath: "/path/to/file.pdf", query: "the user's question"})
+       b) The tool will automatically process the PDF if needed
        
        Example for "What is the last paragraph?":
-       1. pdfChunkerTool({action: "process", filepath: "/app/uploads/doc.pdf"})
-       2. pdfChunkerTool({action: "query", filepath: "/app/uploads/doc.pdf", query: "What is the last paragraph?"})
+       pdfChunkerTool({action: "query", filepath: "/app/uploads/doc.pdf", query: "What is the last paragraph?"})
     
     3. When asked to read a specific file:
        - If the file path is provided, use it directly

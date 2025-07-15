@@ -4,6 +4,8 @@ import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
 import { readFile } from 'fs/promises';
 import { join, basename } from 'path';
+import * as fs from 'fs';
+import * as path from 'path';
 // S3 imports removed - using local storage only
 
 // Workaround for pdf-parse debug mode issue
@@ -507,18 +509,84 @@ export const pdfChunkerTool = createTool({
         console.log(`[PDF Chunker Tool] Currently cached PDFs:`, Array.from(pdfChunksCache.keys()));
         
         // Check if PDF has been processed
-        const cached = pdfChunksCache.get(cacheKey);
+        let cached = pdfChunksCache.get(cacheKey);
         
         if (!cached) {
-          console.log(`[PDF Chunker Tool] ❌ ERROR: PDF not found in cache!`);
-          console.log(`[PDF Chunker Tool] Available keys:`, Array.from(pdfChunksCache.keys()));
-          console.log(`[PDF Chunker Tool] Requested key: "${cacheKey}"`);
-          return {
-            success: false,
-            action: 'query',
-            message: 'PDF has not been processed yet. Please use action "process" first.',
-            error: 'PDF not found in cache',
+          console.log(`[PDF Chunker Tool] PDF not in cache, processing on-demand for query...`);
+          
+          // Check if file exists
+          if (!fs.existsSync(filepath)) {
+            return {
+              success: false,
+              action: 'query',
+              message: 'File not found',
+              error: `File does not exist: ${filepath}`,
+            };
+          }
+
+          // Read and process the PDF (same as summarize action does)
+          const fileBuffer = fs.readFileSync(filepath);
+          let pdfData;
+          
+          try {
+            // Try standard parsing first
+            if (pdfParse) {
+              pdfData = await pdfParse(fileBuffer);
+            } else {
+              // Fallback parsing
+              pdfData = await fallbackPdfParse(fileBuffer);
+            }
+          } catch (parseError: any) {
+            console.log('[PDF-CHUNKER-V3] Primary parsing failed, using fallback parser:', parseError.message);
+            try {
+              pdfData = await fallbackPdfParse(fileBuffer);
+            } catch (fallbackError: any) {
+              return {
+                success: false,
+                action: 'query',
+                message: 'Failed to parse PDF',
+                error: fallbackError.message,
+              };
+            }
+          }
+
+          // Extract text and metadata
+          const text = pdfData.text || '';
+          const metadata = {
+            pages: pdfData.numpages || 1,
+            info: pdfData.info || {},
+            title: pdfData.info?.Title || path.basename(filepath, '.pdf'),
+            author: pdfData.info?.Author || 'Unknown',
           };
+
+          // Chunk the text
+          const textChunks = chunkTextByLines(text, context.chunkSize || 200);
+          
+          // Create chunk objects with estimated page numbers (same as summarize action)
+          const chunks = textChunks.map((content, index) => {
+            const chunkPosition = index / textChunks.length;
+            const pageStart = Math.floor(chunkPosition * metadata.pages) + 1;
+            const pageEnd = Math.min(
+              Math.ceil((index + 1) / textChunks.length * metadata.pages),
+              metadata.pages
+            );
+            
+            return {
+              index,
+              content,
+              pageStart,
+              pageEnd,
+            };
+          });
+          
+          // Cache for future use
+          cached = {
+            chunks,
+            metadata,
+            timestamp: Date.now(),
+          };
+          pdfChunksCache.set(cacheKey, cached);
+          console.log(`[PDF Chunker Tool] Successfully processed and cached PDF with ${chunks.length} chunks`);
         }
         
         if (!context.query) {
