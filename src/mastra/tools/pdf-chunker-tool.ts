@@ -207,6 +207,14 @@ export const pdfChunkerTool = createTool({
     error: z.string().optional(),
   }),
   execute: async ({ context }) => {
+    // TEMPORARY: Return immediately to verify this execute function is being called
+    return {
+      success: false,
+      action: context.action || 'unknown',
+      message: 'Failed to process PDF',
+      error: '[PDF-CHUNKER-V3-IMMEDIATE] Tool execute was called - returning immediately for debug'
+    };
+    
     console.log(`[PDF Chunker Tool] ===== TOOL CALLED =====`);
     console.log(`[PDF Chunker Tool] Context:`, JSON.stringify(context));
     console.log(`[PDF Chunker Tool] Process ID:`, process.pid);
@@ -476,7 +484,7 @@ export const pdfChunkerTool = createTool({
         success: false,
         action: context.action,
         message: 'Failed to process PDF',
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: `[PDF-CHUNKER-V3] ${error instanceof Error ? error.message : 'Unknown error'}`,
       };
     }
   },
