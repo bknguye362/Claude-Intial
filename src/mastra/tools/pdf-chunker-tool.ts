@@ -35,6 +35,61 @@ function chunkTextByLines(text: string, linesPerChunk: number): string[] {
   return chunks;
 }
 
+// Helper function to create a summary of text
+function createSummary(text: string, maxLength: number = 500): string {
+  // Simple summarization: take first and last parts, and key sentences
+  const sentences = text.match(/[^.!?]+[.!?]+/g) || [];
+  if (sentences.length <= 3) return text;
+  
+  // Take first sentence, some middle sentences, and last sentence
+  const summary = [
+    sentences[0],
+    ...sentences.slice(1, -1).filter((_, i) => i % Math.floor(sentences.length / 5) === 0).slice(0, 3),
+    sentences[sentences.length - 1]
+  ].join(' ');
+  
+  return summary.length > maxLength ? summary.substring(0, maxLength) + '...' : summary;
+}
+
+// Helper function to recursively summarize chunks
+async function recursiveSummarize(chunks: string[]): Promise<string> {
+  console.log(`[PDF Chunker Tool] Starting recursive summarization of ${chunks.length} chunks`);
+  
+  if (chunks.length === 0) return 'No content to summarize';
+  if (chunks.length === 1) return createSummary(chunks[0]);
+  
+  let currentSummary = '';
+  const summaries: string[] = [];
+  
+  // Process each chunk and create cumulative summaries
+  for (let i = 0; i < chunks.length; i++) {
+    console.log(`[PDF Chunker Tool] Processing chunk ${i + 1}/${chunks.length}`);
+    
+    // Create summary of current chunk
+    const chunkSummary = createSummary(chunks[i]);
+    
+    if (i === 0) {
+      // First chunk - just use its summary
+      currentSummary = chunkSummary;
+    } else {
+      // Combine with previous summary
+      const combined = currentSummary + '\n\n' + chunkSummary;
+      currentSummary = createSummary(combined, 800);
+    }
+    
+    // Store intermediate summaries for potential use
+    summaries.push(currentSummary);
+    
+    // Log progress every 10 chunks
+    if ((i + 1) % 10 === 0) {
+      console.log(`[PDF Chunker Tool] Processed ${i + 1} chunks, current summary length: ${currentSummary.length} chars`);
+    }
+  }
+  
+  console.log(`[PDF Chunker Tool] Completed recursive summarization. Final summary length: ${currentSummary.length} chars`);
+  return currentSummary;
+}
+
 // Helper function to search chunks for relevant content
 function searchChunks(
   chunks: Array<{ index: number; content: string; pageStart: number; pageEnd: number }>, 
@@ -74,7 +129,7 @@ export const pdfChunkerTool = createTool({
   inputSchema: z.object({
     filepath: z.string().optional().describe('The file path of the PDF to read'),
     filePath: z.string().optional().describe('The file path of the PDF to read (alternative parameter name)'),
-    action: z.enum(['process', 'query']).describe('Action to perform: "process" to chunk the PDF, "query" to search existing chunks'),
+    action: z.enum(['process', 'query', 'summarize']).describe('Action to perform: "process" to chunk the PDF, "query" to search existing chunks, "summarize" to create a recursive summary'),
     chunkSize: z.number().default(200).optional().describe('Number of lines per chunk (only for process action)'),
     query: z.string().optional().describe('Search query for finding relevant chunks (only for query action)'),
   }),
@@ -96,6 +151,7 @@ export const pdfChunkerTool = createTool({
       pages: z.number().optional(),
       characters: z.number().optional(),
     }).optional(),
+    summary: z.string().optional().describe('Recursive summary of the document'),
     message: z.string(),
     error: z.string().optional(),
   }),
@@ -238,12 +294,102 @@ export const pdfChunkerTool = createTool({
           chunks: relevantChunks,
           message: `Found ${relevantChunks.length} relevant chunks for query: "${context.query}"`,
         };
+      } else if (context.action === 'summarize') {
+        console.log(`\n[PDF Chunker Tool] ========== SUMMARIZE ACTION ==========`);
+        console.log(`[PDF Chunker Tool] Creating recursive summary for: ${filepath}`);
+        
+        let dataBuffer: Buffer;
+        let filename: string;
+        
+        // Check if PDF is already processed
+        const cached = pdfChunksCache.get(cacheKey);
+        
+        if (cached) {
+          // Use cached chunks
+          console.log(`[PDF Chunker Tool] Using cached chunks for summarization`);
+          const chunkTexts = cached.chunks.map(chunk => chunk.content);
+          const summary = await recursiveSummarize(chunkTexts);
+          
+          return {
+            success: true,
+            action: 'summarize',
+            filename: basename(filepath),
+            totalChunks: cached.chunks.length,
+            summary,
+            metadata: cached.metadata,
+            message: `Successfully created recursive summary of "${basename(filepath)}" from ${cached.chunks.length} chunks.`,
+          };
+        } else {
+          // Need to process the PDF first
+          console.log(`[PDF Chunker Tool] PDF not cached, processing first...`);
+          
+          // Local file path only
+          const normalizedPath = filepath.replace(/\\/g, '/');
+          if (!normalizedPath.includes('/uploads/')) {
+            throw new Error('File must be in the uploads directory');
+          }
+          
+          filename = basename(filepath);
+          dataBuffer = await readFile(filepath);
+          
+          // Parse the PDF
+          const pdfData = await pdf(dataBuffer);
+          
+          // Extract metadata
+          const metadata = {
+            title: pdfData.info?.Title,
+            author: pdfData.info?.Author,
+            pages: pdfData.numpages,
+            characters: pdfData.text.length,
+          };
+          
+          // Split text into chunks
+          const textChunks = chunkTextByLines(pdfData.text, context.chunkSize || 200);
+          console.log(`[PDF Chunker Tool] Split PDF into ${textChunks.length} chunks for summarization`);
+          
+          // Create chunk objects with estimated page numbers
+          const chunks = textChunks.map((content, index) => {
+            const chunkPosition = index / textChunks.length;
+            const pageStart = Math.floor(chunkPosition * pdfData.numpages) + 1;
+            const pageEnd = Math.min(
+              Math.ceil((index + 1) / textChunks.length * pdfData.numpages),
+              pdfData.numpages
+            );
+            
+            return {
+              index,
+              content,
+              pageStart,
+              pageEnd,
+            };
+          });
+          
+          // Cache the chunks for future use
+          pdfChunksCache.set(cacheKey, {
+            chunks,
+            metadata,
+            timestamp: Date.now(),
+          });
+          
+          // Create recursive summary
+          const summary = await recursiveSummarize(textChunks);
+          
+          return {
+            success: true,
+            action: 'summarize',
+            filename,
+            totalChunks: chunks.length,
+            summary,
+            metadata,
+            message: `Successfully processed and created recursive summary of "${filename}" from ${chunks.length} chunks.`,
+          };
+        }
       }
       
       return {
         success: false,
         action: context.action,
-        message: 'Invalid action. Use "process" to chunk PDF or "query" to search.',
+        message: 'Invalid action. Use "process" to chunk PDF, "query" to search, or "summarize" to create a recursive summary.',
         error: 'Invalid action',
       };
       

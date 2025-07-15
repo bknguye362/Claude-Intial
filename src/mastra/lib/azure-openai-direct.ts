@@ -224,7 +224,7 @@ export function createOpenAI(options?: any) {
                     properties: {
                       action: {
                         type: 'string',
-                        enum: ['process', 'query'],
+                        enum: ['process', 'query', 'summarize'],
                         description: 'Action to perform'
                       },
                       filepath: {
@@ -467,6 +467,9 @@ export function createOpenAI(options?: any) {
                     
                     if (toolName === 'pdfChunkerTool') {
                       console.log(`[Azure Direct] Calling pdfChunkerTool with:`, { context: args });
+                      console.log(`[Azure Direct] Tool object type:`, typeof tool);
+                      console.log(`[Azure Direct] Tool has execute?:`, 'execute' in tool);
+                      console.log(`[Azure Direct] Tool.execute type:`, typeof tool.execute);
                     }
                     
                     const result = await tool.execute({ context: args });
