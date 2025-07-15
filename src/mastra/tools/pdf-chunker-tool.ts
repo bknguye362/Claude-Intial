@@ -72,7 +72,8 @@ export const pdfChunkerTool = createTool({
   id: 'pdf-chunker',
   description: 'Read PDF files, split into chunks, and search for specific information. Perfect for Q&A about PDF documents.',
   inputSchema: z.object({
-    filepath: z.string().describe('The file path of the PDF to read'),
+    filepath: z.string().optional().describe('The file path of the PDF to read'),
+    filePath: z.string().optional().describe('The file path of the PDF to read (alternative parameter name)'),
     action: z.enum(['process', 'query']).describe('Action to perform: "process" to chunk the PDF, "query" to search existing chunks'),
     chunkSize: z.number().default(200).optional().describe('Number of lines per chunk (only for process action)'),
     query: z.string().optional().describe('Search query for finding relevant chunks (only for query action)'),
@@ -103,24 +104,29 @@ export const pdfChunkerTool = createTool({
     console.log(`[PDF Chunker Tool] Context:`, JSON.stringify(context));
     
     try {
-      const cacheKey = context.filepath;
+      // Handle both 'filepath' and 'filePath' for compatibility
+      const filepath = context.filepath || context.filePath;
+      if (!filepath) {
+        throw new Error('Missing required parameter: filepath or filePath');
+      }
+      const cacheKey = filepath;
       
       if (context.action === 'process') {
         console.log(`\n[PDF Chunker Tool] ========== PROCESS ACTION ==========`);
-        console.log(`[PDF Chunker Tool] Processing PDF: ${context.filepath}`);
+        console.log(`[PDF Chunker Tool] Processing PDF: ${filepath}`);
         console.log(`[PDF Chunker Tool] Chunk size: ${context.chunkSize || 200} lines`);
         
         let dataBuffer: Buffer;
         let filename: string;
         
         // Local file path only
-        const normalizedPath = context.filepath.replace(/\\/g, '/');
+        const normalizedPath = filepath.replace(/\\/g, '/');
         if (!normalizedPath.includes('/uploads/')) {
           throw new Error('File must be in the uploads directory');
         }
         
-        filename = basename(context.filepath);
-        dataBuffer = await readFile(context.filepath);
+        filename = basename(filepath);
+        dataBuffer = await readFile(filepath);
         
         // Parse the PDF
         const pdfData = await pdf(dataBuffer);
@@ -217,7 +223,7 @@ export const pdfChunkerTool = createTool({
           return {
             success: true,
             action: 'query',
-            filename: basename(context.filepath),
+            filename: basename(filepath),
             totalChunks: cached.chunks.length,
             chunks: cached.chunks.slice(0, 5),
             message: `No direct matches found for "${context.query}". Showing first 5 chunks for context.`,
@@ -227,7 +233,7 @@ export const pdfChunkerTool = createTool({
         return {
           success: true,
           action: 'query',
-          filename: basename(context.filepath),
+          filename: basename(filepath),
           totalChunks: cached.chunks.length,
           chunks: relevantChunks,
           message: `Found ${relevantChunks.length} relevant chunks for query: "${context.query}"`,

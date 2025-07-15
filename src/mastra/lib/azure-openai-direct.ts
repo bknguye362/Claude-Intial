@@ -227,7 +227,7 @@ export function createOpenAI(options?: any) {
                         enum: ['process', 'query'],
                         description: 'Action to perform'
                       },
-                      filePath: {
+                      filepath: {
                         type: 'string',
                         description: 'Path to the PDF file'
                       },
@@ -241,7 +241,7 @@ export function createOpenAI(options?: any) {
                         description: 'Question to answer (for query action)'
                       }
                     },
-                    required: ['action', 'filePath']
+                    required: ['action', 'filepath']
                   }
                 }
               },
