@@ -6,31 +6,44 @@ import { readFile } from 'fs/promises';
 import { join, basename } from 'path';
 // S3 imports removed - using local storage only
 
-// Import pdf-parse - handle the module carefully to avoid debug mode
-let pdfParse: any;
-
-// Set a global to ensure pdf-parse doesn't think it's running standalone
-if (typeof global !== 'undefined') {
-  (global as any).PDF_PARSE_NO_DEBUG = true;
-}
-
-try {
-  // Try regular require first (this should set module.parent correctly)
-  pdfParse = require('pdf-parse');
-  console.log(`[PDF Chunker Tool] Successfully required pdf-parse`);
-} catch (e) {
-  console.error(`[PDF Chunker Tool] Regular require failed:`, e);
-  console.log(`[PDF Chunker Tool] Will use dynamic import as fallback`);
-}
+// Delay pdf-parse import until it's needed to avoid debug mode issues
+let pdfParse: any = null;
 
 const pdf = async (dataBuffer: Buffer) => {
   console.log(`[PDF Chunker Tool] Parsing PDF...`);
   
   if (!pdfParse) {
-    // Fallback to dynamic import if require didn't work
-    console.log(`[PDF Chunker Tool] Using dynamic import of pdf-parse...`);
-    const pdfParseModule = await import('pdf-parse');
-    pdfParse = pdfParseModule.default || pdfParseModule;
+    try {
+      console.log(`[PDF Chunker Tool] Loading pdf-parse on demand...`);
+      
+      // Try to set up environment to prevent debug mode
+      const originalMain = require.main;
+      const originalParent = module.parent;
+      
+      // Ensure module has a parent to prevent debug mode
+      if (!module.parent) {
+        (module as any).parent = { filename: 'pdf-chunker-tool.ts' };
+      }
+      
+      // Set require.main to this module to prevent debug mode
+      (require as any).main = module;
+      
+      // Now require pdf-parse
+      pdfParse = require('pdf-parse');
+      console.log(`[PDF Chunker Tool] Successfully loaded pdf-parse`);
+      
+      // Restore original values
+      (require as any).main = originalMain;
+      if (!originalParent) {
+        (module as any).parent = originalParent;
+      }
+    } catch (e) {
+      console.error(`[PDF Chunker Tool] Failed to load pdf-parse:`, e);
+      // Try dynamic import as last resort
+      console.log(`[PDF Chunker Tool] Trying dynamic import...`);
+      const pdfParseModule = await import('pdf-parse');
+      pdfParse = pdfParseModule.default || pdfParseModule;
+    }
   }
   
   console.log(`[PDF Chunker Tool] pdf-parse type:`, typeof pdfParse);
