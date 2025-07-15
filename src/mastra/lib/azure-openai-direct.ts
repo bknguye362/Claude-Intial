@@ -5,12 +5,22 @@
 import { googleSearchTool } from '../tools/google-search-tool.js';
 import { webScraperTool } from '../tools/web-scraper-tool.js';
 import { knowledgeTool } from '../tools/knowledge-tool.js';
+import { pdfReaderTool } from '../tools/pdf-reader-tool.js';
+import { pdfChunkerTool } from '../tools/pdf-chunker-tool.js';
+import { textReaderTool } from '../tools/text-reader-tool.js';
+import { localListTool } from '../tools/local-list-tool.js';
+import { agentCoordinationTool } from '../tools/agent-coordination-tool.js';
 
 // Manual tool registry
 const manualTools = {
   googleSearchTool,
   webScraperTool,
-  knowledgeTool
+  knowledgeTool,
+  pdfReaderTool,
+  pdfChunkerTool,
+  textReaderTool,
+  localListTool,
+  agentCoordinationTool
 };
 
 export function createOpenAI(options?: any) {
@@ -68,19 +78,32 @@ export function createOpenAI(options?: any) {
           // Check if this is for the research agent based on the message content
           const isResearchAgent = messageArray.some(msg => 
             msg.content && typeof msg.content === 'string' && 
-            msg.content.includes('research assistant') || 
-            msg.content.includes('Google Search')
+            (msg.content.includes('research assistant') || 
+             msg.content.includes('Google Search'))
+          );
+          
+          // Check if this is for the file agent
+          const isFileAgent = messageArray.some(msg => 
+            msg.content && typeof msg.content === 'string' && 
+            (msg.content.includes('file management assistant') || 
+             msg.content.includes('file-related operations') ||
+             msg.content.includes('PDF processing capabilities'))
           );
           
           // Determine which agent is making the call
           let callingAgent = 'Unknown';
-          if (isResearchAgent) {
+          if (isFileAgent) {
+            callingAgent = 'File Agent';
+          } else if (isResearchAgent) {
             callingAgent = 'Research Agent';
           } else if (messageArray.some(msg => msg.content && typeof msg.content === 'string' && msg.content.includes('helpful assistant'))) {
             callingAgent = 'Assistant Agent';
           }
           
           console.log(`[Azure Direct] === AGENT IDENTIFICATION: ${callingAgent} ===`);
+          
+          // Debug: Log what we're checking
+          console.log('[Azure Direct] Agent detection - isFileAgent:', isFileAgent, 'isResearchAgent:', isResearchAgent);
           
           // If no tools provided and this is for the research agent, manually add them
           if ((!tools || Object.keys(tools).length === 0) && isResearchAgent) {
@@ -163,6 +186,131 @@ export function createOpenAI(options?: any) {
             ];
             requestBody.tool_choice = 'auto';
             console.log('[Azure Direct] Added manual tools for research agent:', requestBody.tools.map((t: any) => t.function.name));
+          } else if ((!tools || Object.keys(tools).length === 0) && isFileAgent) {
+            console.log('[Azure Direct] No tools provided, adding manual tools for file agent');
+            
+            // Manually define the tools for file agent
+            requestBody.tools = [
+              {
+                type: 'function',
+                function: {
+                  name: 'localListTool',
+                  description: 'List files available in the local uploads directory',
+                  parameters: {
+                    type: 'object',
+                    properties: {
+                      directory: {
+                        type: 'string',
+                        description: 'Directory to list files from',
+                        default: './uploads'
+                      }
+                    },
+                    required: []
+                  }
+                }
+              },
+              {
+                type: 'function',
+                function: {
+                  name: 'pdfChunkerTool',
+                  description: 'Advanced PDF processing with chunking and Q&A capabilities',
+                  parameters: {
+                    type: 'object',
+                    properties: {
+                      action: {
+                        type: 'string',
+                        enum: ['process', 'query'],
+                        description: 'Action to perform'
+                      },
+                      filePath: {
+                        type: 'string',
+                        description: 'Path to the PDF file'
+                      },
+                      chunkSize: {
+                        type: 'number',
+                        description: 'Number of lines per chunk',
+                        default: 20
+                      },
+                      query: {
+                        type: 'string',
+                        description: 'Question to answer (for query action)'
+                      }
+                    },
+                    required: ['action', 'filePath']
+                  }
+                }
+              },
+              {
+                type: 'function',
+                function: {
+                  name: 'pdfReaderTool',
+                  description: 'Read entire PDF files (basic reading)',
+                  parameters: {
+                    type: 'object',
+                    properties: {
+                      filePath: {
+                        type: 'string',
+                        description: 'Path to the PDF file'
+                      }
+                    },
+                    required: ['filePath']
+                  }
+                }
+              },
+              {
+                type: 'function',
+                function: {
+                  name: 'textReaderTool',
+                  description: 'Read text files',
+                  parameters: {
+                    type: 'object',
+                    properties: {
+                      filePath: {
+                        type: 'string',
+                        description: 'Path to the text file'
+                      }
+                    },
+                    required: ['filePath']
+                  }
+                }
+              }
+            ];
+            requestBody.tool_choice = 'auto';
+            console.log('[Azure Direct] Added manual tools for file agent:', requestBody.tools.map((t: any) => t.function.name));
+          } else if ((!tools || Object.keys(tools).length === 0) && callingAgent === 'Assistant Agent') {
+            console.log('[Azure Direct] No tools provided, adding manual tools for assistant agent');
+            
+            // Manually define the agentCoordinationTool for assistant agent
+            requestBody.tools = [
+              {
+                type: 'function',
+                function: {
+                  name: 'agentCoordinationTool',
+                  description: 'Delegate a task to another specialized agent and get their response',
+                  parameters: {
+                    type: 'object',
+                    properties: {
+                      agentId: {
+                        type: 'string',
+                        enum: ['researchAgent', 'fileAgent'],
+                        description: 'The ID of the agent to delegate to'
+                      },
+                      task: {
+                        type: 'string',
+                        description: 'The task or question to delegate to the agent'
+                      },
+                      context: {
+                        type: 'string',
+                        description: 'Additional context for the agent'
+                      }
+                    },
+                    required: ['agentId', 'task']
+                  }
+                }
+              }
+            ];
+            requestBody.tool_choice = 'required';
+            console.log('[Azure Direct] Added manual tools for assistant agent:', requestBody.tools.map((t: any) => t.function.name));
           } else {
             // Use provided tools
             console.log('[Azure Direct] Tools provided:', Object.keys(tools));
