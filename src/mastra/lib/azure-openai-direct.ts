@@ -5,7 +5,7 @@
 import { googleSearchTool } from '../tools/google-search-tool.js';
 import { webScraperTool } from '../tools/web-scraper-tool.js';
 import { knowledgeTool } from '../tools/knowledge-tool.js';
-import { pdfReaderTool } from '../tools/pdf-reader-tool.js';
+// import { pdfReaderTool } from '../tools/pdf-reader-tool.js'; // Removed - causes pdf-parse debug mode
 import { pdfChunkerTool } from '../tools/pdf-chunker-tool.js';
 import { textReaderTool } from '../tools/text-reader-tool.js';
 import { localListTool } from '../tools/local-list-tool.js';
@@ -16,7 +16,7 @@ const manualTools = {
   googleSearchTool,
   webScraperTool,
   knowledgeTool,
-  pdfReaderTool,
+  // pdfReaderTool, // Removed - not used and causes pdf-parse debug mode
   pdfChunkerTool,
   textReaderTool,
   localListTool,
