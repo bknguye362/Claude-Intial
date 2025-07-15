@@ -99,6 +99,9 @@ export const pdfChunkerTool = createTool({
     error: z.string().optional(),
   }),
   execute: async ({ context }) => {
+    console.log(`[PDF Chunker Tool] ===== TOOL CALLED =====`);
+    console.log(`[PDF Chunker Tool] Context:`, JSON.stringify(context));
+    
     try {
       const cacheKey = context.filepath;
       

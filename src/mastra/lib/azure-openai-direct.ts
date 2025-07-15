@@ -462,10 +462,13 @@ export function createOpenAI(options?: any) {
                 if (tool) {
                   try {
                     console.log(`[Azure Direct] >>> ${callingAgent} is calling tool: ${toolName}`);
-                    console.log(`[Azure Direct] Environment check - GOOGLE_API_KEY:`, process.env.GOOGLE_API_KEY ? 'Present' : 'Missing');
-                    console.log(`[Azure Direct] Environment check - GOOGLE_SEARCH_ENGINE_ID:`, process.env.GOOGLE_SEARCH_ENGINE_ID ? 'Present' : 'Missing');
                     const args = JSON.parse(toolCall.function.arguments);
-                    console.log(`[Azure Direct] Tool arguments:`, args);
+                    console.log(`[Azure Direct] Tool arguments:`, JSON.stringify(args));
+                    
+                    if (toolName === 'pdfChunkerTool') {
+                      console.log(`[Azure Direct] Calling pdfChunkerTool with:`, { context: args });
+                    }
+                    
                     const result = await tool.execute({ context: args });
                     
                     // Add tool result message
