@@ -103,7 +103,9 @@ export const pdfChunkerTool = createTool({
       const cacheKey = context.filepath;
       
       if (context.action === 'process') {
+        console.log(`\n[PDF Chunker Tool] ========== PROCESS ACTION ==========`);
         console.log(`[PDF Chunker Tool] Processing PDF: ${context.filepath}`);
+        console.log(`[PDF Chunker Tool] Chunk size: ${context.chunkSize || 200} lines`);
         
         let dataBuffer: Buffer;
         let filename: string;
@@ -129,7 +131,8 @@ export const pdfChunkerTool = createTool({
         };
         
         // Split text into chunks
-        const textChunks = chunkTextByLines(pdfData.text, context.chunkSize || 20);
+        const textChunks = chunkTextByLines(pdfData.text, context.chunkSize || 200);
+        console.log(`[PDF Chunker Tool] Split PDF into ${textChunks.length} chunks`);
         
         // Create chunk objects with estimated page numbers
         const chunks = textChunks.map((content, index) => {
@@ -155,7 +158,10 @@ export const pdfChunkerTool = createTool({
           timestamp: Date.now(),
         });
         
-        console.log(`[PDF Chunker Tool] Created ${chunks.length} chunks of ~${context.chunkSize || 20} lines each`);
+        console.log(`[PDF Chunker Tool] ✓ Cached ${chunks.length} chunks for: ${cacheKey}`);
+        console.log(`[PDF Chunker Tool] Cache now contains PDFs:`, Array.from(pdfChunksCache.keys()));
+        
+        console.log(`[PDF Chunker Tool] Created ${chunks.length} chunks of ~${context.chunkSize || 200} lines each`);
         
         return {
           success: true,
@@ -168,10 +174,17 @@ export const pdfChunkerTool = createTool({
         };
         
       } else if (context.action === 'query') {
+        console.log(`\n[PDF Chunker Tool] ========== QUERY ACTION ==========`);
+        console.log(`[PDF Chunker Tool] Looking for cached PDF: ${cacheKey}`);
+        console.log(`[PDF Chunker Tool] Currently cached PDFs:`, Array.from(pdfChunksCache.keys()));
+        
         // Check if PDF has been processed
         const cached = pdfChunksCache.get(cacheKey);
         
         if (!cached) {
+          console.log(`[PDF Chunker Tool] ❌ ERROR: PDF not found in cache!`);
+          console.log(`[PDF Chunker Tool] Available keys:`, Array.from(pdfChunksCache.keys()));
+          console.log(`[PDF Chunker Tool] Requested key: "${cacheKey}"`);
           return {
             success: false,
             action: 'query',
@@ -190,9 +203,11 @@ export const pdfChunkerTool = createTool({
         }
         
         console.log(`[PDF Chunker Tool] Searching for: "${context.query}"`);
+        console.log(`[PDF Chunker Tool] Total chunks available: ${cached.chunks.length}`);
         
         // Search for relevant chunks
         const relevantChunks = searchChunks(cached.chunks, context.query);
+        console.log(`[PDF Chunker Tool] Found ${relevantChunks.length} relevant chunks`);
         
         if (relevantChunks.length === 0) {
           // Return some chunks anyway for context
