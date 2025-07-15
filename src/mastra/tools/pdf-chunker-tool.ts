@@ -4,16 +4,35 @@ import { readFile } from 'fs/promises';
 import { join, basename } from 'path';
 // S3 imports removed - using local storage only
 
-// Dynamic import to avoid initialization errors
+// Import pdf-parse - use require to ensure module.parent is set correctly
+let pdfParse: any;
+try {
+  // Try regular require first (this should set module.parent correctly)
+  pdfParse = require('pdf-parse');
+} catch (e) {
+  console.log(`[PDF Chunker Tool] Regular require failed, using dynamic import`);
+}
+
 const pdf = async (dataBuffer: Buffer) => {
-  console.log(`[PDF Chunker Tool] Dynamic import of pdf-parse...`);
-  const pdfParseModule = await import('pdf-parse');
-  const pdfParse = pdfParseModule.default || pdfParseModule;
+  console.log(`[PDF Chunker Tool] Parsing PDF...`);
+  
+  if (!pdfParse) {
+    // Fallback to dynamic import if require didn't work
+    console.log(`[PDF Chunker Tool] Using dynamic import of pdf-parse...`);
+    const pdfParseModule = await import('pdf-parse');
+    pdfParse = pdfParseModule.default || pdfParseModule;
+  }
+  
   console.log(`[PDF Chunker Tool] pdf-parse type:`, typeof pdfParse);
   console.log(`[PDF Chunker Tool] About to call pdfParse with buffer size:`, dataBuffer.length);
   
   if (!dataBuffer || dataBuffer.length === 0) {
     throw new Error('PDF buffer is empty');
+  }
+  
+  // Ensure we're calling it as a function with our buffer
+  if (typeof pdfParse !== 'function') {
+    throw new Error('pdf-parse is not a function');
   }
   
   return pdfParse(dataBuffer);
