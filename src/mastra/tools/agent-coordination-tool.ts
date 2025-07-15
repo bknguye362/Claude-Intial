@@ -50,7 +50,18 @@ export const agentCoordinationTool = createTool({
       console.log(`[Agent Coordination] Agent has tools:`, agent.tools ? Object.keys(agent.tools) : 'none');
       
       // Get response from the agent
-      const stream = await agent.stream(messages);
+      // Pass options to help identify the agent
+      const streamOptions = {
+        toolChoice: 'auto',
+        // Add metadata to help with agent identification
+        metadata: {
+          targetAgent: context.agentId,
+          hasFile: messages[0].content.includes('[Uploaded files:') || messages[0].content.includes('.pdf')
+        }
+      };
+      
+      console.log(`[Agent Coordination] Stream options:`, streamOptions);
+      const stream = await agent.stream(messages, streamOptions);
       
       // Collect the streamed response
       let fullResponse = '';
