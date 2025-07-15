@@ -28,8 +28,30 @@ async function fallbackPdfParse(dataBuffer: Buffer) {
   console.log(`[PDF Chunker Tool] Using fallback PDF parser...`);
   
   // Convert buffer to string and try to extract text
-  const pdfString = dataBuffer.toString('latin1');
+  const pdfString = dataBuffer.toString('binary');
   const textParts: string[] = [];
+  
+  // Helper function to decode PDF strings with better handling
+  function decodePdfString(str: string): string {
+    // First, handle octal sequences
+    let decoded = str.replace(/\\(\d{1,3})/g, (_, oct) => {
+      const code = parseInt(oct, 8);
+      return String.fromCharCode(code);
+    });
+    
+    // Handle escape sequences
+    decoded = decoded
+      .replace(/\\n/g, '\n')
+      .replace(/\\r/g, '\r')
+      .replace(/\\t/g, '\t')
+      .replace(/\\b/g, '\b')
+      .replace(/\\f/g, '\f')
+      .replace(/\\\(/g, '(')
+      .replace(/\\\)/g, ')')
+      .replace(/\\\\/g, '\\');
+    
+    return decoded;
+  }
   
   // Method 1: Extract text between BT (Begin Text) and ET (End Text) markers
   const textMatches = pdfString.matchAll(/BT\s*(.*?)\s*ET/gs);
@@ -41,24 +63,20 @@ async function fallbackPdfParse(dataBuffer: Buffer) {
     const tjArrayMatches = content.matchAll(/\[(.*?)\]\s*TJ/g);
     
     for (const tjMatch of tjMatches) {
-      const text = tjMatch[1]
-        .replace(/\\(\d{3})/g, (_, oct) => String.fromCharCode(parseInt(oct, 8)))
-        .replace(/\\\(/g, '(')
-        .replace(/\\\)/g, ')')
-        .replace(/\\\\/g, '\\');
-      textParts.push(text);
+      const text = decodePdfString(tjMatch[1]);
+      if (text.trim() && /[a-zA-Z]/.test(text)) {
+        textParts.push(text);
+      }
     }
     
     for (const tjArrayMatch of tjArrayMatches) {
       const arrayContent = tjArrayMatch[1];
       const strings = arrayContent.matchAll(/\((.*?)\)/g);
       for (const strMatch of strings) {
-        const text = strMatch[1]
-          .replace(/\\(\d{3})/g, (_, oct) => String.fromCharCode(parseInt(oct, 8)))
-          .replace(/\\\(/g, '(')
-          .replace(/\\\)/g, ')')
-          .replace(/\\\\/g, '\\');
-        textParts.push(text);
+        const text = decodePdfString(strMatch[1]);
+        if (text.trim() && /[a-zA-Z]/.test(text)) {
+          textParts.push(text);
+        }
       }
     }
   }
@@ -73,44 +91,96 @@ async function fallbackPdfParse(dataBuffer: Buffer) {
     for (const streamMatch of streamMatches) {
       const streamContent = streamMatch[1];
       
-      // Try to find readable text in the stream
+      // Check if stream might be compressed (FlateDecode)
+      if (streamContent.charCodeAt(0) === 0x78 && streamContent.charCodeAt(1) === 0x9C) {
+        try {
+          // Try to decompress using zlib
+          const zlib = await import('zlib');
+          const buffer = Buffer.from(streamContent, 'binary');
+          const decompressed = zlib.inflateSync(buffer);
+          const decompressedText = decompressed.toString('utf8');
+          
+          // Extract text from decompressed content
+          const tjInStream = decompressedText.matchAll(/\((.*?)\)\s*Tj/g);
+          for (const match of tjInStream) {
+            const text = decodePdfString(match[1]);
+            if (text.trim() && /[a-zA-Z]/.test(text)) {
+              textParts.push(text);
+            }
+          }
+        } catch (err) {
+          // Decompression failed, try raw extraction
+        }
+      }
+      
+      // Fallback: Try to find readable text in the stream
       // Look for sequences of printable ASCII characters
       const readableMatches = streamContent.matchAll(/[\x20-\x7E]{4,}/g);
       
       for (const readable of readableMatches) {
         const text = readable[0];
         // Filter out obvious non-text content
-        if (!text.match(/^[0-9.\s]+$/) && !text.match(/^[A-Z0-9_]+$/)) {
+        if (!text.match(/^[0-9.\s]+$/) && !text.match(/^[A-Z0-9_]+$/) && /[a-zA-Z]{3,}/.test(text)) {
           textParts.push(text);
         }
       }
     }
   }
   
-  // Method 3: Extract any string literals in the PDF
-  if (textParts.length === 0) {
-    console.log(`[PDF Chunker Tool] No text in streams, trying string literals...`);
+  // Method 3: Try hex string extraction (for PDFs using hex encoding)
+  if (textParts.length < 10) {
+    console.log(`[PDF Chunker Tool] Trying hex string extraction...`);
+    const hexMatches = pdfString.matchAll(/<([0-9A-Fa-f]+)>\s*Tj/g);
     
-    // Look for PDF string literals
+    for (const hexMatch of hexMatches) {
+      const hex = hexMatch[1];
+      if (hex.length % 2 === 0) {
+        let text = '';
+        for (let i = 0; i < hex.length; i += 2) {
+          const code = parseInt(hex.substr(i, 2), 16);
+          text += String.fromCharCode(code);
+        }
+        text = text.trim();
+        if (text.length > 2 && /[a-zA-Z]/.test(text)) {
+          textParts.push(text);
+        }
+      }
+    }
+  }
+  
+  // Method 4: Look for Unicode mappings (for modern PDFs)
+  const toUnicodeMatches = pdfString.matchAll(/beginbfchar(.*?)endbfchar/gs);
+  const unicodeMap = new Map();
+  
+  for (const match of toUnicodeMatches) {
+    const mappings = match[1].matchAll(/<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>/g);
+    for (const mapping of mappings) {
+      unicodeMap.set(mapping[1], mapping[2]);
+    }
+  }
+  
+  // Method 5: Extract any string literals as last resort
+  if (textParts.length < 10) {
+    console.log(`[PDF Chunker Tool] Extracting raw string literals...`);
     const stringMatches = pdfString.matchAll(/\(((?:[^()\\]|\\.)*)\)/g);
     
     for (const strMatch of stringMatches) {
-      const text = strMatch[1]
-        .replace(/\\(\d{3})/g, (_, oct) => String.fromCharCode(parseInt(oct, 8)))
-        .replace(/\\\(/g, '(')
-        .replace(/\\\)/g, ')')
-        .replace(/\\\\/g, '\\')
-        .trim();
+      const text = decodePdfString(strMatch[1]).trim();
       
       // Only include strings that look like actual text
-      if (text.length > 3 && text.match(/[a-zA-Z]/)) {
+      if (text.length > 3 && /[a-zA-Z]/.test(text) && !/^[\x00-\x1F\x7F-\xFF]+$/.test(text)) {
         textParts.push(text);
       }
     }
   }
   
-  // Join text parts with spaces
-  let extractedText = textParts.join(' ').replace(/\s+/g, ' ').trim();
+  // Deduplicate and join text parts
+  const uniqueTextParts = [...new Set(textParts)];
+  let extractedText = uniqueTextParts.join(' ')
+    .replace(/\s+/g, ' ')
+    .replace(/([.!?])\s*([A-Z])/g, '$1 $2')
+    .replace(/(\w)-(\s+)(\w)/g, '$1$3')
+    .trim();
   
   // If still no text, provide a more helpful message
   if (!extractedText) {
@@ -118,6 +188,9 @@ async function fallbackPdfParse(dataBuffer: Buffer) {
   }
   
   console.log(`[PDF Chunker Tool] Fallback parser extracted ${extractedText.length} characters`);
+  if (extractedText.length > 0) {
+    console.log(`[PDF Chunker Tool] First 200 chars: ${extractedText.substring(0, 200)}`);
+  }
   
   // Create a response similar to pdf-parse
   return {
