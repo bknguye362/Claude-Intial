@@ -271,6 +271,31 @@ function searchChunks(
   const queryLower = query.toLowerCase();
   const queryWords = queryLower.split(/\s+/).filter(word => word.length > 2);
   
+  // Special handling for positional queries
+  const isLastParagraph = queryLower.includes('last paragraph') || queryLower.includes('final paragraph');
+  const isFirstParagraph = queryLower.includes('first paragraph') || queryLower.includes('opening paragraph');
+  const isLastChapter = queryLower.includes('last chapter') || queryLower.includes('final chapter');
+  const isFirstChapter = queryLower.includes('first chapter') || queryLower.includes('opening chapter');
+  
+  // If asking for last content, prioritize last chunks
+  if (isLastParagraph || isLastChapter) {
+    const lastChunks = chunks.slice(-5).reverse(); // Get last 5 chunks in reverse order
+    return lastChunks.map((chunk, index) => ({
+      ...chunk,
+      relevanceScore: 100 - index // Highest score for the very last chunk
+    }));
+  }
+  
+  // If asking for first content, prioritize first chunks
+  if (isFirstParagraph || isFirstChapter) {
+    const firstChunks = chunks.slice(0, 5);
+    return firstChunks.map((chunk, index) => ({
+      ...chunk,
+      relevanceScore: 100 - index // Highest score for the very first chunk
+    }));
+  }
+  
+  // Regular keyword-based search
   const scoredChunks = chunks.map(chunk => {
     const contentLower = chunk.content.toLowerCase();
     let score = 0;
@@ -294,6 +319,63 @@ function searchChunks(
     .filter(chunk => chunk.relevanceScore > 0)
     .sort((a, b) => b.relevanceScore - a.relevanceScore)
     .slice(0, 10); // Return top 10 most relevant chunks
+}
+
+// Helper function to extract specific content from text
+function extractSpecificContent(text: string, query: string): string {
+  const queryLower = query.toLowerCase();
+  
+  // For "last paragraph" queries
+  if (queryLower.includes('last paragraph') || queryLower.includes('final paragraph')) {
+    // Split by double newlines to find paragraphs
+    const paragraphs = text.split(/\n\n+/).filter(p => p.trim().length > 20);
+    if (paragraphs.length > 0) {
+      return paragraphs[paragraphs.length - 1].trim();
+    }
+    // If no double newlines, try single newlines
+    const lines = text.split(/\n/).filter(l => l.trim().length > 20);
+    if (lines.length > 0) {
+      // Return last substantial block of text
+      const lastLines = lines.slice(-5).join('\n').trim();
+      return lastLines;
+    }
+  }
+  
+  // For "first paragraph" queries
+  if (queryLower.includes('first paragraph') || queryLower.includes('opening paragraph')) {
+    const paragraphs = text.split(/\n\n+/).filter(p => p.trim().length > 20);
+    if (paragraphs.length > 0) {
+      return paragraphs[0].trim();
+    }
+    const lines = text.split(/\n/).filter(l => l.trim().length > 20);
+    if (lines.length > 0) {
+      const firstLines = lines.slice(0, 5).join('\n').trim();
+      return firstLines;
+    }
+  }
+  
+  // For direct quote requests
+  if (queryLower.includes('quote') || queryLower.includes('exact text') || queryLower.includes('verbatim')) {
+    // Return the full chunk content for quotes
+    return text;
+  }
+  
+  // Default: return a relevant excerpt
+  // Find sentences containing query words
+  const sentences = text.match(/[^.!?]+[.!?]+/g) || [];
+  const queryWords = queryLower.split(/\s+/).filter(word => word.length > 2);
+  
+  const relevantSentences = sentences.filter(sentence => {
+    const sentLower = sentence.toLowerCase();
+    return queryWords.some(word => sentLower.includes(word));
+  });
+  
+  if (relevantSentences.length > 0) {
+    return relevantSentences.join(' ').trim();
+  }
+  
+  // If no specific match, return the text as is
+  return text;
 }
 
 export const pdfChunkerTool = createTool({
@@ -325,6 +407,7 @@ export const pdfChunkerTool = createTool({
       characters: z.number().optional(),
     }).optional(),
     summary: z.string().optional().describe('Recursive summary of the document'),
+    specificAnswer: z.string().optional().describe('Direct answer to specific queries like last paragraph'),
     message: z.string(),
     error: z.string().optional(),
   }),
@@ -466,13 +549,39 @@ export const pdfChunkerTool = createTool({
           };
         }
         
+        // Process chunks to extract specific content based on the query
+        const processedChunks = relevantChunks.map(chunk => {
+          const extractedContent = extractSpecificContent(chunk.content, context.query || '');
+          return {
+            ...chunk,
+            content: extractedContent,
+            isExtract: extractedContent !== chunk.content // Flag to indicate if content was extracted
+          };
+        });
+        
+        // Create a specific answer based on the query type
+        let specificAnswer = '';
+        const queryLower = context.query.toLowerCase();
+        
+        if (queryLower.includes('last paragraph') || queryLower.includes('final paragraph')) {
+          // For last paragraph, use the content from the highest scoring chunk (which should be the last chunk)
+          specificAnswer = processedChunks[0].content;
+          console.log(`[PDF Chunker Tool] Extracted last paragraph: ${specificAnswer.substring(0, 100)}...`);
+        } else if (queryLower.includes('first paragraph') || queryLower.includes('opening paragraph')) {
+          specificAnswer = processedChunks[0].content;
+          console.log(`[PDF Chunker Tool] Extracted first paragraph: ${specificAnswer.substring(0, 100)}...`);
+        }
+        
         return {
           success: true,
           action: 'query',
           filename: basename(filepath),
           totalChunks: cached.chunks.length,
-          chunks: relevantChunks,
-          message: `Found ${relevantChunks.length} relevant chunks for query: "${context.query}"`,
+          chunks: processedChunks,
+          message: specificAnswer 
+            ? `Here is the ${context.query}:\n\n${specificAnswer}`
+            : `Found ${relevantChunks.length} relevant chunks for query: "${context.query}"`,
+          specificAnswer, // Include the direct answer if available
         };
       } else if (context.action === 'summarize') {
         console.log(`\n[PDF Chunker Tool] ========== SUMMARIZE ACTION ==========`);
