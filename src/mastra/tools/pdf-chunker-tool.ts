@@ -27,10 +27,10 @@ async function fallbackPdfParse(dataBuffer: Buffer) {
   
   // Convert buffer to string and try to extract text
   const pdfString = dataBuffer.toString('latin1');
-  
-  // Extract text between BT (Begin Text) and ET (End Text) markers
-  const textMatches = pdfString.matchAll(/BT\s*(.*?)\s*ET/gs);
   const textParts: string[] = [];
+  
+  // Method 1: Extract text between BT (Begin Text) and ET (End Text) markers
+  const textMatches = pdfString.matchAll(/BT\s*(.*?)\s*ET/gs);
   
   for (const match of textMatches) {
     const content = match[1];
@@ -61,13 +61,66 @@ async function fallbackPdfParse(dataBuffer: Buffer) {
     }
   }
   
+  // Method 2: Look for text in streams (for compressed content)
+  if (textParts.length === 0) {
+    console.log(`[PDF Chunker Tool] No text found with BT/ET, trying stream extraction...`);
+    
+    // Find all stream objects
+    const streamMatches = pdfString.matchAll(/stream\s*\n(.*?)\nendstream/gs);
+    
+    for (const streamMatch of streamMatches) {
+      const streamContent = streamMatch[1];
+      
+      // Try to find readable text in the stream
+      // Look for sequences of printable ASCII characters
+      const readableMatches = streamContent.matchAll(/[\x20-\x7E]{4,}/g);
+      
+      for (const readable of readableMatches) {
+        const text = readable[0];
+        // Filter out obvious non-text content
+        if (!text.match(/^[0-9.\s]+$/) && !text.match(/^[A-Z0-9_]+$/)) {
+          textParts.push(text);
+        }
+      }
+    }
+  }
+  
+  // Method 3: Extract any string literals in the PDF
+  if (textParts.length === 0) {
+    console.log(`[PDF Chunker Tool] No text in streams, trying string literals...`);
+    
+    // Look for PDF string literals
+    const stringMatches = pdfString.matchAll(/\(((?:[^()\\]|\\.)*)\)/g);
+    
+    for (const strMatch of stringMatches) {
+      const text = strMatch[1]
+        .replace(/\\(\d{3})/g, (_, oct) => String.fromCharCode(parseInt(oct, 8)))
+        .replace(/\\\(/g, '(')
+        .replace(/\\\)/g, ')')
+        .replace(/\\\\/g, '\\')
+        .trim();
+      
+      // Only include strings that look like actual text
+      if (text.length > 3 && text.match(/[a-zA-Z]/)) {
+        textParts.push(text);
+      }
+    }
+  }
+  
   // Join text parts with spaces
-  const extractedText = textParts.join(' ').replace(/\s+/g, ' ').trim();
+  let extractedText = textParts.join(' ').replace(/\s+/g, ' ').trim();
+  
+  // If still no text, provide a more helpful message
+  if (!extractedText) {
+    extractedText = 'This PDF appears to be encrypted, use compressed streams, or contain only images. The fallback parser cannot extract text from this type of PDF.';
+  }
+  
+  console.log(`[PDF Chunker Tool] Fallback parser extracted ${extractedText.length} characters`);
   
   // Create a response similar to pdf-parse
   return {
     numpages: (pdfString.match(/\/Type\s*\/Page\b/g) || []).length || 1,
-    text: extractedText || 'Unable to extract text from PDF',
+    text: extractedText,
     info: {
       Title: 'Unknown',
       Author: 'Unknown'
