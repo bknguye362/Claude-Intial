@@ -62,8 +62,8 @@ const analyzeIntent = createStep({
       keywords.push('research', 'current-info');
     }
     
-    // Check for PDF file uploads
-    if (message.includes('[uploaded files:') || message.includes('.pdf')) {
+    // Check for PDF file uploads (case-insensitive)
+    if (message.toLowerCase().includes('[uploaded files:') || message.includes('.pdf')) {
       intent = 'general';  // Use general intent to handle with special context
       confidence = 0.9;
       keywords.push('pdf-upload');

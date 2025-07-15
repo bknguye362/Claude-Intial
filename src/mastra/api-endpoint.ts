@@ -19,11 +19,22 @@ async function handleRequest(body: any) {
   // Handle uploaded files if present
   let enhancedMessage = body.message;
   if (body.files && body.files.length > 0) {
+    console.log(`[API Endpoint] Processing ${body.files.length} files:`);
+    body.files.forEach((file: any, index: number) => {
+      console.log(`[API Endpoint] File ${index + 1}:`, {
+        originalName: file.originalName,
+        savedName: file.savedName,
+        path: file.path,
+        filePath: file.filePath,
+        size: file.size
+      });
+    });
+    
     const fileInfo = body.files.map((file: any) => 
       `${file.originalName} (${file.filePath || file.location})`
     ).join(', ');
     enhancedMessage = `[Uploaded files: ${fileInfo}]\n${body.message}`;
-    console.log(`[API Endpoint] Files detected, enhanced message with file info`);
+    console.log(`[API Endpoint] Enhanced message: ${enhancedMessage}`);
   }
   
   const messages = [

@@ -40,6 +40,9 @@ export const agentCoordinationTool = createTool({
       ];
 
       console.log(`[Agent Coordination] Sending message to ${context.agentId}: "${context.task}"`);
+      console.log(`[Agent Coordination] Full message content:`, messages[0].content);
+      console.log(`[Agent Coordination] Has [Uploaded files:]:`, messages[0].content.includes('[Uploaded files:'));
+      console.log(`[Agent Coordination] Agent has tools:`, agent.tools ? Object.keys(agent.tools) : 'none');
       
       // Get response from the agent
       const stream = await agent.stream(messages);
