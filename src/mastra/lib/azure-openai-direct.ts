@@ -75,13 +75,11 @@ export function createOpenAI(options?: any) {
           // Add tools if provided OR use hardcoded tools for research agent
           let tools = options?.tools;
           
-          // Check if this is for the file agent - look for system messages first
+          // Check if this is for the file agent - look for marker or file content
           const isFileAgent = messageArray.some(msg => 
-            msg.role === 'system' && msg.content && typeof msg.content === 'string' && 
-            msg.content.includes('You are the file agent')
-          ) || messageArray.some(msg => 
             msg.content && typeof msg.content === 'string' && 
-            (msg.content.includes('file management assistant') || 
+            (msg.content.includes('[FILE_AGENT_TASK]') ||
+             msg.content.includes('file management assistant') || 
              msg.content.includes('file-related operations') ||
              msg.content.includes('PDF processing capabilities') ||
              msg.content.includes('[Uploaded files:') ||

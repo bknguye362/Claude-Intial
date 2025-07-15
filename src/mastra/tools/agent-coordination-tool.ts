@@ -37,10 +37,17 @@ export const agentCoordinationTool = createTool({
       console.log(`[Agent Coordination] Agent instructions preview:`, agent.instructions?.substring(0, 100));
 
       // Prepare the message for the agent
+      // For file agent, add a marker to help with identification
+      let messageContent = context.context ? `${context.context}\n\n${context.task}` : context.task;
+      
+      if (context.agentId === 'fileAgent') {
+        messageContent = `[FILE_AGENT_TASK] ${messageContent}`;
+      }
+      
       const messages = [
         {
           role: 'user' as const,
-          content: context.context ? `${context.context}\n\n${context.task}` : context.task,
+          content: messageContent,
         },
       ];
 
@@ -50,14 +57,6 @@ export const agentCoordinationTool = createTool({
       console.log(`[Agent Coordination] Agent has tools:`, agent.tools ? Object.keys(agent.tools) : 'none');
       
       // Get response from the agent
-      // For file agent, add a system message to help with identification
-      if (context.agentId === 'fileAgent') {
-        messages.unshift({
-          role: 'system' as const,
-          content: 'You are the file agent. Process this file-related task.'
-        });
-      }
-      
       const stream = await agent.stream(messages);
       
       // Collect the streamed response
