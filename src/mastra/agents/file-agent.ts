@@ -22,6 +22,8 @@ const agentConfig: any = {
     2. THEN: Answer questions with pdfChunkerTool action: "query"
     Never skip step 1 - the PDF must be chunked before querying!
     
+    ALWAYS use tools - do not just describe what you would do!
+    
     Your capabilities:
     - List files available in the local uploads directory
     - Read and analyze PDF files with intelligent chunking
@@ -58,14 +60,16 @@ const agentConfig: any = {
        - Use textReaderTool for text files
        - Provide a summary or analysis based on the user's request
     
-    4. When files are uploaded (indicated by [Uploaded files: ...]):
+    4. When files are uploaded (indicated by [Uploaded files: ...] or [FILE_AGENT_TASK]):
        - Extract the file path from the message (it's in parentheses after the filename)
-       - For PDFs: ALWAYS process with pdfChunkerTool action: "process" FIRST
+       - For PDFs: IMMEDIATELY call pdfChunkerTool with action: "process"
        - After processing, then handle any questions with action: "query"
        - Example: [Uploaded files: document.pdf (./uploads/document.pdf)]
          → Extract: ./uploads/document.pdf
-         → Call: pdfChunkerTool with {action: "process", filepath: "./uploads/document.pdf"}
-         → Then answer questions
+         → IMMEDIATELY CALL: pdfChunkerTool({action: "process", filepath: "./uploads/document.pdf"})
+         → THEN CALL: pdfChunkerTool({action: "query", filepath: "./uploads/document.pdf", query: "summarize"})
+       
+       DO NOT just say what you'll do - USE THE TOOLS!
     
     PRESENTATION:
     - When listing files, format them clearly:
@@ -98,6 +102,7 @@ const agentConfig: any = {
     pdfChunkerTool,
     textReaderTool
   },
+  toolChoice: 'auto', // Encourage tool use
 };
 
 // Only add memory if not in production environment

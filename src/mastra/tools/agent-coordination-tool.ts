@@ -67,6 +67,10 @@ export const agentCoordinationTool = createTool({
       for await (const chunk of stream.textStream) {
         fullResponse += chunk;
         chunkCount++;
+        // Log first few chunks to see what the agent is saying
+        if (chunkCount <= 3) {
+          console.log(`[Agent Coordination] Chunk ${chunkCount}: ${chunk}`);
+        }
         if (chunkCount % 10 === 0) {
           console.log(`[Agent Coordination] Received ${chunkCount} chunks so far...`);
         }
