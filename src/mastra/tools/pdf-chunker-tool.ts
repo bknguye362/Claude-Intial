@@ -6,43 +6,71 @@ import { readFile } from 'fs/promises';
 import { join, basename } from 'path';
 // S3 imports removed - using local storage only
 
-// Delay pdf-parse import until it's needed to avoid debug mode issues
+// Workaround for pdf-parse debug mode issue
+// We need to prevent the module check that triggers debug mode
 let pdfParse: any = null;
+
+// Pre-set globals to prevent pdf-parse debug mode
+if (typeof global !== 'undefined') {
+  // Force module.parent to exist before any imports
+  if (typeof module !== 'undefined' && !module.parent) {
+    (module as any).parent = { filename: 'fake-parent' };
+  }
+  // Set flags that might prevent debug mode
+  (global as any).PDF_PARSE_NO_DEBUG = true;
+  (global as any).NODE_ENV = 'production';
+}
+
+// Helper to load pdf-parse, handling the debug mode issue
+async function loadPdfParse() {
+  try {
+    // First attempt: Import pdf-parse directly
+    // This will throw if it tries to read the test file
+    const pdfParseModule = await import('pdf-parse');
+    return pdfParseModule.default || pdfParseModule;
+  } catch (error: any) {
+    // If it's the test file error, the module might still be loaded
+    if (error?.message?.includes('05-versions-space.pdf')) {
+      console.log(`[PDF Chunker Tool] Caught debug mode error, checking if module loaded anyway...`);
+      
+      // Try to access the already-loaded module from the error
+      // Sometimes the module loads despite the error
+      try {
+        // The module might be available in require.cache or import.meta
+        const pdfParseModule = await import('pdf-parse');
+        if (pdfParseModule && typeof (pdfParseModule.default || pdfParseModule) === 'function') {
+          console.log(`[PDF Chunker Tool] Module loaded despite error`);
+          return pdfParseModule.default || pdfParseModule;
+        }
+      } catch (e) {
+        // Module really isn't available
+      }
+    }
+    
+    throw error;
+  }
+}
 
 const pdf = async (dataBuffer: Buffer) => {
   console.log(`[PDF Chunker Tool] Parsing PDF...`);
   
   if (!pdfParse) {
+    console.log(`[PDF Chunker Tool] Loading pdf-parse...`);
+    
     try {
-      console.log(`[PDF Chunker Tool] Loading pdf-parse on demand...`);
-      
-      // Try to set up environment to prevent debug mode
-      const originalMain = require.main;
-      const originalParent = module.parent;
-      
-      // Ensure module has a parent to prevent debug mode
-      if (!module.parent) {
-        (module as any).parent = { filename: 'pdf-chunker-tool.ts' };
-      }
-      
-      // Set require.main to this module to prevent debug mode
-      (require as any).main = module;
-      
-      // Now require pdf-parse
-      pdfParse = require('pdf-parse');
+      pdfParse = await loadPdfParse();
       console.log(`[PDF Chunker Tool] Successfully loaded pdf-parse`);
+    } catch (error: any) {
+      console.error(`[PDF Chunker Tool] Failed to load pdf-parse:`, error);
       
-      // Restore original values
-      (require as any).main = originalMain;
-      if (!originalParent) {
-        (module as any).parent = originalParent;
+      // If it's the debug mode error, try to work around it
+      if (error?.message?.includes('05-versions-space.pdf')) {
+        // As a last resort, we could use an alternative PDF parser
+        // For now, just throw a clearer error
+        throw new Error('Unable to load PDF parser due to module initialization issue. This is a known issue with pdf-parse in ES module environments.');
       }
-    } catch (e) {
-      console.error(`[PDF Chunker Tool] Failed to load pdf-parse:`, e);
-      // Try dynamic import as last resort
-      console.log(`[PDF Chunker Tool] Trying dynamic import...`);
-      const pdfParseModule = await import('pdf-parse');
-      pdfParse = pdfParseModule.default || pdfParseModule;
+      
+      throw error;
     }
   }
   
