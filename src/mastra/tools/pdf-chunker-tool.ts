@@ -1,16 +1,26 @@
+console.log('[PDF Chunker Tool] Module loading at:', new Date().toISOString());
+
 import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
 import { readFile } from 'fs/promises';
 import { join, basename } from 'path';
 // S3 imports removed - using local storage only
 
-// Import pdf-parse - use require to ensure module.parent is set correctly
+// Import pdf-parse - handle the module carefully to avoid debug mode
 let pdfParse: any;
+
+// Set a global to ensure pdf-parse doesn't think it's running standalone
+if (typeof global !== 'undefined') {
+  (global as any).PDF_PARSE_NO_DEBUG = true;
+}
+
 try {
   // Try regular require first (this should set module.parent correctly)
   pdfParse = require('pdf-parse');
+  console.log(`[PDF Chunker Tool] Successfully required pdf-parse`);
 } catch (e) {
-  console.log(`[PDF Chunker Tool] Regular require failed, using dynamic import`);
+  console.error(`[PDF Chunker Tool] Regular require failed:`, e);
+  console.log(`[PDF Chunker Tool] Will use dynamic import as fallback`);
 }
 
 const pdf = async (dataBuffer: Buffer) => {
@@ -458,3 +468,8 @@ export const pdfChunkerTool = createTool({
     }
   },
 });
+
+// Export a test function to verify this module is being used
+export const testPdfChunkerModule = () => {
+  return 'PDF_CHUNKER_MODULE_LOADED_V2';
+};
