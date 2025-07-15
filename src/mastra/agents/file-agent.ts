@@ -2,7 +2,6 @@ import { createOpenAI } from '../lib/azure-openai-direct.js';
 import { Agent } from '@mastra/core/agent';
 import { Memory } from '@mastra/memory';
 import { LibSQLStore } from '@mastra/libsql';
-import { pdfReaderTool } from '../tools/pdf-reader-tool.js';
 import { pdfChunkerTool } from '../tools/pdf-chunker-tool.js';
 import { textReaderTool } from '../tools/text-reader-tool.js';
 import { localListTool } from '../tools/local-list-tool.js';
@@ -32,8 +31,7 @@ const agentConfig: any = {
     
     TOOLS AVAILABLE:
     - localListTool: List files in the local uploads directory
-    - pdfReaderTool: Read entire PDF files (basic reading)
-    - pdfChunkerTool: Advanced PDF processing with chunking and Q&A capabilities
+    - pdfChunkerTool: PDF processing with chunking and Q&A capabilities (USE THIS FOR ALL PDFs)
     - textReaderTool: Read text files
     
     WORKFLOW:
@@ -56,7 +54,7 @@ const agentConfig: any = {
     3. When asked to read a specific file:
        - If the file path is provided, use it directly
        - If only a filename is provided, first list files to find the full path
-       - For PDFs: Use pdfChunkerTool for Q&A, pdfReaderTool for simple full text
+       - For PDFs: ALWAYS use pdfChunkerTool (first process, then query)
        - Use textReaderTool for text files
        - Provide a summary or analysis based on the user's request
     
@@ -97,7 +95,6 @@ const agentConfig: any = {
   model: openai('gpt-4.1-test'),
   tools: { 
     localListTool,
-    pdfReaderTool,
     pdfChunkerTool,
     textReaderTool
   },

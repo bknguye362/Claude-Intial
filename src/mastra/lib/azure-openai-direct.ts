@@ -248,23 +248,6 @@ export function createOpenAI(options?: any) {
               {
                 type: 'function',
                 function: {
-                  name: 'pdfReaderTool',
-                  description: 'Read entire PDF files (basic reading)',
-                  parameters: {
-                    type: 'object',
-                    properties: {
-                      filePath: {
-                        type: 'string',
-                        description: 'Path to the PDF file'
-                      }
-                    },
-                    required: ['filePath']
-                  }
-                }
-              },
-              {
-                type: 'function',
-                function: {
                   name: 'textReaderTool',
                   description: 'Read text files',
                   parameters: {
