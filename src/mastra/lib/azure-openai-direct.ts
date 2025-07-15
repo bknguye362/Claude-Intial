@@ -75,40 +75,31 @@ export function createOpenAI(options?: any) {
           // Add tools if provided OR use hardcoded tools for research agent
           let tools = options?.tools;
           
-          // Check metadata first for agent identification
-          const targetAgent = options?.metadata?.targetAgent;
-          const hasFile = options?.metadata?.hasFile;
-          
-          console.log('[Azure Direct] Metadata - targetAgent:', targetAgent, 'hasFile:', hasFile);
+          // Check if this is for the file agent - look for system messages first
+          const isFileAgent = messageArray.some(msg => 
+            msg.role === 'system' && msg.content && typeof msg.content === 'string' && 
+            msg.content.includes('You are the file agent')
+          ) || messageArray.some(msg => 
+            msg.content && typeof msg.content === 'string' && 
+            (msg.content.includes('file management assistant') || 
+             msg.content.includes('file-related operations') ||
+             msg.content.includes('PDF processing capabilities') ||
+             msg.content.includes('[Uploaded files:') ||
+             msg.content.includes('.pdf'))
+          );
           
           // Check if this is for the research agent based on the message content
-          const isResearchAgent = messageArray.some(msg => 
+          const isResearchAgent = !isFileAgent && messageArray.some(msg => 
             msg.content && typeof msg.content === 'string' && 
             (msg.content.includes('research assistant') || 
              msg.content.includes('Google Search'))
           );
           
-          // Check if this is for the file agent
-          const isFileAgent = hasFile || messageArray.some(msg => 
-            msg.content && typeof msg.content === 'string' && 
-            (msg.content.includes('file management assistant') || 
-             msg.content.includes('file-related operations') ||
-             msg.content.includes('PDF processing capabilities'))
-          );
-          
           // Determine which agent is making the call
           let callingAgent = 'Unknown';
           
-          // Priority 1: Use metadata if available
-          if (targetAgent === 'fileAgent' || hasFile) {
-            callingAgent = 'File Agent';
-          } else if (targetAgent === 'researchAgent') {
-            callingAgent = 'Research Agent';
-          } else if (targetAgent === 'assistantAgent') {
-            callingAgent = 'Assistant Agent';
-          }
-          // Priority 2: Fall back to content-based detection
-          else if (isFileAgent) {
+          // Priority 1: Check for file agent
+          if (isFileAgent) {
             callingAgent = 'File Agent';
           } else if (isResearchAgent) {
             callingAgent = 'Research Agent';
@@ -122,7 +113,7 @@ export function createOpenAI(options?: any) {
           console.log('[Azure Direct] Agent detection - isFileAgent:', isFileAgent, 'isResearchAgent:', isResearchAgent);
           
           // If no tools provided and this is for the research agent, manually add them
-          if ((!tools || Object.keys(tools).length === 0) && callingAgent === 'Research Agent' && !hasFile) {
+          if ((!tools || Object.keys(tools).length === 0) && callingAgent === 'Research Agent') {
             console.log('[Azure Direct] No tools provided, adding manual tools for research agent');
             
             // Manually define the tools that should be available

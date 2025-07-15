@@ -50,18 +50,15 @@ export const agentCoordinationTool = createTool({
       console.log(`[Agent Coordination] Agent has tools:`, agent.tools ? Object.keys(agent.tools) : 'none');
       
       // Get response from the agent
-      // Pass options to help identify the agent
-      const streamOptions = {
-        toolChoice: 'auto',
-        // Add metadata to help with agent identification
-        metadata: {
-          targetAgent: context.agentId,
-          hasFile: messages[0].content.includes('[Uploaded files:') || messages[0].content.includes('.pdf')
-        }
-      };
+      // For file agent, add a system message to help with identification
+      if (context.agentId === 'fileAgent') {
+        messages.unshift({
+          role: 'system' as const,
+          content: 'You are the file agent. Process this file-related task.'
+        });
+      }
       
-      console.log(`[Agent Coordination] Stream options:`, streamOptions);
-      const stream = await agent.stream(messages, streamOptions);
+      const stream = await agent.stream(messages);
       
       // Collect the streamed response
       let fullResponse = '';
