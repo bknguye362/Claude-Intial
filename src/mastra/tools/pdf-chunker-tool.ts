@@ -158,6 +158,8 @@ export const pdfChunkerTool = createTool({
   execute: async ({ context }) => {
     console.log(`[PDF Chunker Tool] ===== TOOL CALLED =====`);
     console.log(`[PDF Chunker Tool] Context:`, JSON.stringify(context));
+    console.log(`[PDF Chunker Tool] Process ID:`, process.pid);
+    console.log(`[PDF Chunker Tool] Current time:`, new Date().toISOString());
     
     try {
       // Handle both 'filepath' and 'filePath' for compatibility

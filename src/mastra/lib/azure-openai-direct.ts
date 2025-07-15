@@ -457,7 +457,17 @@ export function createOpenAI(options?: any) {
               for (const toolCall of toolCalls) {
                 const toolName = toolCall.function.name;
                 // Try to get tool from options first, then fallback to manual tools
-                const tool = options?.tools?.[toolName] || (manualTools as any)[toolName];
+                console.log(`[Azure Direct] Looking for tool: ${toolName}`);
+                console.log(`[Azure Direct] Options tools available:`, options?.tools ? Object.keys(options.tools) : 'none');
+                console.log(`[Azure Direct] Manual tools available:`, Object.keys(manualTools));
+                
+                const toolFromOptions = options?.tools?.[toolName];
+                const toolFromManual = (manualTools as any)[toolName];
+                
+                console.log(`[Azure Direct] Tool from options:`, toolFromOptions ? 'found' : 'not found');
+                console.log(`[Azure Direct] Tool from manual:`, toolFromManual ? 'found' : 'not found');
+                
+                const tool = toolFromOptions || toolFromManual;
                 
                 if (tool) {
                   try {
@@ -472,7 +482,10 @@ export function createOpenAI(options?: any) {
                       console.log(`[Azure Direct] Tool.execute type:`, typeof tool.execute);
                     }
                     
+                    console.log(`[Azure Direct] About to execute tool: ${toolName}`);
                     const result = await tool.execute({ context: args });
+                    console.log(`[Azure Direct] Tool ${toolName} execution completed`);
+                    console.log(`[Azure Direct] Tool result:`, JSON.stringify(result).substring(0, 200));
                     
                     // Add tool result message
                     messageArray.push({
@@ -483,11 +496,21 @@ export function createOpenAI(options?: any) {
                     });
                   } catch (error) {
                     console.error(`[Azure Direct] Error executing tool ${toolName}:`, error);
+                    console.error(`[Azure Direct] Error stack:`, error instanceof Error ? error.stack : 'No stack trace');
+                    console.error(`[Azure Direct] Error type:`, error?.constructor?.name);
+                    
+                    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                    const errorDetails = {
+                      error: errorMessage,
+                      type: error?.constructor?.name || 'Unknown',
+                      tool: toolName
+                    };
+                    
                     messageArray.push({
                       tool_call_id: toolCall.id,
                       role: 'tool',
                       name: toolName,
-                      content: JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' })
+                      content: JSON.stringify(errorDetails)
                     });
                   }
                 } else {
