@@ -18,6 +18,7 @@ export const agentCoordinationTool = createTool({
   execute: async ({ context }) => {
     try {
       console.log(`[Agent Coordination] >>> ASSISTANT AGENT is delegating to ${context.agentId} with task: ${context.task}`);
+      console.log(`[Agent Coordination] Full context object:`, JSON.stringify(context));
       
       // Get the specified agent
       const agent = mastra.getAgent(context.agentId);
@@ -30,6 +31,10 @@ export const agentCoordinationTool = createTool({
           error: `Agent ${context.agentId} not found`,
         };
       }
+      
+      // Debug: Verify we got the right agent
+      console.log(`[Agent Coordination] Retrieved agent name:`, agent.name);
+      console.log(`[Agent Coordination] Agent instructions preview:`, agent.instructions?.substring(0, 100));
 
       // Prepare the message for the agent
       const messages = [
