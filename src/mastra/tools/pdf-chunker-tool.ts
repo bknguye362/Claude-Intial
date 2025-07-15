@@ -21,6 +21,60 @@ if (typeof global !== 'undefined') {
   (global as any).NODE_ENV = 'production';
 }
 
+// Fallback PDF text extraction using basic parsing
+async function fallbackPdfParse(dataBuffer: Buffer) {
+  console.log(`[PDF Chunker Tool] Using fallback PDF parser...`);
+  
+  // Convert buffer to string and try to extract text
+  const pdfString = dataBuffer.toString('latin1');
+  
+  // Extract text between BT (Begin Text) and ET (End Text) markers
+  const textMatches = pdfString.matchAll(/BT\s*(.*?)\s*ET/gs);
+  const textParts: string[] = [];
+  
+  for (const match of textMatches) {
+    const content = match[1];
+    // Extract text from Tj and TJ operators
+    const tjMatches = content.matchAll(/\((.*?)\)\s*Tj/g);
+    const tjArrayMatches = content.matchAll(/\[(.*?)\]\s*TJ/g);
+    
+    for (const tjMatch of tjMatches) {
+      const text = tjMatch[1]
+        .replace(/\\(\d{3})/g, (_, oct) => String.fromCharCode(parseInt(oct, 8)))
+        .replace(/\\\(/g, '(')
+        .replace(/\\\)/g, ')')
+        .replace(/\\\\/g, '\\');
+      textParts.push(text);
+    }
+    
+    for (const tjArrayMatch of tjArrayMatches) {
+      const arrayContent = tjArrayMatch[1];
+      const strings = arrayContent.matchAll(/\((.*?)\)/g);
+      for (const strMatch of strings) {
+        const text = strMatch[1]
+          .replace(/\\(\d{3})/g, (_, oct) => String.fromCharCode(parseInt(oct, 8)))
+          .replace(/\\\(/g, '(')
+          .replace(/\\\)/g, ')')
+          .replace(/\\\\/g, '\\');
+        textParts.push(text);
+      }
+    }
+  }
+  
+  // Join text parts with spaces
+  const extractedText = textParts.join(' ').replace(/\s+/g, ' ').trim();
+  
+  // Create a response similar to pdf-parse
+  return {
+    numpages: (pdfString.match(/\/Type\s*\/Page\b/g) || []).length || 1,
+    text: extractedText || 'Unable to extract text from PDF',
+    info: {
+      Title: 'Unknown',
+      Author: 'Unknown'
+    }
+  };
+}
+
 // Helper to load pdf-parse, handling the debug mode issue
 async function loadPdfParse() {
   try {
@@ -29,22 +83,10 @@ async function loadPdfParse() {
     const pdfParseModule = await import('pdf-parse');
     return pdfParseModule.default || pdfParseModule;
   } catch (error: any) {
-    // If it's the test file error, the module might still be loaded
+    // If it's the test file error, use fallback parser
     if (error?.message?.includes('05-versions-space.pdf')) {
-      console.log(`[PDF Chunker Tool] Caught debug mode error, checking if module loaded anyway...`);
-      
-      // Try to access the already-loaded module from the error
-      // Sometimes the module loads despite the error
-      try {
-        // The module might be available in require.cache or import.meta
-        const pdfParseModule = await import('pdf-parse');
-        if (pdfParseModule && typeof (pdfParseModule.default || pdfParseModule) === 'function') {
-          console.log(`[PDF Chunker Tool] Module loaded despite error`);
-          return pdfParseModule.default || pdfParseModule;
-        }
-      } catch (e) {
-        // Module really isn't available
-      }
+      console.log(`[PDF Chunker Tool] pdf-parse debug mode error detected, using fallback parser`);
+      return fallbackPdfParse;
     }
     
     throw error;
@@ -63,14 +105,13 @@ const pdf = async (dataBuffer: Buffer) => {
     } catch (error: any) {
       console.error(`[PDF Chunker Tool] Failed to load pdf-parse:`, error);
       
-      // If it's the debug mode error, try to work around it
+      // If it's the debug mode error, use fallback parser
       if (error?.message?.includes('05-versions-space.pdf')) {
-        // As a last resort, we could use an alternative PDF parser
-        // For now, just throw a clearer error
-        throw new Error('Unable to load PDF parser due to module initialization issue. This is a known issue with pdf-parse in ES module environments.');
+        console.log(`[PDF Chunker Tool] Using fallback parser due to pdf-parse error`);
+        pdfParse = fallbackPdfParse;
+      } else {
+        throw error;
       }
-      
-      throw error;
     }
   }
   
