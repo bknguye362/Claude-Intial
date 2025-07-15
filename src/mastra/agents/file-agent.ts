@@ -38,7 +38,7 @@ const agentConfig: any = {
     
     2. For PDF files and questions about PDFs:
        - ALWAYS use pdfChunkerTool for PDFs when users want to ask questions
-       - First use action: "process" to chunk the PDF (20 lines per chunk by default)
+       - First use action: "process" to chunk the PDF (200 lines per chunk by default)
        - Then use action: "query" with the user's specific question
        - The tool will find the most relevant chunks to answer the question
        

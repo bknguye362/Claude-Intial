@@ -74,7 +74,7 @@ export const pdfChunkerTool = createTool({
   inputSchema: z.object({
     filepath: z.string().describe('The file path of the PDF to read'),
     action: z.enum(['process', 'query']).describe('Action to perform: "process" to chunk the PDF, "query" to search existing chunks'),
-    chunkSize: z.number().default(20).optional().describe('Number of lines per chunk (only for process action)'),
+    chunkSize: z.number().default(200).optional().describe('Number of lines per chunk (only for process action)'),
     query: z.string().optional().describe('Search query for finding relevant chunks (only for query action)'),
   }),
   outputSchema: z.object({
