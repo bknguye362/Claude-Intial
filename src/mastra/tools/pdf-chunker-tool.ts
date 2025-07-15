@@ -6,7 +6,16 @@ import { join, basename } from 'path';
 
 // Dynamic import to avoid initialization errors
 const pdf = async (dataBuffer: Buffer) => {
-  const pdfParse = (await import('pdf-parse')).default;
+  console.log(`[PDF Chunker Tool] Dynamic import of pdf-parse...`);
+  const pdfParseModule = await import('pdf-parse');
+  const pdfParse = pdfParseModule.default || pdfParseModule;
+  console.log(`[PDF Chunker Tool] pdf-parse type:`, typeof pdfParse);
+  console.log(`[PDF Chunker Tool] About to call pdfParse with buffer size:`, dataBuffer.length);
+  
+  if (!dataBuffer || dataBuffer.length === 0) {
+    throw new Error('PDF buffer is empty');
+  }
+  
   return pdfParse(dataBuffer);
 };
 
@@ -163,7 +172,12 @@ export const pdfChunkerTool = createTool({
     
     try {
       // Handle both 'filepath' and 'filePath' for compatibility
+      console.log(`[PDF Chunker Tool] Raw context.filepath:`, context.filepath);
+      console.log(`[PDF Chunker Tool] Raw context.filePath:`, context.filePath);
+      
       const filepath = context.filepath || context.filePath;
+      console.log(`[PDF Chunker Tool] Resolved filepath:`, filepath);
+      
       if (!filepath) {
         throw new Error('Missing required parameter: filepath or filePath');
       }
@@ -327,15 +341,34 @@ export const pdfChunkerTool = createTool({
           
           // Local file path only
           const normalizedPath = filepath.replace(/\\/g, '/');
+          console.log(`[PDF Chunker Tool] Normalized path:`, normalizedPath);
+          console.log(`[PDF Chunker Tool] Checking if path includes /uploads/:`, normalizedPath.includes('/uploads/'));
+          
           if (!normalizedPath.includes('/uploads/')) {
+            console.error(`[PDF Chunker Tool] Invalid path - must be in uploads directory:`, normalizedPath);
             throw new Error('File must be in the uploads directory');
           }
           
           filename = basename(filepath);
-          dataBuffer = await readFile(filepath);
+          console.log(`[PDF Chunker Tool] About to read file from:`, filepath);
+          console.log(`[PDF Chunker Tool] Filename:`, filename);
+          console.log(`[PDF Chunker Tool] Current working directory:`, process.cwd());
+          
+          try {
+            dataBuffer = await readFile(filepath);
+            console.log(`[PDF Chunker Tool] Successfully read file, buffer size:`, dataBuffer.length);
+          } catch (readError) {
+            console.error(`[PDF Chunker Tool] Error reading file:`, readError);
+            console.error(`[PDF Chunker Tool] Error type:`, (readError as any)?.constructor?.name);
+            console.error(`[PDF Chunker Tool] Attempted path:`, filepath);
+            const errorMessage = readError instanceof Error ? readError.message : String(readError);
+            throw new Error(`Failed to read PDF file from ${filepath}: ${errorMessage}`);
+          }
           
           // Parse the PDF
+          console.log(`[PDF Chunker Tool] About to parse PDF with buffer size:`, dataBuffer.length);
           const pdfData = await pdf(dataBuffer);
+          console.log(`[PDF Chunker Tool] Successfully parsed PDF`);
           
           // Extract metadata
           const metadata = {
