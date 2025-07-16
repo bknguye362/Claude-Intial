@@ -141,6 +141,21 @@ async function handleRequest(body: any) {
     console.log(`[API Endpoint] Stream complete. Total chunks: ${chunkCount}`);
     console.log(`[API Endpoint] Final response length: ${response.length} characters`);
     
+    // Check if response appears to be cut off
+    const lastChar = response.slice(-1);
+    const last10Chars = response.slice(-10);
+    const appearsCutOff = response.length > 100 && !lastChar.match(/[.!?]/) && !last10Chars.includes('\n\n');
+    
+    if (appearsCutOff) {
+      console.log(`[API Endpoint] WARNING: Response appears to be cut off!`);
+      console.log(`[API Endpoint] Last 50 characters: "${response.slice(-50)}"`);
+      console.log(`[API Endpoint] Response likely hit token limit or streaming limit`);
+    }
+    
+    // Estimate tokens (rough approximation: ~4 chars per token)
+    const estimatedTokens = Math.round(response.length / 4);
+    console.log(`[API Endpoint] Estimated completion tokens: ${estimatedTokens}`);
+    
     // Log full response if it's long
     if (response.length > 200) {
       console.log(`[API Endpoint] Response preview: ${response.substring(0, 200)}...`);

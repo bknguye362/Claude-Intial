@@ -67,7 +67,7 @@ export function createOpenAI(options?: any) {
         try {
           const requestBody: any = {
             messages: messageArray.length > 0 ? messageArray : [{ role: 'user', content: 'Hello' }],
-            max_tokens: 150,
+            max_tokens: 4096,  // Increased from 150 to allow much longer responses
             temperature: 0.7,
             stream: true,
           };
