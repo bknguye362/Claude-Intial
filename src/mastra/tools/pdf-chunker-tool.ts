@@ -131,6 +131,26 @@ if (typeof global !== 'undefined') {
   (global as any).NODE_ENV = 'production';
 }
 
+// Monkey-patch fs to prevent pdf-parse from reading test files
+const originalReadFileSync = fs.readFileSync;
+const originalExistsSync = fs.existsSync;
+
+// Override fs methods to block test file access
+(fs as any).readFileSync = function(path: string, ...args: any[]) {
+  if (typeof path === 'string' && path.includes('05-versions-space.pdf')) {
+    console.log('[PDF Chunker Tool] Blocked pdf-parse test file access');
+    throw new Error('ENOENT: no such file or directory');
+  }
+  return originalReadFileSync.call(this, path, ...args);
+};
+
+(fs as any).existsSync = function(path: string) {
+  if (typeof path === 'string' && path.includes('05-versions-space.pdf')) {
+    return false;
+  }
+  return originalExistsSync.apply(this, [path]);
+};
+
 // Fallback PDF text extraction using basic parsing
 async function fallbackPdfParse(dataBuffer: Buffer) {
   console.log(`[PDF Chunker Tool] Using fallback PDF parser...`);
@@ -314,18 +334,39 @@ async function fallbackPdfParse(dataBuffer: Buffer) {
 // Helper to load pdf-parse, handling the debug mode issue
 async function loadPdfParse() {
   try {
-    // First attempt: Import pdf-parse directly
-    // This will throw if it tries to read the test file
-    const pdfParseModule = await import('pdf-parse');
-    return pdfParseModule.default || pdfParseModule;
-  } catch (error: any) {
-    // If it's the test file error, use fallback parser
-    if (error?.message?.includes('05-versions-space.pdf')) {
-      console.log(`[PDF Chunker Tool] pdf-parse debug mode error detected, using fallback parser`);
-      return fallbackPdfParse;
+    console.log('[PDF Chunker Tool] Attempting to load pdf-parse with fs patches...');
+    
+    // Try dynamic import with error handling
+    // First try to import the lib directly to bypass index.js checks
+    let pdfParseModule;
+    try {
+      console.log('[PDF Chunker Tool] Trying direct lib import...');
+      pdfParseModule = await import('pdf-parse/lib/pdf-parse.js' as any);
+      console.log('[PDF Chunker Tool] Direct lib import successful');
+    } catch (libErr) {
+      console.log('[PDF Chunker Tool] Direct lib import failed, trying main module...');
+      pdfParseModule = await import('pdf-parse').catch(err => {
+        console.log('[PDF Chunker Tool] Import failed:', err.message);
+        throw err;
+      });
     }
     
-    throw error;
+    const pdfParseFunc = pdfParseModule.default || pdfParseModule;
+    
+    // Validate it's a function
+    if (typeof pdfParseFunc === 'function') {
+      console.log('[PDF Chunker Tool] pdf-parse loaded successfully as function');
+      return pdfParseFunc;
+    } else {
+      console.log('[PDF Chunker Tool] pdf-parse loaded but not a function, type:', typeof pdfParseFunc);
+      throw new Error('pdf-parse is not a function');
+    }
+  } catch (error: any) {
+    console.error('[PDF Chunker Tool] Failed to load pdf-parse:', error.message);
+    
+    // If it's any error, just use fallback
+    console.log('[PDF Chunker Tool] Will use fallback parser instead');
+    return fallbackPdfParse;
   }
 }
 
@@ -338,16 +379,16 @@ const pdf = async (dataBuffer: Buffer) => {
     try {
       pdfParse = await loadPdfParse();
       console.log(`[PDF Chunker Tool] Successfully loaded pdf-parse`);
+      
+      // Restore original fs functions after pdf-parse is loaded
+      if (pdfParse !== fallbackPdfParse) {
+        console.log('[PDF Chunker Tool] Restoring original fs functions');
+        (fs as any).readFileSync = originalReadFileSync;
+        (fs as any).existsSync = originalExistsSync;
+      }
     } catch (error: any) {
       console.error(`[PDF Chunker Tool] Failed to load pdf-parse:`, error);
-      
-      // If it's the debug mode error, use fallback parser
-      if (error?.message?.includes('05-versions-space.pdf')) {
-        console.log(`[PDF Chunker Tool] Using fallback parser due to pdf-parse error`);
-        pdfParse = fallbackPdfParse;
-      } else {
-        throw error;
-      }
+      pdfParse = fallbackPdfParse;
     }
   }
   
