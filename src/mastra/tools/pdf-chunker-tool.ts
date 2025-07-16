@@ -838,8 +838,11 @@ export const pdfChunkerTool = createTool({
         // Generate embedding for the query
         let queryEmbedding: number[] | undefined;
         if (cached.chunks[0]?.embedding && cached.chunks[0].embedding.length > 0) {
-          console.log(`[PDF Chunker Tool] Generating embedding for query...`);
+          console.log(`[PDF Chunker Tool] Chunks have embeddings, generating embedding for query...`);
           queryEmbedding = await generateEmbedding(context.query);
+          console.log(`[PDF Chunker Tool] Query embedding generated: ${queryEmbedding ? queryEmbedding.length + ' dimensions' : 'failed'}`);
+        } else {
+          console.log(`[PDF Chunker Tool] No embeddings found in chunks, will use keyword search`);
         }
         
         // Search for relevant chunks using embeddings or fallback to keyword search
@@ -867,40 +870,29 @@ export const pdfChunkerTool = createTool({
           return response;
         }
         
-        // Process chunks to extract specific content based on the query
-        const processedChunks = relevantChunks.map(chunk => {
-          const extractedContent = extractSpecificContent(chunk.content, context.query || '');
-          return {
-            ...chunk,
-            content: extractedContent,
-            isExtract: extractedContent !== chunk.content // Flag to indicate if content was extracted
-          };
-        });
+        // Return the most relevant chunks without modification
+        // Let the AI handle extracting specific information from the chunks
+        const processedChunks = relevantChunks;
         
-        // Create a specific answer based on the query type
-        let specificAnswer = '';
-        const queryLower = context.query.toLowerCase();
-        
-        if (queryLower.includes('last paragraph') || queryLower.includes('final paragraph')) {
-          // For last paragraph, use the content from the highest scoring chunk (which should be the last chunk)
-          specificAnswer = processedChunks[0].content;
-          console.log(`[PDF Chunker Tool] Extracted last paragraph: ${specificAnswer.substring(0, 100)}...`);
-        } else if (queryLower.includes('first paragraph') || queryLower.includes('opening paragraph')) {
-          specificAnswer = processedChunks[0].content;
-          console.log(`[PDF Chunker Tool] Extracted first paragraph: ${specificAnswer.substring(0, 100)}...`);
+        // Log relevance scores for debugging
+        if (relevantChunks.length > 0) {
+          console.log(`[PDF Chunker Tool] Top chunk relevance scores:`, 
+            relevantChunks.slice(0, 3).map((c, i) => `Chunk ${i}: ${c.relevanceScore.toFixed(4)}`).join(', ')
+          );
         }
         
-        // Prepare response
+        // Prepare response with the most relevant chunks
+        // The AI will extract the specific information from these chunks
         const response = {
           success: true,
           action: 'query',
           filename: basename(filepath),
           totalChunks: cached.chunks.length,
+          matchedChunks: relevantChunks.length,
           chunks: processedChunks,
-          message: specificAnswer 
-            ? `Here is the ${context.query}:\n\n${specificAnswer}`
-            : `Found ${relevantChunks.length} relevant chunks for query: "${context.query}"`,
-          specificAnswer, // Include the direct answer if available
+          message: `Found ${relevantChunks.length} relevant chunks for query: "${context.query}". The chunks are sorted by relevance score.`,
+          query: context.query,
+          searchMethod: queryEmbedding ? 'semantic' : 'keyword',
         };
         
         // Clean up cache to free memory after query
