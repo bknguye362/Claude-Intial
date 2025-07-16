@@ -131,25 +131,8 @@ if (typeof global !== 'undefined') {
   (global as any).NODE_ENV = 'production';
 }
 
-// Monkey-patch fs to prevent pdf-parse from reading test files
-const originalReadFileSync = fs.readFileSync;
-const originalExistsSync = fs.existsSync;
-
-// Override fs methods to block test file access
-(fs as any).readFileSync = function(path: string, ...args: any[]) {
-  if (typeof path === 'string' && path.includes('05-versions-space.pdf')) {
-    console.log('[PDF Chunker Tool] Blocked pdf-parse test file access');
-    throw new Error('ENOENT: no such file or directory');
-  }
-  return originalReadFileSync.call(this, path, ...args);
-};
-
-(fs as any).existsSync = function(path: string) {
-  if (typeof path === 'string' && path.includes('05-versions-space.pdf')) {
-    return false;
-  }
-  return originalExistsSync.apply(this, [path]);
-};
+// Note: Cannot monkey-patch fs in ES modules as properties are read-only
+// pdf-parse will use fallback parser if it fails
 
 // Fallback PDF text extraction using basic parsing
 async function fallbackPdfParse(dataBuffer: Buffer) {
@@ -380,12 +363,7 @@ const pdf = async (dataBuffer: Buffer) => {
       pdfParse = await loadPdfParse();
       console.log(`[PDF Chunker Tool] Successfully loaded pdf-parse`);
       
-      // Restore original fs functions after pdf-parse is loaded
-      if (pdfParse !== fallbackPdfParse) {
-        console.log('[PDF Chunker Tool] Restoring original fs functions');
-        (fs as any).readFileSync = originalReadFileSync;
-        (fs as any).existsSync = originalExistsSync;
-      }
+      // pdf-parse loaded successfully
     } catch (error: any) {
       console.error(`[PDF Chunker Tool] Failed to load pdf-parse:`, error);
       pdfParse = fallbackPdfParse;
