@@ -130,7 +130,20 @@ async function handleRequest(body: any) {
     
     console.log(`[API Endpoint] Stream complete. Total chunks: ${chunkCount}`);
     console.log(`[API Endpoint] Final response length: ${response.length} characters`);
-    console.log(`[API Endpoint] Response preview: ${response.substring(0, 200)}...`);
+    
+    // Log full response if it's long
+    if (response.length > 200) {
+      console.log(`[API Endpoint] Response preview: ${response.substring(0, 200)}...`);
+      console.log(`[API Endpoint] === FULL RESPONSE START ===`);
+      // Split long responses into chunks to avoid log line limits
+      const maxChunkSize = 1000;
+      for (let i = 0; i < response.length; i += maxChunkSize) {
+        console.log(`[API Endpoint] [${i}-${Math.min(i + maxChunkSize, response.length)}]: ${response.substring(i, i + maxChunkSize)}`);
+      }
+      console.log(`[API Endpoint] === FULL RESPONSE END ===`);
+    } else {
+      console.log(`[API Endpoint] Full response: ${response}`);
+    }
 
     // Check if response is empty or invalid (and not already handled by rate limit error)
     if (!rateLimitError && (!response || response.trim() === '')) {

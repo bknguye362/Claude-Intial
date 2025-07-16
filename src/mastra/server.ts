@@ -248,7 +248,15 @@ const server = createServer(async (req, res) => {
     }
     
     const result = await handleRequest(requestData);
-    console.log('[Server] Result from handleRequest:', JSON.stringify(result).substring(0, 200) + '...');
+    
+    // Log response details
+    const responseContent = result?.choices?.[0]?.message?.content || '';
+    if (responseContent.length > 200) {
+      console.log('[Server] Response length:', responseContent.length, 'characters');
+      console.log('[Server] Result preview:', JSON.stringify(result).substring(0, 200) + '...');
+    } else {
+      console.log('[Server] Result from handleRequest:', JSON.stringify(result));
+    }
     
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(result));
