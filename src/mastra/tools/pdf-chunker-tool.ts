@@ -6,6 +6,7 @@ import { readFile } from 'fs/promises';
 import { join, basename } from 'path';
 import * as fs from 'fs';
 import * as path from 'path';
+import { unlink } from 'fs/promises';
 // S3 imports removed - using local storage only
 
 // Type definitions
@@ -367,6 +368,19 @@ const pdf = async (dataBuffer: Buffer) => {
 
 // S3 client disabled - using local storage only
 const s3Client = null;
+
+// Helper function to delete PDF file from disk
+async function deletePdfFile(filepath: string): Promise<void> {
+  try {
+    if (filepath && fs.existsSync(filepath)) {
+      await unlink(filepath);
+      console.log(`[PDF Chunker Tool] Deleted PDF file: ${filepath}`);
+    }
+  } catch (error) {
+    console.error(`[PDF Chunker Tool] Error deleting PDF file:`, error);
+    // Don't throw - file deletion is cleanup, shouldn't fail the operation
+  }
+}
 
 // In-memory storage for PDF chunks with embeddings (in production, use a database)
 const pdfChunksCache = new Map<string, {
@@ -847,6 +861,9 @@ export const pdfChunkerTool = createTool({
           console.log(`[PDF Chunker Tool] Cleaning up cache for ${cacheKey} to free memory`);
           pdfChunksCache.delete(cacheKey);
           
+          // Delete the PDF file from disk
+          await deletePdfFile(filepath);
+          
           return response;
         }
         
@@ -890,6 +907,9 @@ export const pdfChunkerTool = createTool({
         console.log(`[PDF Chunker Tool] Cleaning up cache for ${cacheKey} to free memory`);
         pdfChunksCache.delete(cacheKey);
         
+        // Delete the PDF file from disk
+        await deletePdfFile(filepath);
+        
         return response;
       } else if (context.action === 'summarize') {
         console.log(`\n[PDF Chunker Tool] ========== SUMMARIZE ACTION ==========`);
@@ -921,6 +941,9 @@ export const pdfChunkerTool = createTool({
           // Clean up cache to free memory after summarize
           console.log(`[PDF Chunker Tool] Cleaning up cache for ${cacheKey} to free memory`);
           pdfChunksCache.delete(cacheKey);
+          
+          // Delete the PDF file from disk
+          await deletePdfFile(filepath);
           
           return response;
         } else {
@@ -1021,6 +1044,9 @@ export const pdfChunkerTool = createTool({
           // Clean up cache to free memory after summarize
           console.log(`[PDF Chunker Tool] Cleaning up cache for ${cacheKey} to free memory`);
           pdfChunksCache.delete(cacheKey);
+          
+          // Delete the PDF file from disk
+          await deletePdfFile(filepath);
           
           return response;
         }
