@@ -26,9 +26,8 @@
     "@mastra/loggers": "^0.10.3",
     "@mastra/memory": "^0.11.2",
     "@types/cheerio": "^0.22.35",
-    "@types/pdf-parse": "^1.1.5",
     "cheerio": "^1.1.0",
-    "pdf-parse": "^1.1.1",
+    "pdfjs-dist": "^5.3.93",
     "typescript": "^5.8.3",
     "zod": "^3.25.76"
   },

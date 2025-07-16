@@ -115,20 +115,12 @@ function cosineSimilarity(a: number[], b: number[]): number {
   return dotProduct / (normA * normB);
 }
 
-// Workaround for pdf-parse debug mode issue
-// We need to prevent the module check that triggers debug mode
-let pdfParse: any = null;
+// Using pdfjs-dist for better compatibility and ES module support
+import * as pdfjsLib from 'pdfjs-dist';
+import { TextItem } from 'pdfjs-dist/types/src/display/api';
 
-// Pre-set globals to prevent pdf-parse debug mode
-if (typeof global !== 'undefined') {
-  // Force module.parent to exist before any imports
-  if (typeof module !== 'undefined' && !module.parent) {
-    (module as any).parent = { filename: 'fake-parent' };
-  }
-  // Set flags that might prevent debug mode
-  (global as any).PDF_PARSE_NO_DEBUG = true;
-  (global as any).NODE_ENV = 'production';
-}
+// Configure pdfjs-dist worker
+pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
 // Fallback PDF text extraction using basic parsing
 async function fallbackPdfParse(dataBuffer: Buffer) {
@@ -310,59 +302,70 @@ async function fallbackPdfParse(dataBuffer: Buffer) {
   };
 }
 
-// Helper to load pdf-parse, handling the debug mode issue
-async function loadPdfParse() {
-  try {
-    // First attempt: Import pdf-parse directly
-    // This will throw if it tries to read the test file
-    const pdfParseModule = await import('pdf-parse');
-    return pdfParseModule.default || pdfParseModule;
-  } catch (error: any) {
-    // If it's the test file error, use fallback parser
-    if (error?.message?.includes('05-versions-space.pdf')) {
-      console.log(`[PDF Chunker Tool] pdf-parse debug mode error detected, using fallback parser`);
-      return fallbackPdfParse;
-    }
-    
-    throw error;
-  }
-}
+// Helper function removed - no longer using pdf-parse
 
 const pdf = async (dataBuffer: Buffer) => {
-  console.log(`[PDF Chunker Tool] Parsing PDF...`);
-  
-  if (!pdfParse) {
-    console.log(`[PDF Chunker Tool] Loading pdf-parse...`);
+  try {
+    console.log(`[PDF Chunker Tool] Using pdfjs-dist to parse PDF...`);
     
-    try {
-      pdfParse = await loadPdfParse();
-      console.log(`[PDF Chunker Tool] Successfully loaded pdf-parse`);
-    } catch (error: any) {
-      console.error(`[PDF Chunker Tool] Failed to load pdf-parse:`, error);
+    // Convert Buffer to Uint8Array for pdfjs-dist
+    const uint8Array = new Uint8Array(dataBuffer);
+    
+    // Load the PDF document
+    const loadingTask = pdfjsLib.getDocument({
+      data: uint8Array,
+      useSystemFonts: true, // Use system fonts to handle embedded fonts better
+      cMapUrl: '//cdnjs.cloudflare.com/ajax/libs/pdf.js/' + pdfjsLib.version + '/cmaps/',
+      cMapPacked: true,
+    });
+    
+    const pdfDoc = await loadingTask.promise;
+    console.log(`[PDF Chunker Tool] PDF loaded with pdfjs-dist, ${pdfDoc.numPages} pages`);
+    
+    // Extract text from all pages
+    let fullText = '';
+    const pageTexts: string[] = [];
+    
+    for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+      const page = await pdfDoc.getPage(pageNum);
+      const textContent = await page.getTextContent();
       
-      // If it's the debug mode error, use fallback parser
-      if (error?.message?.includes('05-versions-space.pdf')) {
-        console.log(`[PDF Chunker Tool] Using fallback parser due to pdf-parse error`);
-        pdfParse = fallbackPdfParse;
-      } else {
-        throw error;
-      }
+      // Extract text items and join them
+      const pageText = textContent.items
+        .map((item) => {
+          // Type guard to ensure we're working with TextItem
+          if ('str' in item) {
+            return item.str;
+          }
+          return '';
+        })
+        .join(' ');
+      
+      pageTexts.push(pageText);
+      fullText += pageText + '\n\n';
     }
+    
+    // Get metadata
+    const metadata = await pdfDoc.getMetadata();
+    
+    console.log(`[PDF Chunker Tool] Extracted ${fullText.length} characters from PDF`);
+    
+    return {
+      numpages: pdfDoc.numPages,
+      text: fullText.trim(),
+      info: {
+        Title: (metadata.info as any)?.Title || undefined,
+        Author: (metadata.info as any)?.Author || undefined,
+        Subject: (metadata.info as any)?.Subject || undefined,
+        Creator: (metadata.info as any)?.Creator || undefined,
+      }
+    };
+    
+  } catch (error) {
+    console.error(`[PDF Chunker Tool] pdfjs-dist failed, trying fallback parser:`, error);
+    // If pdfjs-dist fails, fall back to our custom parser
+    return fallbackPdfParse(dataBuffer);
   }
-  
-  console.log(`[PDF Chunker Tool] pdf-parse type:`, typeof pdfParse);
-  console.log(`[PDF Chunker Tool] About to call pdfParse with buffer size:`, dataBuffer.length);
-  
-  if (!dataBuffer || dataBuffer.length === 0) {
-    throw new Error('PDF buffer is empty');
-  }
-  
-  // Ensure we're calling it as a function with our buffer
-  if (typeof pdfParse !== 'function') {
-    throw new Error('pdf-parse is not a function');
-  }
-  
-  return pdfParse(dataBuffer);
 };
 
 // S3 client disabled - using local storage only
@@ -738,25 +741,16 @@ export const pdfChunkerTool = createTool({
           let pdfData;
           
           try {
-            // Try standard parsing first
-            if (pdfParse) {
-              pdfData = await pdfParse(fileBuffer);
-            } else {
-              // Fallback parsing
-              pdfData = await fallbackPdfParse(fileBuffer);
-            }
+            // Use the new pdf function which includes pdfjs-dist with fallback
+            pdfData = await pdf(fileBuffer);
           } catch (parseError: any) {
-            console.log('[PDF-CHUNKER-V3] Primary parsing failed, using fallback parser:', parseError.message);
-            try {
-              pdfData = await fallbackPdfParse(fileBuffer);
-            } catch (fallbackError: any) {
-              return {
-                success: false,
-                action: 'query',
-                message: 'Failed to parse PDF',
-                error: fallbackError.message,
-              };
-            }
+            console.log('[PDF-CHUNKER-V3] PDF parsing failed:', parseError.message);
+            return {
+              success: false,
+              action: 'query',
+              message: 'Failed to parse PDF',
+              error: parseError.message,
+            };
           }
 
           // Extract text and metadata
