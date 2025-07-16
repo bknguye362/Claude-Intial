@@ -8,6 +8,113 @@ import * as fs from 'fs';
 import * as path from 'path';
 // S3 imports removed - using local storage only
 
+// Type definitions
+interface PDFChunk {
+  index: number;
+  content: string;
+  pageStart: number;
+  pageEnd: number;
+  embedding?: number[];
+}
+
+interface PDFChunkWithScore extends PDFChunk {
+  relevanceScore: number;
+}
+
+// Azure OpenAI configuration for embeddings
+const AZURE_OPENAI_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT || 'https://franklin-open-ai-test.openai.azure.com';
+const AZURE_OPENAI_API_KEY = process.env.AZURE_OPENAI_API_KEY || process.env.AZURE_API_KEY || process.env.OPENAI_API_KEY || '';
+const AZURE_OPENAI_API_VERSION = process.env.AZURE_OPENAI_API_VERSION || '2023-12-01-preview';
+const EMBEDDINGS_DEPLOYMENT = 'text-embedding-ada-002'; // Azure deployment name for embeddings
+
+// Helper function to generate embeddings using Azure OpenAI
+async function generateEmbedding(text: string): Promise<number[]> {
+  if (!AZURE_OPENAI_API_KEY) {
+    console.log('[PDF Chunker Tool] No API key for embeddings, skipping...');
+    return [];
+  }
+
+  try {
+    const url = `${AZURE_OPENAI_ENDPOINT}/openai/deployments/${EMBEDDINGS_DEPLOYMENT}/embeddings?api-version=${AZURE_OPENAI_API_VERSION}`;
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'api-key': AZURE_OPENAI_API_KEY
+      },
+      body: JSON.stringify({
+        input: text.slice(0, 8000), // Limit to 8k chars for token limit
+        model: 'text-embedding-ada-002'
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Embedding API error: ${response.status} ${response.statusText}`);
+    }
+
+    const data: any = await response.json();
+    return data.data[0].embedding;
+  } catch (error) {
+    console.error('[PDF Chunker Tool] Error generating embedding:', error);
+    return [];
+  }
+}
+
+// Helper function to generate embeddings for multiple texts in parallel
+async function generateEmbeddings(texts: string[]): Promise<number[][]> {
+  console.log(`[PDF Chunker Tool] Generating embeddings for ${texts.length} chunks...`);
+  
+  // Batch process to avoid rate limits (5 at a time)
+  const batchSize = 5;
+  const embeddings: number[][] = [];
+  
+  for (let i = 0; i < texts.length; i += batchSize) {
+    const batch = texts.slice(i, i + batchSize);
+    const batchPromises = batch.map(text => generateEmbedding(text));
+    const batchEmbeddings = await Promise.all(batchPromises);
+    embeddings.push(...batchEmbeddings);
+    
+    // Small delay to avoid rate limiting
+    if (i + batchSize < texts.length) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }
+  
+  const validEmbeddings = embeddings.filter(e => e.length > 0);
+  console.log(`[PDF Chunker Tool] Generated ${validEmbeddings.length} embeddings successfully`);
+  if (validEmbeddings.length > 0) {
+    console.log(`[PDF Chunker Tool] Embedding dimensions: ${validEmbeddings[0].length}`);
+  }
+  return embeddings;
+}
+
+// Calculate cosine similarity between two vectors
+function cosineSimilarity(a: number[], b: number[]): number {
+  if (!a || !b || a.length === 0 || b.length === 0 || a.length !== b.length) {
+    return 0;
+  }
+  
+  let dotProduct = 0;
+  let normA = 0;
+  let normB = 0;
+  
+  for (let i = 0; i < a.length; i++) {
+    dotProduct += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  
+  normA = Math.sqrt(normA);
+  normB = Math.sqrt(normB);
+  
+  if (normA === 0 || normB === 0) {
+    return 0;
+  }
+  
+  return dotProduct / (normA * normB);
+}
+
 // Workaround for pdf-parse debug mode issue
 // We need to prevent the module check that triggers debug mode
 let pdfParse: any = null;
@@ -261,11 +368,12 @@ const pdf = async (dataBuffer: Buffer) => {
 // S3 client disabled - using local storage only
 const s3Client = null;
 
-// In-memory storage for PDF chunks (in production, use a database)
+// In-memory storage for PDF chunks with embeddings (in production, use a database)
 const pdfChunksCache = new Map<string, {
-  chunks: Array<{ index: number; content: string; pageStart: number; pageEnd: number }>;
+  chunks: PDFChunk[];
   metadata: any;
   timestamp: number;
+  embeddings?: number[][]; // Store embeddings separately for easier access
 }>();
 
 // Helper function to split text into chunks by lines
@@ -339,10 +447,38 @@ async function recursiveSummarize(chunks: string[]): Promise<string> {
 }
 
 // Helper function to search chunks for relevant content
+// New embedding-based search function
+async function searchChunksWithEmbeddings(
+  chunks: PDFChunk[],
+  query: string,
+  queryEmbedding?: number[]
+): Promise<PDFChunkWithScore[]> {
+  // If we have embeddings, use semantic search
+  if (queryEmbedding && chunks[0]?.embedding && chunks[0].embedding.length > 0) {
+    console.log(`[PDF Chunker Tool] Using embedding-based search`);
+    
+    // Calculate cosine similarities
+    const chunksWithScores = chunks.map(chunk => ({
+      ...chunk,
+      relevanceScore: chunk.embedding ? cosineSimilarity(queryEmbedding, chunk.embedding) : 0
+    }));
+    
+    // Sort by similarity score
+    return chunksWithScores
+      .sort((a, b) => b.relevanceScore - a.relevanceScore)
+      .slice(0, 5); // Return top 5 most similar chunks
+  }
+  
+  // Fallback to keyword search if no embeddings
+  console.log(`[PDF Chunker Tool] Falling back to keyword search`);
+  return searchChunks(chunks, query);
+}
+
+// Original keyword-based search function (kept as fallback)
 function searchChunks(
-  chunks: Array<{ index: number; content: string; pageStart: number; pageEnd: number }>, 
+  chunks: PDFChunk[], 
   query: string
-): Array<{ index: number; content: string; pageStart: number; pageEnd: number; relevanceScore: number }> {
+): PDFChunkWithScore[] {
   const queryLower = query.toLowerCase();
   const queryWords = queryLower.split(/\s+/).filter(word => word.length > 2);
   
@@ -636,7 +772,7 @@ export const pdfChunkerTool = createTool({
           const textChunks = chunkTextByLines(text, context.chunkSize || 200);
           
           // Create chunk objects with estimated page numbers (same as summarize action)
-          const chunks = textChunks.map((content, index) => {
+          const chunks: PDFChunk[] = textChunks.map((content, index) => {
             const chunkPosition = index / textChunks.length;
             const pageStart = Math.floor(chunkPosition * metadata.pages) + 1;
             const pageEnd = Math.min(
@@ -652,14 +788,25 @@ export const pdfChunkerTool = createTool({
             };
           });
           
+          // Generate embeddings for chunks
+          console.log(`[PDF Chunker Tool] Generating embeddings for ${chunks.length} chunks...`);
+          const chunkTexts = chunks.map(chunk => chunk.content);
+          const embeddings = await generateEmbeddings(chunkTexts);
+          
+          // Add embeddings to chunks
+          chunks.forEach((chunk, index) => {
+            chunk.embedding = embeddings[index];
+          });
+          
           // Cache for future use
           cached = {
             chunks,
             metadata,
             timestamp: Date.now(),
+            embeddings,
           };
           pdfChunksCache.set(cacheKey, cached);
-          console.log(`[PDF Chunker Tool] Successfully processed and cached PDF with ${chunks.length} chunks`);
+          console.log(`[PDF Chunker Tool] Successfully processed and cached PDF with ${chunks.length} chunks and embeddings`);
         }
         
         if (!context.query) {
@@ -674,9 +821,16 @@ export const pdfChunkerTool = createTool({
         console.log(`[PDF Chunker Tool] Searching for: "${context.query}"`);
         console.log(`[PDF Chunker Tool] Total chunks available: ${cached.chunks.length}`);
         
-        // Search for relevant chunks
-        const relevantChunks = searchChunks(cached.chunks, context.query);
-        console.log(`[PDF Chunker Tool] Found ${relevantChunks.length} relevant chunks`);
+        // Generate embedding for the query
+        let queryEmbedding: number[] | undefined;
+        if (cached.chunks[0]?.embedding && cached.chunks[0].embedding.length > 0) {
+          console.log(`[PDF Chunker Tool] Generating embedding for query...`);
+          queryEmbedding = await generateEmbedding(context.query);
+        }
+        
+        // Search for relevant chunks using embeddings or fallback to keyword search
+        const relevantChunks = await searchChunksWithEmbeddings(cached.chunks, context.query, queryEmbedding);
+        console.log(`[PDF Chunker Tool] Found ${relevantChunks.length} relevant chunks using ${queryEmbedding ? 'embeddings' : 'keywords'}`);
         
         if (relevantChunks.length === 0) {
           // Return some chunks anyway for context
@@ -797,7 +951,7 @@ export const pdfChunkerTool = createTool({
           console.log(`[PDF Chunker Tool] Split PDF into ${textChunks.length} chunks for summarization`);
           
           // Create chunk objects with estimated page numbers
-          const chunks = textChunks.map((content, index) => {
+          const chunks: PDFChunk[] = textChunks.map((content, index) => {
             const chunkPosition = index / textChunks.length;
             const pageStart = Math.floor(chunkPosition * pdfData.numpages) + 1;
             const pageEnd = Math.min(
@@ -813,11 +967,21 @@ export const pdfChunkerTool = createTool({
             };
           });
           
-          // Cache the chunks for future use
+          // Generate embeddings for chunks (optional for summarize, but keeps consistency)
+          console.log(`[PDF Chunker Tool] Generating embeddings for ${chunks.length} chunks in summarize...`);
+          const embeddings = await generateEmbeddings(textChunks);
+          
+          // Add embeddings to chunks
+          chunks.forEach((chunk, index) => {
+            chunk.embedding = embeddings[index];
+          });
+          
+          // Cache the chunks with embeddings for future use
           pdfChunksCache.set(cacheKey, {
             chunks,
             metadata,
             timestamp: Date.now(),
+            embeddings,
           });
           
           // Create recursive summary
