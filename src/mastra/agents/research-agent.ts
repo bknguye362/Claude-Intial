@@ -11,7 +11,7 @@ const openai = createOpenAI();
 // Create memory only if not in production (Heroku)
 const agentConfig: any = {
   name: 'Research Agent',
-  maxTokens: 200,  // Limit response tokens to conserve usage
+  maxTokens: 4096,  // Increased limit for longer responses
   instructions: `
     You are a helpful research assistant that uses Google Search to find current information on the web and then scrapes content from those links for in-depth analysis.
 

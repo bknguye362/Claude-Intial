@@ -12,7 +12,7 @@ const openai = createOpenAI();
 // Create memory only if not in production (Heroku)
 const agentConfig: any = {
   name: 'File Agent',
-  maxTokens: 500,
+  maxTokens: 4096,
   instructions: `
     You are a specialized file management assistant that handles all file-related operations with advanced PDF processing capabilities.
     

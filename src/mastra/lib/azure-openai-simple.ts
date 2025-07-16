@@ -27,7 +27,7 @@ export function createOpenAI(options?: any) {
       // For Mastra/Vercel AI SDK compatibility
       async doStream(params: any) {
         const messages = params.messages || [];
-        const maxTokens = params.maxTokens || 150;
+        const maxTokens = params.maxTokens || 4096;
         
         console.log(`[Azure OpenAI Simple] Streaming from ${deploymentName}`);
         console.log(`[Azure OpenAI Simple] Messages:`, JSON.stringify(messages));
@@ -136,7 +136,7 @@ export function createOpenAI(options?: any) {
       
       // For agent.stream() compatibility
       async stream(messages: any[]) {
-        const result = await this.doStream({ messages, maxTokens: 150 });
+        const result = await this.doStream({ messages, maxTokens: 4096 });
         const reader = result.stream.getReader();
         
         async function* textStreamGenerator() {

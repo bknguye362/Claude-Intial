@@ -522,7 +522,7 @@ export function createOpenAI(options?: any) {
               console.log('[Azure Direct] Making second API call with tool results');
               const secondRequestBody = {
                 messages: messageArray,
-                max_tokens: 150,
+                max_tokens: 4096,
                 temperature: 0.7,
                 stream: true,
                 // Don't include tools in the second call
@@ -659,7 +659,7 @@ export function createOpenAI(options?: any) {
             },
             body: JSON.stringify({
               messages: messages,
-              max_tokens: params.maxTokens || 150,
+              max_tokens: params.maxTokens || 4096,
               temperature: params.temperature || 0.7,
               stream: false,
             }),
