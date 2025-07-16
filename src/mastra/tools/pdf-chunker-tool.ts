@@ -116,11 +116,14 @@ function cosineSimilarity(a: number[], b: number[]): number {
 }
 
 // Using pdfjs-dist for better compatibility and ES module support
-import * as pdfjsLib from 'pdfjs-dist';
-import { TextItem } from 'pdfjs-dist/types/src/display/api';
-
-// Configure pdfjs-dist worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+let pdfjsLib: any;
+try {
+  pdfjsLib = await import('pdfjs-dist');
+  // Configure pdfjs-dist worker
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+} catch (error) {
+  console.log('[PDF Chunker Tool] Could not load pdfjs-dist, will use fallback parser only');
+}
 
 // Fallback PDF text extraction using basic parsing
 async function fallbackPdfParse(dataBuffer: Buffer) {
@@ -306,6 +309,11 @@ async function fallbackPdfParse(dataBuffer: Buffer) {
 
 const pdf = async (dataBuffer: Buffer) => {
   try {
+    if (!pdfjsLib) {
+      console.log(`[PDF Chunker Tool] pdfjs-dist not available, using fallback parser`);
+      return fallbackPdfParse(dataBuffer);
+    }
+    
     console.log(`[PDF Chunker Tool] Using pdfjs-dist to parse PDF...`);
     
     // Convert Buffer to Uint8Array for pdfjs-dist
@@ -332,7 +340,7 @@ const pdf = async (dataBuffer: Buffer) => {
       
       // Extract text items and join them
       const pageText = textContent.items
-        .map((item) => {
+        .map((item: any) => {
           // Type guard to ensure we're working with TextItem
           if ('str' in item) {
             return item.str;
