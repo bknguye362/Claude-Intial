@@ -834,7 +834,7 @@ export const pdfChunkerTool = createTool({
         
         if (relevantChunks.length === 0) {
           // Return some chunks anyway for context
-          return {
+          const response = {
             success: true,
             action: 'query',
             filename: basename(filepath),
@@ -842,6 +842,12 @@ export const pdfChunkerTool = createTool({
             chunks: cached.chunks.slice(0, 5),
             message: `No direct matches found for "${context.query}". Showing first 5 chunks for context.`,
           };
+          
+          // Clean up cache to free memory
+          console.log(`[PDF Chunker Tool] Cleaning up cache for ${cacheKey} to free memory`);
+          pdfChunksCache.delete(cacheKey);
+          
+          return response;
         }
         
         // Process chunks to extract specific content based on the query
@@ -867,7 +873,8 @@ export const pdfChunkerTool = createTool({
           console.log(`[PDF Chunker Tool] Extracted first paragraph: ${specificAnswer.substring(0, 100)}...`);
         }
         
-        return {
+        // Prepare response
+        const response = {
           success: true,
           action: 'query',
           filename: basename(filepath),
@@ -878,6 +885,12 @@ export const pdfChunkerTool = createTool({
             : `Found ${relevantChunks.length} relevant chunks for query: "${context.query}"`,
           specificAnswer, // Include the direct answer if available
         };
+        
+        // Clean up cache to free memory after query
+        console.log(`[PDF Chunker Tool] Cleaning up cache for ${cacheKey} to free memory`);
+        pdfChunksCache.delete(cacheKey);
+        
+        return response;
       } else if (context.action === 'summarize') {
         console.log(`\n[PDF Chunker Tool] ========== SUMMARIZE ACTION ==========`);
         console.log(`[PDF Chunker Tool] Creating recursive summary for: ${filepath}`);
@@ -894,7 +907,8 @@ export const pdfChunkerTool = createTool({
           const chunkTexts = cached.chunks.map(chunk => chunk.content);
           const summary = await recursiveSummarize(chunkTexts);
           
-          return {
+          // Prepare response
+          const response = {
             success: true,
             action: 'summarize',
             filename: basename(filepath),
@@ -903,6 +917,12 @@ export const pdfChunkerTool = createTool({
             metadata: cached.metadata,
             message: `Successfully created recursive summary of "${basename(filepath)}" from ${cached.chunks.length} chunks.`,
           };
+          
+          // Clean up cache to free memory after summarize
+          console.log(`[PDF Chunker Tool] Cleaning up cache for ${cacheKey} to free memory`);
+          pdfChunksCache.delete(cacheKey);
+          
+          return response;
         } else {
           // Need to process the PDF first
           console.log(`[PDF Chunker Tool] PDF not cached, processing first...`);
@@ -987,7 +1007,8 @@ export const pdfChunkerTool = createTool({
           // Create recursive summary
           const summary = await recursiveSummarize(textChunks);
           
-          return {
+          // Prepare response
+          const response = {
             success: true,
             action: 'summarize',
             filename,
@@ -996,6 +1017,12 @@ export const pdfChunkerTool = createTool({
             metadata,
             message: `Successfully processed and created recursive summary of "${filename}" from ${chunks.length} chunks.`,
           };
+          
+          // Clean up cache to free memory after summarize
+          console.log(`[PDF Chunker Tool] Cleaning up cache for ${cacheKey} to free memory`);
+          pdfChunksCache.delete(cacheKey);
+          
+          return response;
         }
       }
       
