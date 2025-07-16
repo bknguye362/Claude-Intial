@@ -113,6 +113,16 @@ async function handleRequest(body: any) {
         response += chunk;
         chunkCount++;
         console.log(`[API Endpoint] Chunk ${chunkCount} (${chunk.length} chars): ${chunk.substring(0, 50)}...`);
+        
+        // Log running total length
+        if (chunkCount % 10 === 0 || chunk.length < 10) {
+          console.log(`[API Endpoint] Total response length so far: ${response.length} chars`);
+        }
+        
+        // Check if chunk ends abruptly
+        if (chunk.length > 0 && !chunk.endsWith(' ') && !chunk.endsWith('\n') && !chunk.endsWith('.') && !chunk.endsWith(',')) {
+          console.log(`[API Endpoint] Warning: Chunk ${chunkCount} may have been cut off. Last chars: "${chunk.slice(-20)}"`);
+        }
       }
     } catch (streamError) {
       console.error('[API Endpoint] Error during stream iteration:', streamError);
