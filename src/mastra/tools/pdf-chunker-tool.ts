@@ -8,6 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { unlink } from 'fs/promises';
 // S3 imports removed - using local storage only
+import { storeEmbeddings, retrieveEmbeddings, deleteEmbeddings, VectorDocument } from '../lib/s3-vector-store';
 
 // Type definitions
 interface PDFChunk {
@@ -730,6 +731,32 @@ export const pdfChunkerTool = createTool({
           timestamp: Date.now(),
         });
         
+        // Store in S3 if available
+        console.log(`[PDF Chunker Tool] Attempting to store embeddings in S3...`);
+        const vectorDocs: VectorDocument[] = chunks.map(chunk => ({
+          id: `${cacheKey}_chunk_${chunk.index}`,
+          content: chunk.content,
+          embedding: [], // No embeddings yet for process action
+          metadata: {
+            filename: basename(filepath),
+            pageStart: chunk.pageStart,
+            pageEnd: chunk.pageEnd,
+            chunkIndex: chunk.index,
+            totalChunks: chunks.length,
+          },
+        }));
+        
+        const s3Stored = await storeEmbeddings(cacheKey, vectorDocs, {
+          filename: basename(filepath),
+          ...metadata,
+        });
+        
+        if (s3Stored) {
+          console.log(`[PDF Chunker Tool] ✓ Successfully stored chunks in S3`);
+        } else {
+          console.log(`[PDF Chunker Tool] S3 storage not available, using memory cache only`);
+        }
+        
         console.log(`[PDF Chunker Tool] ✓ Cached ${chunks.length} chunks for: ${cacheKey}`);
         console.log(`[PDF Chunker Tool] Cache now contains PDFs:`, Array.from(pdfChunksCache.keys()));
         
@@ -752,6 +779,38 @@ export const pdfChunkerTool = createTool({
         
         // Check if PDF has been processed
         let cached = pdfChunksCache.get(cacheKey);
+        
+        // Try to retrieve from S3 first if not in memory cache
+        if (!cached) {
+          console.log(`[PDF Chunker Tool] Checking S3 for cached embeddings...`);
+          const s3Data = await retrieveEmbeddings(cacheKey);
+          
+          if (s3Data) {
+            console.log(`[PDF Chunker Tool] Found embeddings in S3, restoring to memory cache`);
+            // Convert S3 data back to cache format
+            const chunks: PDFChunk[] = s3Data.chunks.map(doc => ({
+              index: doc.metadata?.chunkIndex || 0,
+              content: doc.content,
+              pageStart: doc.metadata?.pageStart || 1,
+              pageEnd: doc.metadata?.pageEnd || 1,
+              embedding: doc.embedding,
+            }));
+            
+            cached = {
+              chunks,
+              metadata: {
+                title: s3Data.metadata.filename,
+                pages: s3Data.metadata.pages,
+                characters: chunks.reduce((sum, chunk) => sum + chunk.content.length, 0),
+              },
+              timestamp: Date.now(),
+              embeddings: chunks.map(chunk => chunk.embedding || []),
+            };
+            
+            // Restore to memory cache
+            pdfChunksCache.set(cacheKey, cached);
+          }
+        }
         
         if (!cached) {
           console.log(`[PDF Chunker Tool] PDF not in cache, processing on-demand for query...`);
@@ -839,6 +898,30 @@ export const pdfChunkerTool = createTool({
             embeddings,
           };
           pdfChunksCache.set(cacheKey, cached);
+          
+          // Store in S3 with embeddings
+          console.log(`[PDF Chunker Tool] Storing embeddings in S3...`);
+          const vectorDocs: VectorDocument[] = chunks.map(chunk => ({
+            id: `${cacheKey}_chunk_${chunk.index}`,
+            content: chunk.content,
+            embedding: chunk.embedding || [],
+            metadata: {
+              filename: basename(filepath),
+              pageStart: chunk.pageStart,
+              pageEnd: chunk.pageEnd,
+              chunkIndex: chunk.index,
+              totalChunks: chunks.length,
+            },
+          }));
+          
+          const s3Stored = await storeEmbeddings(cacheKey, vectorDocs, {
+            filename: basename(filepath),
+            ...metadata,
+          });
+          
+          if (s3Stored) {
+            console.log(`[PDF Chunker Tool] ✓ Successfully stored embeddings in S3`);
+          }
           console.log(`[PDF Chunker Tool] Successfully processed and cached PDF with ${chunks.length} chunks and embeddings`);
         }
         
@@ -883,6 +966,10 @@ export const pdfChunkerTool = createTool({
           console.log(`[PDF Chunker Tool] Cleaning up cache for ${cacheKey} to free memory`);
           pdfChunksCache.delete(cacheKey);
           
+          // Delete from S3 if configured
+          console.log(`[PDF Chunker Tool] Cleaning up S3 storage...`);
+          await deleteEmbeddings(cacheKey);
+          
           // Delete the PDF file from disk
           await deletePdfFile(filepath);
           
@@ -918,6 +1005,10 @@ export const pdfChunkerTool = createTool({
         console.log(`[PDF Chunker Tool] Cleaning up cache for ${cacheKey} to free memory`);
         pdfChunksCache.delete(cacheKey);
         
+        // Delete from S3 if configured
+        console.log(`[PDF Chunker Tool] Cleaning up S3 storage...`);
+        await deleteEmbeddings(cacheKey);
+        
         // Delete the PDF file from disk
         await deletePdfFile(filepath);
         
@@ -952,6 +1043,10 @@ export const pdfChunkerTool = createTool({
           // Clean up cache to free memory after summarize
           console.log(`[PDF Chunker Tool] Cleaning up cache for ${cacheKey} to free memory`);
           pdfChunksCache.delete(cacheKey);
+          
+          // Delete from S3 if configured
+          console.log(`[PDF Chunker Tool] Cleaning up S3 storage...`);
+          await deleteEmbeddings(cacheKey);
           
           // Delete the PDF file from disk
           await deletePdfFile(filepath);
@@ -1038,6 +1133,30 @@ export const pdfChunkerTool = createTool({
             embeddings,
           });
           
+          // Store in S3 with embeddings
+          console.log(`[PDF Chunker Tool] Storing embeddings in S3 for summarize...`);
+          const vectorDocs: VectorDocument[] = chunks.map(chunk => ({
+            id: `${cacheKey}_chunk_${chunk.index}`,
+            content: chunk.content,
+            embedding: chunk.embedding || [],
+            metadata: {
+              filename: basename(filepath),
+              pageStart: chunk.pageStart,
+              pageEnd: chunk.pageEnd,
+              chunkIndex: chunk.index,
+              totalChunks: chunks.length,
+            },
+          }));
+          
+          const s3Stored = await storeEmbeddings(cacheKey, vectorDocs, {
+            filename: basename(filepath),
+            ...metadata,
+          });
+          
+          if (s3Stored) {
+            console.log(`[PDF Chunker Tool] ✓ Successfully stored embeddings in S3`);
+          }
+          
           // Create recursive summary
           const summary = await recursiveSummarize(textChunks);
           
@@ -1055,6 +1174,10 @@ export const pdfChunkerTool = createTool({
           // Clean up cache to free memory after summarize
           console.log(`[PDF Chunker Tool] Cleaning up cache for ${cacheKey} to free memory`);
           pdfChunksCache.delete(cacheKey);
+          
+          // Delete from S3 if configured
+          console.log(`[PDF Chunker Tool] Cleaning up S3 storage...`);
+          await deleteEmbeddings(cacheKey);
           
           // Delete the PDF file from disk
           await deletePdfFile(filepath);
