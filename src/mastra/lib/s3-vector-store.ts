@@ -1,4 +1,5 @@
 // S3-based vector storage for PDF embeddings
+// Provides persistent storage for embeddings across server restarts
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { Readable } from 'stream';
 
