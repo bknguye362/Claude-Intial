@@ -21,6 +21,8 @@ const manualTools = {
   knowledgeTool,
   // pdfReaderTool, // Removed - not used and causes pdf-parse debug mode
   pdfChunkerTool,
+  pdfChunkerS3VectorsTool: pdfChunkerTool, // Also register under original name
+  'pdf-chunker-s3vectors': pdfChunkerTool, // Register under the tool's ID
   textReaderTool,
   localListTool,
   agentCoordinationTool,
