@@ -3,7 +3,7 @@
 
 import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
-import { getS3VectorsLogger } from '../lib/s3-vectors-persistent-logger';
+import { getS3VectorsLogger } from '../lib/s3-vectors-persistent-logger.js';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 

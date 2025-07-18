@@ -8,7 +8,7 @@ import { join, basename } from 'path';
 import * as fs from 'fs';
 import * as path from 'path';
 import { unlink } from 'fs/promises';
-import { getS3VectorsService, S3VectorDocument } from '../lib/s3-vectors-integration';
+import { getS3VectorsService, S3VectorDocument } from '../lib/s3-vectors-integration.js';
 
 // Type definitions
 interface PDFChunk {

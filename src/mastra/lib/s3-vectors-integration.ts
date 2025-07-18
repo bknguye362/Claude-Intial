@@ -4,7 +4,7 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import crypto from 'crypto';
-import { s3VectorsLogger } from './s3-vectors-persistent-logger';
+import { s3VectorsLogger } from './s3-vectors-persistent-logger.js';
 
 const execAsync = promisify(exec);
 

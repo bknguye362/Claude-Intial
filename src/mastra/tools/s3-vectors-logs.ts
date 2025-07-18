@@ -3,7 +3,7 @@
 
 import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
-import { s3VectorsLogger } from '../lib/s3-vectors-persistent-logger';
+import { s3VectorsLogger } from '../lib/s3-vectors-persistent-logger.js';
 
 export const s3VectorsLogsTool = createTool({
   id: 's3-vectors-logs',
