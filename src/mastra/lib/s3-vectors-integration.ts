@@ -4,6 +4,7 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import crypto from 'crypto';
+import { s3VectorsLogger } from './s3-vectors-logger';
 
 const execAsync = promisify(exec);
 
@@ -110,9 +111,19 @@ export class S3VectorsService {
       const action = existingVector ? 'updated' : 'created';
       console.log(`[S3 Vectors] ${action.toUpperCase()} embedding: ${document.id}`);
       
+      s3VectorsLogger.log('storeEmbedding', {
+        action,
+        documentId: document.id,
+        filename: document.metadata?.filename
+      });
+      
       return { action, key: document.id };
     } catch (error) {
       console.error('[S3 Vectors] Error storing embedding:', error);
+      s3VectorsLogger.log('storeEmbedding', {
+        documentId: document.id,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }, false);
       throw error;
     }
   }
@@ -178,6 +189,13 @@ export class S3VectorsService {
     }
     
     console.log(`[S3 Vectors] Summary: ${created} created, ${updated} updated, ${documents.length} total`);
+    
+    s3VectorsLogger.log('storeBatch', {
+      chunksCreated: created,
+      chunksUpdated: updated,
+      totalChunks: documents.length
+    });
+    
     return { created, updated, total: documents.length };
   }
 
@@ -205,7 +223,14 @@ export class S3VectorsService {
       await fs.unlink(tempFile);
       
       const result = JSON.parse(stdout);
-      return result.vectors || [];
+      const vectors = result.vectors || [];
+      
+      s3VectorsLogger.log('search', {
+        searchQuery: 'embedding search',
+        resultsFound: vectors.length
+      });
+      
+      return vectors;
     } catch (error) {
       console.error('[S3 Vectors] Error searching:', error);
       return [];
@@ -234,6 +259,15 @@ export class S3VectorsService {
 
     const stats = await this.storeEmbeddings(documents);
     console.log(`[S3 Vectors] Document "${filename}": ${stats.created} new chunks, ${stats.updated} updated chunks, ${stats.total} total`);
+    
+    s3VectorsLogger.log('storePDFEmbeddings', {
+      documentId,
+      filename,
+      chunksCreated: stats.created,
+      chunksUpdated: stats.updated,
+      totalChunks: stats.total
+    });
+    
     return stats;
   }
 
