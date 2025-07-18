@@ -8,7 +8,42 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { unlink } from 'fs/promises';
 // S3 imports removed - using local storage only
-import { storeEmbeddings, retrieveEmbeddings, deleteEmbeddings, VectorDocument } from '../lib/s3-vector-store';
+// Temporarily disabled S3 integration due to ES module import issues on Heroku
+// import { storeEmbeddings, retrieveEmbeddings, deleteEmbeddings, VectorDocument } from '../lib/s3-vector-store';
+
+// Stub functions until import issue is fixed
+const storeEmbeddings = async (...args: any[]): Promise<boolean> => { 
+  console.log('[PDF Chunker] S3 storage disabled'); 
+  return false; 
+};
+const retrieveEmbeddings = async (...args: any[]): Promise<{
+  chunks: Array<{
+    content: string;
+    embedding: number[];
+    metadata?: {
+      chunkIndex?: number;
+      pageStart?: number;
+      pageEnd?: number;
+    };
+  }>;
+  metadata: {
+    filename: string;
+    pages?: number;
+  };
+} | null> => { 
+  console.log('[PDF Chunker] S3 retrieval disabled'); 
+  return null; 
+};
+const deleteEmbeddings = async (...args: any[]): Promise<boolean> => { 
+  console.log('[PDF Chunker] S3 deletion disabled'); 
+  return false; 
+};
+interface VectorDocument {
+  id: string;
+  content: string;
+  embedding: number[];
+  metadata?: any;
+}
 
 // Type definitions
 interface PDFChunk {
