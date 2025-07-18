@@ -289,7 +289,7 @@ export const pdfChunkerS3VectorsTool = createTool({
         return {
           success: true,
           action: 'query',
-          filename: result.filename || basename(filepath),
+          filename: results[0]?.filename || basename(filepath),
           totalChunks: chunks.length,
           chunks,
           message: `Found ${results.length} relevant chunks using S3 Vectors semantic search`,
