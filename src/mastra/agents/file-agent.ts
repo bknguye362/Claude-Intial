@@ -2,7 +2,7 @@ import { createOpenAI } from '../lib/azure-openai-direct.js';
 import { Agent } from '@mastra/core/agent';
 import { Memory } from '@mastra/memory';
 import { LibSQLStore } from '@mastra/libsql';
-import { pdfChunkerTool } from '../tools/pdf-chunker-tool.js';
+import { pdfChunkerS3VectorsTool as pdfChunkerTool } from '../tools/pdf-chunker-s3vectors.js';
 import { textReaderTool } from '../tools/text-reader-tool.js';
 import { localListTool } from '../tools/local-list-tool.js';
 
