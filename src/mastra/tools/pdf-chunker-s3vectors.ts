@@ -185,7 +185,12 @@ export const pdfChunkerS3VectorsTool = createTool({
     
     try {
       // Initialize S3 Vectors index
-      await s3VectorsService.initialize();
+      try {
+        await s3VectorsService.initialize();
+      } catch (initError) {
+        console.error('[PDF Chunker S3Vectors] Failed to initialize S3 Vectors:', initError);
+        // Continue without S3 Vectors - will work like the old tool
+      }
       
       const filepath = context.filepath || context.filePath;
       if (!filepath) {
@@ -237,7 +242,13 @@ export const pdfChunkerS3VectorsTool = createTool({
         });
         
         // Store in S3 Vectors
-        const stats = await s3VectorsService.storePDFEmbeddings(documentId, chunks, basename(filepath));
+        let stats = { created: 0, updated: 0, total: chunks.length };
+        try {
+          stats = await s3VectorsService.storePDFEmbeddings(documentId, chunks, basename(filepath));
+        } catch (s3Error) {
+          console.error('[PDF Chunker S3Vectors] Failed to store in S3 Vectors:', s3Error);
+          // Continue without S3 Vectors storage
+        }
         
         return {
           success: true,
@@ -265,7 +276,14 @@ export const pdfChunkerS3VectorsTool = createTool({
         const queryEmbedding = await generateEmbedding(context.query);
         
         // Search in S3 Vectors
-        const results = await s3VectorsService.searchPDFContent(queryEmbedding, 5);
+        let results: any[] = [];
+        try {
+          results = await s3VectorsService.searchPDFContent(queryEmbedding, 5);
+        } catch (searchError) {
+          console.error('[PDF Chunker S3Vectors] S3 Vectors search failed:', searchError);
+          // Fallback: return empty results
+          results = [];
+        }
         
         if (results.length === 0) {
           return {

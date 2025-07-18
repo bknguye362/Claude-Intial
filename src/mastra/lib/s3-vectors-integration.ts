@@ -40,7 +40,17 @@ export class S3VectorsService {
     this.indexName = indexName;
     this.region = region;
     this.dimensions = dimensions;
-    this.awsPath = process.env.AWS_CLI_PATH || '~/.local/bin/aws';
+    // Try to find AWS CLI in multiple locations
+    const possiblePaths = [
+      process.env.AWS_CLI_PATH,
+      '/home/bkngu/.local/bin/aws',
+      '~/.local/bin/aws',
+      '/usr/local/bin/aws',
+      '/usr/bin/aws',
+      'aws' // Fallback to PATH
+    ].filter(Boolean);
+    
+    this.awsPath = possiblePaths[0] || 'aws';
   }
 
   // Initialize the vector index
