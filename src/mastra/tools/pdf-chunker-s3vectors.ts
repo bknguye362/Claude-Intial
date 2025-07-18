@@ -237,7 +237,7 @@ export const pdfChunkerS3VectorsTool = createTool({
         });
         
         // Store in S3 Vectors
-        await s3VectorsService.storePDFEmbeddings(documentId, chunks, basename(filepath));
+        const stats = await s3VectorsService.storePDFEmbeddings(documentId, chunks, basename(filepath));
         
         return {
           success: true,
@@ -251,7 +251,7 @@ export const pdfChunkerS3VectorsTool = createTool({
             pageEnd: c.metadata.pageEnd,
           })),
           metadata,
-          message: `Successfully processed PDF into ${chunks.length} chunks and stored in S3 Vectors`,
+          message: `Successfully processed PDF into ${chunks.length} chunks. S3 Vectors: ${stats.created} new vectors created, ${stats.updated} existing vectors updated.`,
         };
         
       } else if (context.action === 'query') {

@@ -70,8 +70,20 @@ export class S3VectorsService {
   }
 
   // Store a single document embedding
-  async storeEmbedding(document: S3VectorDocument): Promise<void> {
+  async storeEmbedding(document: S3VectorDocument): Promise<{ action: 'created' | 'updated', key: string }> {
     try {
+      // First, try to check if vector already exists
+      let existingVector = false;
+      try {
+        const checkCommand = `${this.awsPath} s3vectors get-vectors --vector-bucket-name ${this.bucketName} --index-name ${this.indexName} --keys ${document.id} --region ${this.region}`;
+        const { stdout } = await execAsync(checkCommand);
+        const result = JSON.parse(stdout);
+        existingVector = result.vectors && result.vectors.length > 0;
+      } catch (error) {
+        // Vector doesn't exist yet
+        existingVector = false;
+      }
+
       const vectorData = {
         key: document.id,
         data: {
@@ -79,7 +91,8 @@ export class S3VectorsService {
         },
         metadata: {
           content: document.content.substring(0, 1000), // Limit content size
-          ...document.metadata
+          ...document.metadata,
+          lastUpdated: new Date().toISOString()
         }
       };
 
@@ -94,7 +107,10 @@ export class S3VectorsService {
       // Clean up temp file
       await fs.unlink(tempFile);
       
-      console.log(`[S3 Vectors] Stored embedding: ${document.id}`);
+      const action = existingVector ? 'updated' : 'created';
+      console.log(`[S3 Vectors] ${action.toUpperCase()} embedding: ${document.id}`);
+      
+      return { action, key: document.id };
     } catch (error) {
       console.error('[S3 Vectors] Error storing embedding:', error);
       throw error;
@@ -102,13 +118,33 @@ export class S3VectorsService {
   }
 
   // Store multiple embeddings (batch)
-  async storeEmbeddings(documents: S3VectorDocument[]): Promise<void> {
+  async storeEmbeddings(documents: S3VectorDocument[]): Promise<{ created: number, updated: number, total: number }> {
     console.log(`[S3 Vectors] Storing ${documents.length} embeddings...`);
+    
+    let created = 0;
+    let updated = 0;
+    
+    // First, check which vectors already exist
+    const existingKeys = new Set<string>();
+    try {
+      const listCommand = `${this.awsPath} s3vectors list-vectors --vector-bucket-name ${this.bucketName} --index-name ${this.indexName} --region ${this.region}`;
+      const { stdout } = await execAsync(listCommand);
+      const result = JSON.parse(stdout);
+      if (result.vectors) {
+        result.vectors.forEach((v: any) => existingKeys.add(v.key));
+      }
+    } catch (error) {
+      console.log('[S3 Vectors] Could not list existing vectors, assuming all are new');
+    }
     
     // S3 Vectors might have batch limits, so process in chunks
     const batchSize = 25;
     for (let i = 0; i < documents.length; i += batchSize) {
       const batch = documents.slice(i, i + batchSize);
+      
+      // Count new vs existing in this batch
+      const batchNew = batch.filter(doc => !existingKeys.has(doc.id)).length;
+      const batchExisting = batch.length - batchNew;
       
       const vectorData = batch.map(doc => ({
         key: doc.id,
@@ -117,7 +153,8 @@ export class S3VectorsService {
         },
         metadata: {
           content: doc.content.substring(0, 1000),
-          ...doc.metadata
+          ...doc.metadata,
+          lastUpdated: new Date().toISOString()
         }
       }));
 
@@ -128,13 +165,20 @@ export class S3VectorsService {
       try {
         const command = `${this.awsPath} s3vectors put-vectors --vector-bucket-name ${this.bucketName} --index-name ${this.indexName} --vectors file://${tempFile} --region ${this.region}`;
         await execAsync(command);
-        console.log(`[S3 Vectors] Stored batch ${i / batchSize + 1} of ${Math.ceil(documents.length / batchSize)}`);
+        
+        created += batchNew;
+        updated += batchExisting;
+        
+        console.log(`[S3 Vectors] Batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(documents.length / batchSize)}: ${batchNew} new, ${batchExisting} updated`);
       } catch (error) {
         console.error(`[S3 Vectors] Error storing batch:`, error);
       } finally {
         await fs.unlink(tempFile);
       }
     }
+    
+    console.log(`[S3 Vectors] Summary: ${created} created, ${updated} updated, ${documents.length} total`);
+    return { created, updated, total: documents.length };
   }
 
   // Search for similar vectors
@@ -173,7 +217,7 @@ export class S3VectorsService {
     documentId: string,
     chunks: Array<{ content: string; embedding: number[]; metadata?: any }>,
     filename: string
-  ): Promise<void> {
+  ): Promise<{ created: number, updated: number, total: number }> {
     const documents: S3VectorDocument[] = chunks.map((chunk, index) => ({
       id: `${documentId}-chunk-${index}`,
       content: chunk.content,
@@ -188,8 +232,9 @@ export class S3VectorsService {
       }
     }));
 
-    await this.storeEmbeddings(documents);
-    console.log(`[S3 Vectors] Stored ${chunks.length} chunks for document: ${filename}`);
+    const stats = await this.storeEmbeddings(documents);
+    console.log(`[S3 Vectors] Document "${filename}": ${stats.created} new chunks, ${stats.updated} updated chunks, ${stats.total} total`);
+    return stats;
   }
 
   // Search across all PDF documents
