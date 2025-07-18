@@ -5,6 +5,9 @@ import { LibSQLStore } from '@mastra/libsql';
 import { pdfChunkerS3VectorsTool as pdfChunkerTool } from '../tools/pdf-chunker-s3vectors.js';
 import { textReaderTool } from '../tools/text-reader-tool.js';
 import { localListTool } from '../tools/local-list-tool.js';
+import { s3VectorsMonitorTool } from '../tools/s3-vectors-monitor.js';
+import { s3VectorsLogsTool } from '../tools/s3-vectors-logs.js';
+import { s3VectorsDebugTool } from '../tools/s3-vectors-debug.js';
 
 // Initialize Azure OpenAI
 const openai = createOpenAI();
@@ -43,6 +46,9 @@ const agentConfig: any = {
       * action: "process" - Chunks PDF for detailed queries
       * action: "query" - Searches chunks for specific information
     - textReaderTool: Read text files
+    - s3VectorsMonitorTool: Monitor S3 Vectors bucket - check status and operations
+    - s3VectorsLogsTool: View S3 Vectors operation logs - see what was created/updated
+    - s3VectorsDebugTool: Debug S3 Vectors logging and persistence
     
     WORKFLOW:
     1. When asked about available files or to list files:
@@ -112,12 +118,20 @@ const agentConfig: any = {
     
     Be helpful, concise, and focused on file operations. When answering questions about PDFs, 
     synthesize information from the relevant chunks into a coherent answer.
+    
+    S3 VECTORS MONITORING:
+    - Use s3VectorsMonitorTool to check bucket status and recent operations
+    - Use s3VectorsLogsTool to view detailed logs of vector operations
+    - Use s3VectorsDebugTool to test logging functionality and persistence
   `,
   model: openai('gpt-4.1-test'),
   tools: { 
     localListTool,
     pdfChunkerTool,
-    textReaderTool
+    textReaderTool,
+    s3VectorsMonitorTool,
+    s3VectorsLogsTool,
+    s3VectorsDebugTool
   },
   toolChoice: 'auto', // Encourage tool use
 };
