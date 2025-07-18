@@ -124,7 +124,7 @@ export const s3VectorsMonitorTool = createTool({
         return {
           success: true,
           action: 'inspect',
-          vectorDetails: vectorDetails.sort((a, b) => a.chunkIndex - b.chunkIndex),
+          vectorDetails: vectorDetails.sort((a: any, b: any) => a.chunkIndex - b.chunkIndex),
           message: `Document "${context.documentId}" has ${docVectors.length} vector chunks`,
         };
       }
