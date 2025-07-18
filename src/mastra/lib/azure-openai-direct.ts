@@ -267,6 +267,74 @@ export function createOpenAI(options?: any) {
                     required: ['filePath']
                   }
                 }
+              },
+              {
+                type: 'function',
+                function: {
+                  name: 's3VectorsMonitorTool',
+                  description: 'Monitor S3 Vectors bucket - check status and operations',
+                  parameters: {
+                    type: 'object',
+                    properties: {
+                      action: {
+                        type: 'string',
+                        enum: ['status', 'list-recent'],
+                        description: 'Action to perform'
+                      },
+                      limit: {
+                        type: 'number',
+                        description: 'Number of recent operations to show',
+                        default: 10
+                      }
+                    },
+                    required: ['action']
+                  }
+                }
+              },
+              {
+                type: 'function',
+                function: {
+                  name: 's3VectorsLogsTool',
+                  description: 'View S3 Vectors operation logs - see what was created/updated',
+                  parameters: {
+                    type: 'object',
+                    properties: {
+                      action: {
+                        type: 'string',
+                        enum: ['recent', 'summary', 'by-document'],
+                        description: 'Action: view recent logs, get summary, or filter by document'
+                      },
+                      limit: {
+                        type: 'number',
+                        description: 'Number of recent logs to show',
+                        default: 10
+                      },
+                      documentId: {
+                        type: 'string',
+                        description: 'Document ID to filter logs (for by-document action)'
+                      }
+                    },
+                    required: ['action']
+                  }
+                }
+              },
+              {
+                type: 'function',
+                function: {
+                  name: 's3VectorsDebugTool',
+                  description: 'Debug S3 Vectors logging - test log creation and check persistence',
+                  parameters: {
+                    type: 'object',
+                    properties: {
+                      action: {
+                        type: 'string',
+                        enum: ['test-log', 'check-file', 'add-sample'],
+                        description: 'Action to perform'
+                      }
+                    },
+                    required: ['action']
+                  }
+                }
               }
             ];
             requestBody.tool_choice = 'auto';
