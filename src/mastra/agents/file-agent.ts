@@ -8,6 +8,7 @@ import { localListTool } from '../tools/local-list-tool.js';
 import { s3VectorsMonitorTool } from '../tools/s3-vectors-monitor.js';
 import { s3VectorsLogsTool } from '../tools/s3-vectors-logs.js';
 import { s3VectorsDebugTool } from '../tools/s3-vectors-debug.js';
+import { s3VectorsUploadTool, s3VectorsReadMetadataTool, s3VectorsQueryTool } from '../tools/s3-vectors-metadata.js';
 
 // Initialize Azure OpenAI
 const openai = createOpenAI();
@@ -49,6 +50,9 @@ const agentConfig: any = {
     - s3VectorsMonitorTool: Monitor S3 Vectors bucket - check status and operations
     - s3VectorsLogsTool: View S3 Vectors operation logs - see what was created/updated
     - s3VectorsDebugTool: Debug S3 Vectors logging and persistence
+    - s3VectorsUploadTool: Upload vectors where key is the vector ID and value is the metadata
+    - s3VectorsReadMetadataTool: Read vectors and retrieve their metadata values
+    - s3VectorsQueryTool: Query vectors by similarity search with metadata filtering
     
     WORKFLOW:
     1. When asked about available files or to list files:
@@ -119,10 +123,13 @@ const agentConfig: any = {
     Be helpful, concise, and focused on file operations. When answering questions about PDFs, 
     synthesize information from the relevant chunks into a coherent answer.
     
-    S3 VECTORS MONITORING:
+    S3 VECTORS MONITORING AND METADATA:
     - Use s3VectorsMonitorTool to check bucket status and recent operations
     - Use s3VectorsLogsTool to view detailed logs of vector operations
     - Use s3VectorsDebugTool to test logging functionality and persistence
+    - Use s3VectorsUploadTool to store vectors with custom metadata
+    - Use s3VectorsReadMetadataTool to retrieve vector keys and their metadata
+    - Use s3VectorsQueryTool for semantic search with metadata filtering
   `,
   model: openai('gpt-4.1-test'),
   tools: { 
@@ -131,7 +138,10 @@ const agentConfig: any = {
     textReaderTool,
     s3VectorsMonitorTool,
     s3VectorsLogsTool,
-    s3VectorsDebugTool
+    s3VectorsDebugTool,
+    s3VectorsUploadTool,
+    s3VectorsReadMetadataTool,
+    s3VectorsQueryTool
   },
   toolChoice: 'auto', // Encourage tool use
 };
