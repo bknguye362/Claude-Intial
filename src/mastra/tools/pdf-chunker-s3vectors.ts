@@ -9,6 +9,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { unlink } from 'fs/promises';
 import { getS3VectorsService, S3VectorDocument } from '../lib/s3-vectors-integration.js';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
 
 // Type definitions
 interface PDFChunk {
@@ -96,10 +99,17 @@ let pdfParse: any = null;
 
 async function loadPdfParse() {
   try {
-    const pdfParseModule = await import('pdf-parse');
-    return pdfParseModule.default || pdfParseModule;
+    console.log('[PDF Chunker S3Vectors] Attempting to load pdf-parse module...');
+    // Use createRequire for CommonJS module compatibility
+    const pdfParseModule = require('pdf-parse');
+    console.log('[PDF Chunker S3Vectors] pdf-parse module loaded successfully');
+    return pdfParseModule;
   } catch (error) {
     console.error('[PDF Chunker S3Vectors] Failed to load pdf-parse:', error);
+    console.error('[PDF Chunker S3Vectors] Error details:', {
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined
+    });
     return null;
   }
 }
@@ -107,11 +117,13 @@ async function loadPdfParse() {
 // Initialize PDF parser
 const pdf = async (dataBuffer: Buffer) => {
   if (!pdfParse) {
+    console.log('[PDF Chunker S3Vectors] PDF parser not loaded, loading now...');
     pdfParse = await loadPdfParse();
   }
   
   if (!pdfParse) {
-    throw new Error('PDF parser not available');
+    console.error('[PDF Chunker S3Vectors] PDF parser is still null after loading attempt');
+    throw new Error('PDF parser not available - please check if pdf-parse is installed');
   }
   
   return pdfParse(dataBuffer);
