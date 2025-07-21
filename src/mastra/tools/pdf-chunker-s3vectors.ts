@@ -253,13 +253,44 @@ export const pdfChunkerS3VectorsTool = createTool({
           };
         });
         
-        // Store in S3 Vectors
+        // Create a file-specific index and store in S3 Vectors
         let stats = { created: 0, updated: 0, total: chunks.length };
+        let fileIndexName: string | null = null;
         try {
-          stats = await s3VectorsService.storePDFEmbeddings(documentId, chunks, basename(filepath));
+          // Create an index for this specific file
+          fileIndexName = await s3VectorsService.createFileIndex(basename(filepath));
+          console.log(`[PDF Chunker S3Vectors] Created index '${fileIndexName}' for file '${basename(filepath)}'`);
+          
+          // Store chunks in the file-specific index
+          stats = await s3VectorsService.storePDFInFileIndex(fileIndexName, documentId, chunks, basename(filepath));
+          
+          // Also store in the main index for backward compatibility
+          await s3VectorsService.storePDFEmbeddings(documentId, chunks, basename(filepath));
         } catch (s3Error) {
           console.error('[PDF Chunker S3Vectors] Failed to store in S3 Vectors:', s3Error);
           // Continue without S3 Vectors storage
+        }
+        
+        // Store file index mapping for later retrieval
+        if (fileIndexName) {
+          try {
+            // Store the mapping in a JSON file
+            const mappingPath = join('/tmp', 'file-index-mappings.json');
+            let mappings: Record<string, string> = {};
+            
+            try {
+              const existingData = await readFile(mappingPath, 'utf-8');
+              mappings = JSON.parse(existingData);
+            } catch (e) {
+              // File doesn't exist yet
+            }
+            
+            mappings[basename(filepath)] = fileIndexName;
+            await fs.promises.writeFile(mappingPath, JSON.stringify(mappings, null, 2));
+            console.log(`[PDF Chunker S3Vectors] Saved index mapping: ${basename(filepath)} -> ${fileIndexName}`);
+          } catch (e) {
+            console.error('[PDF Chunker S3Vectors] Failed to save index mapping:', e);
+          }
         }
         
         return {
@@ -274,7 +305,7 @@ export const pdfChunkerS3VectorsTool = createTool({
             pageEnd: c.metadata.pageEnd,
           })),
           metadata,
-          message: `Successfully processed PDF into ${chunks.length} chunks. S3 Vectors: ${stats.created} new vectors created, ${stats.updated} existing vectors updated.`,
+          message: `Successfully processed PDF into ${chunks.length} chunks. S3 Vectors: ${stats.created} new vectors created in file-specific index '${fileIndexName}'.`,
         };
         
       } else if (context.action === 'query') {
@@ -290,7 +321,29 @@ export const pdfChunkerS3VectorsTool = createTool({
         // Search in S3 Vectors
         let results: any[] = [];
         try {
-          results = await s3VectorsService.searchPDFContent(queryEmbedding, 5);
+          // First try to find the file-specific index
+          const mappingPath = join('/tmp', 'file-index-mappings.json');
+          let fileIndexName: string | null = null;
+          
+          try {
+            const mappingData = await readFile(mappingPath, 'utf-8');
+            const mappings = JSON.parse(mappingData);
+            const filename = basename(filepath);
+            fileIndexName = mappings[filename];
+            console.log(`[PDF Chunker S3Vectors] Found file index for '${filename}': ${fileIndexName}`);
+          } catch (e) {
+            console.log('[PDF Chunker S3Vectors] No file index mapping found, using main index');
+          }
+          
+          if (fileIndexName) {
+            // Search in the file-specific index
+            results = await s3VectorsService.searchFileIndex(fileIndexName, queryEmbedding, 5);
+            console.log(`[PDF Chunker S3Vectors] Searched in file index '${fileIndexName}', found ${results.length} results`);
+          } else {
+            // Fallback to searching the main index
+            results = await s3VectorsService.searchPDFContent(queryEmbedding, 5);
+            console.log(`[PDF Chunker S3Vectors] Searched in main index, found ${results.length} results`);
+          }
         } catch (searchError) {
           console.error('[PDF Chunker S3Vectors] S3 Vectors search failed:', searchError);
           // Fallback: return empty results

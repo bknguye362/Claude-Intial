@@ -80,6 +80,47 @@ export class S3VectorsService {
     }
   }
 
+  // Create a file-specific index
+  async createFileIndex(filename: string): Promise<string> {
+    try {
+      // Create a sanitized index name from the filename
+      const sanitizedName = filename.toLowerCase()
+        .replace(/\.pdf$/i, '')
+        .replace(/[^a-z0-9-]/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '')
+        .substring(0, 50); // Limit length
+      
+      const indexName = `file-${sanitizedName}-${Date.now()}`;
+      
+      console.log(`[S3 Vectors] Creating index for file '${filename}' as '${indexName}'...`);
+      
+      // Check if index already exists
+      const getCommand = `${this.awsPath} s3vectors get-index --vector-bucket-name ${this.bucketName} --index-name ${indexName} --region ${this.region}`;
+      
+      try {
+        await execAsync(getCommand);
+        console.log(`[S3 Vectors] Index '${indexName}' already exists`);
+      } catch (error: any) {
+        if (error.message.includes('NotFoundException')) {
+          const createCommand = `${this.awsPath} s3vectors create-index --vector-bucket-name ${this.bucketName} --index-name ${indexName} --dimension ${this.dimensions} --distance-metric cosine --data-type float32 --region ${this.region}`;
+          await execAsync(createCommand);
+          console.log(`[S3 Vectors] Created index '${indexName}' for file '${filename}'`);
+          
+          // Wait a moment for the index to be ready
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        } else {
+          throw error;
+        }
+      }
+      
+      return indexName;
+    } catch (error) {
+      console.error('[S3 Vectors] Error creating file index:', error);
+      throw error;
+    }
+  }
+
   // Store a single document embedding
   async storeEmbedding(document: S3VectorDocument): Promise<{ action: 'created' | 'updated', key: string }> {
     try {
@@ -247,7 +288,71 @@ export class S3VectorsService {
     }
   }
 
-  // Store PDF embeddings with S3 Vectors
+  // Store PDF embeddings in a file-specific index
+  async storePDFInFileIndex(
+    indexName: string,
+    documentId: string,
+    chunks: Array<{ content: string; embedding: number[]; metadata?: any }>,
+    filename: string
+  ): Promise<{ created: number, updated: number, total: number }> {
+    console.log(`[S3 Vectors] Storing ${chunks.length} chunks in index '${indexName}'...`);
+    
+    let created = 0;
+    let updated = 0;
+    
+    // Process chunks in batches
+    const batchSize = 25;
+    for (let i = 0; i < chunks.length; i += batchSize) {
+      const batch = chunks.slice(i, i + batchSize);
+      
+      const vectorData = batch.map((chunk, batchIndex) => ({
+        key: `chunk-${i + batchIndex}`,
+        data: {
+          float32: chunk.embedding
+        },
+        metadata: {
+          content: chunk.content.substring(0, 1000),
+          documentId,
+          filename,
+          chunkIndex: i + batchIndex,
+          totalChunks: chunks.length,
+          timestamp: new Date().toISOString(),
+          ...chunk.metadata
+        }
+      }));
+
+      const fs = require('fs').promises;
+      const tempFile = `/tmp/vectors-batch-${Date.now()}.json`;
+      await fs.writeFile(tempFile, JSON.stringify(vectorData));
+
+      try {
+        const command = `${this.awsPath} s3vectors put-vectors --vector-bucket-name ${this.bucketName} --index-name ${indexName} --vectors file://${tempFile} --region ${this.region}`;
+        await execAsync(command);
+        
+        created += batch.length;
+        
+        console.log(`[S3 Vectors] Batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(chunks.length / batchSize)}: ${batch.length} chunks stored`);
+      } catch (error) {
+        console.error(`[S3 Vectors] Error storing batch:`, error);
+      } finally {
+        await fs.unlink(tempFile);
+      }
+    }
+    
+    console.log(`[S3 Vectors] Document "${filename}" in index "${indexName}": ${created} chunks stored`);
+    
+    s3VectorsLogger.log('storePDFInFileIndex', {
+      indexName,
+      documentId,
+      filename,
+      chunksStored: created,
+      totalChunks: chunks.length
+    });
+    
+    return { created, updated: 0, total: chunks.length };
+  }
+
+  // Store PDF embeddings with S3 Vectors (legacy method for backward compatibility)
   async storePDFEmbeddings(
     documentId: string,
     chunks: Array<{ content: string; embedding: number[]; metadata?: any }>,
@@ -279,6 +384,54 @@ export class S3VectorsService {
     });
     
     return stats;
+  }
+
+  // Search within a specific file index
+  async searchFileIndex(indexName: string, queryEmbedding: number[], topK: number = 5): Promise<Array<{
+    content: string;
+    score?: number;
+    documentId?: string;
+    filename?: string;
+    chunkIndex?: number;
+  }>> {
+    try {
+      const queryData = {
+        queryVector: {
+          float32: queryEmbedding
+        },
+        topK: topK
+      };
+
+      const fs = require('fs').promises;
+      const tempFile = `/tmp/query-${Date.now()}.json`;
+      await fs.writeFile(tempFile, JSON.stringify(queryData));
+
+      const command = `${this.awsPath} s3vectors query-vectors --vector-bucket-name ${this.bucketName} --index-name ${indexName} --cli-input-json file://${tempFile} --region ${this.region}`;
+      const { stdout } = await execAsync(command);
+      
+      await fs.unlink(tempFile);
+      
+      const result = JSON.parse(stdout);
+      const vectors = result.vectors || [];
+      
+      s3VectorsLogger.log('searchFileIndex', {
+        indexName,
+        searchQuery: 'embedding search',
+        resultsFound: vectors.length
+      });
+      
+      // Map results to include content from metadata
+      return vectors.map((result: any) => ({
+        content: result.metadata?.content || '',
+        score: result.score,
+        documentId: result.metadata?.documentId,
+        filename: result.metadata?.filename,
+        chunkIndex: result.metadata?.chunkIndex
+      }));
+    } catch (error) {
+      console.error('[S3 Vectors] Error searching file index:', error);
+      return [];
+    }
   }
 
   // Search across all PDF documents

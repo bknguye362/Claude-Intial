@@ -11,8 +11,10 @@ export interface S3VectorLog {
     action?: 'created' | 'updated';
     documentId?: string;
     filename?: string;
+    indexName?: string;
     chunksCreated?: number;
     chunksUpdated?: number;
+    chunksStored?: number;
     totalChunks?: number;
     searchQuery?: string;
     resultsFound?: number;
