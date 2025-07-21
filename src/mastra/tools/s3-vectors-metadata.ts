@@ -59,7 +59,7 @@ export const s3VectorsUploadTool = createTool({
             throw new Error(`Embedding API error: ${response.statusText}`);
           }
           
-          const data = await response.json();
+          const data = await response.json() as { data: Array<{ embedding: number[] }> };
           embedding = data.data[0].embedding;
         }
       }
@@ -145,7 +145,7 @@ export const s3VectorsReadMetadataTool = createTool({
         vectorKeys = listResult.vectors?.map((v: any) => v.key) || [];
       }
       
-      if (vectorKeys.length === 0) {
+      if (!vectorKeys || vectorKeys.length === 0) {
         return {
           success: true,
           vectors: [],
@@ -156,7 +156,7 @@ export const s3VectorsReadMetadataTool = createTool({
       
       // Get full vector data including metadata
       const vectors = [];
-      for (const key of vectorKeys) {
+      for (const key of vectorKeys!) {
         const getCommand = `aws s3vectors get-vectors --vector-bucket-name ${BUCKET_NAME} --index-name ${context.indexName} --keys ${key} --region ${REGION}`;
         const { stdout } = await execAsync(getCommand);
         const result = JSON.parse(stdout);
@@ -242,7 +242,7 @@ export const s3VectorsQueryTool = createTool({
           throw new Error(`Embedding API error: ${response.statusText}`);
         }
         
-        const data = await response.json();
+        const data = await response.json() as { data: Array<{ embedding: number[] }> };
         queryEmbedding = data.data[0].embedding;
       }
       
