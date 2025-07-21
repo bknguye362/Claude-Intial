@@ -9,6 +9,7 @@ import { s3VectorsMonitorTool } from '../tools/s3-vectors-monitor.js';
 import { s3VectorsLogsTool } from '../tools/s3-vectors-logs.js';
 import { s3VectorsDebugTool } from '../tools/s3-vectors-debug.js';
 import { s3VectorsUploadTool, s3VectorsReadMetadataTool, s3VectorsQueryTool } from '../tools/s3-vectors-metadata.js';
+import { s3VectorsFlexibleQueryTool, s3VectorsListIndicesTool, s3VectorsGetVectorsTool } from '../tools/s3-vectors-flexible-query.js';
 
 // Initialize Azure OpenAI
 const openai = createOpenAI();
@@ -53,6 +54,9 @@ const agentConfig: any = {
     - s3VectorsUploadTool: Upload vectors where key is the vector ID and value is the metadata
     - s3VectorsReadMetadataTool: Read vectors and retrieve their metadata values
     - s3VectorsQueryTool: Query vectors by similarity search with metadata filtering
+    - s3VectorsFlexibleQueryTool: Query ANY S3 Vectors index by name with flexible parameters
+    - s3VectorsListIndicesTool: List all available S3 Vectors indices in the bucket
+    - s3VectorsGetVectorsTool: Get specific vectors by keys from any index
     
     WORKFLOW:
     1. When asked about available files or to list files:
@@ -130,6 +134,9 @@ const agentConfig: any = {
     - Use s3VectorsUploadTool to store vectors with custom metadata
     - Use s3VectorsReadMetadataTool to retrieve vector keys and their metadata
     - Use s3VectorsQueryTool for semantic search with metadata filtering
+    - Use s3VectorsFlexibleQueryTool to query ANY index by name (e.g., file-specific indices)
+    - Use s3VectorsListIndicesTool to see all available indices
+    - Use s3VectorsGetVectorsTool to retrieve specific vectors from any index
   `,
   model: openai('gpt-4.1-test'),
   tools: { 
@@ -141,7 +148,10 @@ const agentConfig: any = {
     s3VectorsDebugTool,
     s3VectorsUploadTool,
     s3VectorsReadMetadataTool,
-    s3VectorsQueryTool
+    s3VectorsQueryTool,
+    s3VectorsFlexibleQueryTool,
+    s3VectorsListIndicesTool,
+    s3VectorsGetVectorsTool
   },
   toolChoice: 'auto', // Encourage tool use
 };
