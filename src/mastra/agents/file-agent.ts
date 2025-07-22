@@ -10,6 +10,7 @@ import { s3VectorsLogsTool } from '../tools/s3-vectors-logs.js';
 import { s3VectorsDebugTool } from '../tools/s3-vectors-debug.js';
 import { s3VectorsUploadTool, s3VectorsReadMetadataTool, s3VectorsQueryTool } from '../tools/s3-vectors-metadata.js';
 import { s3VectorsFlexibleQueryTool, s3VectorsListIndicesTool, s3VectorsGetVectorsTool } from '../tools/s3-vectors-flexible-query.js';
+import { s3VectorsPostmanQueryTool, s3VectorsPostmanListTool, s3VectorsPostmanUploadTool } from '../tools/s3-vectors-postman.js';
 
 // Initialize Azure OpenAI
 const openai = createOpenAI();
@@ -57,6 +58,9 @@ const agentConfig: any = {
     - s3VectorsFlexibleQueryTool: Query ANY S3 Vectors index by name with flexible parameters
     - s3VectorsListIndicesTool: List all available S3 Vectors indices in the bucket
     - s3VectorsGetVectorsTool: Get specific vectors by keys from any index
+    - s3VectorsPostmanQueryTool: Query S3 Vectors using Postman/Newman - exactly like the Postman collection
+    - s3VectorsPostmanListTool: List vectors using Postman/Newman integration
+    - s3VectorsPostmanUploadTool: Upload vectors using Postman/Newman integration
     
     WORKFLOW:
     1. When asked about available files or to list files:
@@ -137,6 +141,7 @@ const agentConfig: any = {
     - Use s3VectorsFlexibleQueryTool to query ANY index by name (e.g., file-specific indices)
     - Use s3VectorsListIndicesTool to see all available indices
     - Use s3VectorsGetVectorsTool to retrieve specific vectors from any index
+    - Use s3VectorsPostmanQueryTool/ListTool/UploadTool for Postman-style API integration
   `,
   model: openai('gpt-4.1-test'),
   tools: { 
@@ -151,7 +156,10 @@ const agentConfig: any = {
     s3VectorsQueryTool,
     s3VectorsFlexibleQueryTool,
     s3VectorsListIndicesTool,
-    s3VectorsGetVectorsTool
+    s3VectorsGetVectorsTool,
+    s3VectorsPostmanQueryTool,
+    s3VectorsPostmanListTool,
+    s3VectorsPostmanUploadTool
   },
   toolChoice: 'auto', // Encourage tool use
 };
