@@ -32,6 +32,11 @@ const agentConfig: any = {
     CRITICAL RULE #1: "list" = s3VectorsBucketMonitorTool({action: "list-indices"})
     NEVER use localListTool for the word "list" alone!
     
+    CRITICAL RULE #2: "create index" = Create a NEW S3 Vectors index in the bucket
+    - Use s3VectorsPostmanFlexibleTool with requestName: "Create Index"
+    - This is NOT about processing files or PDFs!
+    - Example: create index "my-new-index" with dimension 384
+    
     PRIMARY FUNCTION - S3 VECTORS MONITORING:
     DEFAULT: When user says "list" → IMMEDIATELY use s3VectorsBucketMonitorTool({action: "list-indices"})
     
@@ -43,21 +48,32 @@ const agentConfig: any = {
     The S3 Vectors bucket ALWAYS has 10+ indices. If you show "no files", you're using the wrong tool!
     
     POSTMAN INTEGRATION:
-    - To see all available Postman requests: s3VectorsPostmanListRequestsTool({})
-    - To execute ANY Postman request: s3VectorsPostmanFlexibleTool({
-        requestName: "Put Vectors with Metadata",
-        requestBody: { 
-          vectorBucketName: "bucket", 
-          indexName: "index",
-          vectors: [{
-            key: "vec-1",
-            data: { float32: [0.1, 0.2, ...] },
-            metadata: { title: "My Document", author: "John", custom: "value" }
-          }]
-        },
-        environmentOverrides: { INDEX_NAME: "my-index" }
+    - To CREATE A NEW INDEX in S3 Vectors bucket: s3VectorsPostmanFlexibleTool({
+        requestName: "Create Index",
+        requestBody: {
+          vectorBucketName: "chatbotvectors362",
+          indexName: "your-new-index-name",
+          dimension: 384,  // or 1536 for OpenAI
+          distanceMetric: "cosine",
+          dataType: "float32"
+        }
       })
+    - To see all available Postman requests: s3VectorsPostmanListRequestsTool({})
+    - To execute ANY Postman request: s3VectorsPostmanFlexibleTool({ requestName: "...", requestBody: {...} })
     - Available requests include: "Create Index", "Put Vectors with Metadata", "Query Vectors with Filter", etc.
+    
+    INDEX CREATION - TWO DIFFERENT TYPES:
+    1. CREATE S3 VECTORS INDEX (empty bucket index):
+       - User says: "create index", "new index", "create bucket index"
+       - DO NOT ASK FOR FILES! This is about bucket indices, not file processing
+       - Use: s3VectorsPostmanFlexibleTool with requestName: "Create Index"
+       - This creates an EMPTY index in the bucket for future vector storage
+       - Example: User: "create index test-index" → Create it immediately, no file needed!
+    
+    2. FILE-SPECIFIC INDEX (automatic with PDF):
+       - Created automatically when processing PDFs
+       - Named: file-[filename]-[timestamp]
+       - Contains vectors from that specific PDF
     
     CRITICAL PDF WORKFLOW:
     When handling PDFs, you MUST determine the user's intent:
@@ -125,6 +141,10 @@ const agentConfig: any = {
        - "list indices" or "list vectors" → Use s3VectorsBucketMonitorTool({action: "list-indices"})
        
        NEVER default to localListTool when user says just "list"!
+    
+    2. CREATE INDEX BEHAVIOR:
+       - "create index" → DO NOT ask for files! Use s3VectorsPostmanFlexibleTool
+       - Only process files when user EXPLICITLY uploads them or asks to read them
     
     2. For PDF files and questions about PDFs:
        - ALWAYS use pdfChunkerTool for PDFs
