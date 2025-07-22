@@ -11,6 +11,7 @@ import { s3VectorsDebugTool } from '../tools/s3-vectors-debug.js';
 import { s3VectorsUploadTool, s3VectorsReadMetadataTool, s3VectorsQueryTool } from '../tools/s3-vectors-metadata.js';
 import { s3VectorsFlexibleQueryTool, s3VectorsListIndicesTool, s3VectorsGetVectorsTool } from '../tools/s3-vectors-flexible-query.js';
 import { s3VectorsPostmanQueryTool, s3VectorsPostmanListTool, s3VectorsPostmanUploadTool } from '../tools/s3-vectors-postman.js';
+import { s3VectorsBucketMonitorTool } from '../tools/s3-vectors-bucket-monitor.js';
 
 // Initialize Azure OpenAI
 const openai = createOpenAI();
@@ -54,6 +55,7 @@ const agentConfig: any = {
       * action: "query" - Searches chunks for specific information using the file-specific index
     - textReaderTool: Read text files
     - s3VectorsMonitorTool: Monitor S3 Vectors bucket - check status and operations
+    - s3VectorsBucketMonitorTool: Monitor entire bucket - list ALL indices, get bucket statistics
     - s3VectorsLogsTool: View S3 Vectors operation logs - see what was created/updated
     - s3VectorsDebugTool: Debug S3 Vectors logging and persistence
     - s3VectorsUploadTool: Upload vectors where key is the vector ID and value is the metadata
@@ -65,6 +67,12 @@ const agentConfig: any = {
     - s3VectorsPostmanQueryTool: Query S3 Vectors using Postman/Newman - exactly like the Postman collection
     - s3VectorsPostmanListTool: List vectors using Postman/Newman integration
     - s3VectorsPostmanUploadTool: Upload vectors using Postman/Newman integration
+    
+    BUCKET MONITORING:
+    When asked about S3 Vectors or the bucket:
+    - Use s3VectorsBucketMonitorTool with action: "list-indices" to see ALL indices in the bucket
+    - Use s3VectorsBucketMonitorTool with action: "bucket-stats" for overview statistics
+    - Use s3VectorsBucketMonitorTool with action: "index-details" to inspect a specific index
     
     WORKFLOW:
     1. When asked about available files or to list files:
@@ -166,7 +174,8 @@ const agentConfig: any = {
     s3VectorsGetVectorsTool,
     s3VectorsPostmanQueryTool,
     s3VectorsPostmanListTool,
-    s3VectorsPostmanUploadTool
+    s3VectorsPostmanUploadTool,
+    s3VectorsBucketMonitorTool
   },
   toolChoice: 'auto', // Encourage tool use
 };
