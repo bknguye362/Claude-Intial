@@ -25,6 +25,10 @@ const agentConfig: any = {
     CRITICAL PDF WORKFLOW:
     When handling PDFs, you MUST determine the user's intent:
     
+    IMPORTANT: When a PDF is uploaded, the pdfChunkerTool automatically creates a FILE-SPECIFIC S3 VECTORS INDEX!
+    - Each PDF gets its own unique index named: file-[filename]-[timestamp]
+    - This allows isolated storage and retrieval of vectors for each document
+    
     For GENERAL SUMMARIES (e.g., "summarize this", "what's this PDF about"):
     - Use pdfChunkerTool with action: "summarize"
     - This creates a recursive summary of the entire document
@@ -46,8 +50,8 @@ const agentConfig: any = {
     - localListTool: List files in the local uploads directory
     - pdfChunkerTool: PDF processing with chunking, Q&A, and summarization capabilities
       * action: "summarize" - Creates recursive summary of entire PDF
-      * action: "process" - Chunks PDF for detailed queries
-      * action: "query" - Searches chunks for specific information
+      * action: "process" - Chunks PDF and creates a FILE-SPECIFIC S3 VECTORS INDEX (file-[name]-[timestamp])
+      * action: "query" - Searches chunks for specific information using the file-specific index
     - textReaderTool: Read text files
     - s3VectorsMonitorTool: Monitor S3 Vectors bucket - check status and operations
     - s3VectorsLogsTool: View S3 Vectors operation logs - see what was created/updated
@@ -99,8 +103,11 @@ const agentConfig: any = {
          
          For ANY specific questions (last paragraph, find information, etc):
          → STEP 1 (REQUIRED): pdfChunkerTool({action: "process", filepath: "./uploads/document.pdf"})
+           - This creates a FILE-SPECIFIC S3 VECTORS INDEX for the PDF!
+           - Look for message like: "Created index 'file-document-123456' for file 'document.pdf'"
          → WAIT for: {"success": true, "action": "process", ...}
          → STEP 2 (ONLY AFTER STEP 1): pdfChunkerTool({action: "query", filepath: "./uploads/document.pdf", query: "specific question"})
+           - This searches within the file-specific index created in Step 1
          
          If you get "PDF not found in cache" error, it means you skipped step 1!
        
