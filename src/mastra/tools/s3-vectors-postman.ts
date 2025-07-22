@@ -419,3 +419,94 @@ export const s3VectorsPostmanUploadTool = createTool({
     }
   },
 });
+
+// Create Index Tool
+export const s3VectorsPostmanCreateIndexTool = createTool({
+  id: 's3-vectors-postman-create-index',
+  description: 'Create a new S3 Vectors index using Postman/Newman',
+  inputSchema: z.object({
+    indexName: z.string().describe('Name for the new index'),
+    dimension: z.number().default(1536).describe('Vector dimension (384 for sentence-transformers, 1536 for OpenAI)'),
+    distanceMetric: z.enum(['cosine', 'euclidean', 'dotProduct']).default('cosine').describe('Distance metric for similarity'),
+    dataType: z.enum(['float32', 'float16']).default('float32').describe('Data type for vectors'),
+  }),
+  outputSchema: z.object({
+    success: z.boolean(),
+    indexName: z.string().optional(),
+    message: z.string(),
+    error: z.string().optional(),
+  }),
+  execute: async ({ context }) => {
+    console.log(`[S3 Vectors Postman Create] Creating index: ${context.indexName}`);
+    
+    let envFile: string | null = null;
+    let outputFile: string | null = null;
+    try {
+      // Get AWS credentials
+      const { accessKeyId, secretAccessKey } = getAwsCredentials();
+      
+      // Create custom environment with all parameters
+      const customEnv = {
+        "values": [
+          { "key": "AWS_ACCESS_KEY_ID", "value": accessKeyId },
+          { "key": "AWS_SECRET_ACCESS_KEY", "value": secretAccessKey },
+          { "key": "AWS_REGION", "value": REGION },
+          { "key": "BUCKET_NAME", "value": BUCKET_NAME },
+          { "key": "INDEX_NAME", "value": context.indexName }
+        ]
+      };
+      
+      envFile = `/tmp/newman-env-create-${Date.now()}.json`;
+      await writeFile(envFile, JSON.stringify(customEnv));
+      
+      // Check if collection exists
+      if (!existsSync(POSTMAN_COLLECTION)) {
+        throw new Error(`Postman collection not found at ${POSTMAN_COLLECTION}`);
+      }
+      
+      // Run Newman with Create Index request
+      outputFile = `/tmp/newman-create-result-${Date.now()}.json`;
+      const command = `newman run "${POSTMAN_COLLECTION}" --folder "Create Index" --environment "${envFile}" --reporters cli,json --reporter-json-export "${outputFile}"`;
+      
+      console.log('[S3 Vectors Postman Create] Running Newman...');
+      const { stdout, stderr } = await execAsync(command);
+      
+      // Check if output file was created
+      if (!existsSync(outputFile)) {
+        console.log('[S3 Vectors Postman Create] Newman output:', stdout);
+        if (stderr) console.error('[S3 Vectors Postman Create] Newman stderr:', stderr);
+        throw new Error('Newman did not produce output file');
+      }
+      
+      // Check results
+      const resultData = await readFile(outputFile, 'utf-8');
+      const result = JSON.parse(resultData);
+      
+      if (result.run?.stats?.assertions?.failed > 0 || result.run?.stats?.requests?.failed > 0) {
+        const errorDetails = result.run.failures?.[0]?.error?.message || 
+                           result.run.failures?.[0]?.source?.response?.body ||
+                           'Unknown error';
+        throw new Error(`Index creation failed: ${errorDetails}`);
+      }
+      
+      return {
+        success: true,
+        indexName: context.indexName,
+        message: `Successfully created S3 Vectors index '${context.indexName}' with dimension ${context.dimension}`,
+      };
+      
+    } catch (error) {
+      console.error('[S3 Vectors Postman Create] Error:', error);
+      return {
+        success: false,
+        message: 'Failed to create S3 Vectors index',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    } finally {
+      // Cleanup
+      if (envFile && existsSync(envFile)) await unlink(envFile);
+      if (outputFile && existsSync(outputFile)) await unlink(outputFile);
+    }
+  },
+});
+

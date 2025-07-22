@@ -11,6 +11,7 @@ import { s3VectorsDebugTool } from '../tools/s3-vectors-debug.js';
 import { s3VectorsUploadTool, s3VectorsReadMetadataTool, s3VectorsQueryTool } from '../tools/s3-vectors-metadata.js';
 import { s3VectorsFlexibleQueryTool, s3VectorsListIndicesTool, s3VectorsGetVectorsTool } from '../tools/s3-vectors-flexible-query.js';
 import { s3VectorsPostmanQueryTool, s3VectorsPostmanListTool, s3VectorsPostmanUploadTool } from '../tools/s3-vectors-postman.js';
+import { s3VectorsPostmanFlexibleTool, s3VectorsPostmanListRequestsTool } from '../tools/s3-vectors-postman-flexible.js';
 import { s3VectorsBucketMonitorTool } from '../tools/s3-vectors-bucket-monitor.js';
 
 // Initialize Azure OpenAI
@@ -40,6 +41,23 @@ const agentConfig: any = {
     - "index details", "show index X" → s3VectorsBucketMonitorTool({action: "index-details", indexName: "index-name"})
     
     The S3 Vectors bucket ALWAYS has 10+ indices. If you show "no files", you're using the wrong tool!
+    
+    POSTMAN INTEGRATION:
+    - To see all available Postman requests: s3VectorsPostmanListRequestsTool({})
+    - To execute ANY Postman request: s3VectorsPostmanFlexibleTool({
+        requestName: "Put Vectors with Metadata",
+        requestBody: { 
+          vectorBucketName: "bucket", 
+          indexName: "index",
+          vectors: [{
+            key: "vec-1",
+            data: { float32: [0.1, 0.2, ...] },
+            metadata: { title: "My Document", author: "John", custom: "value" }
+          }]
+        },
+        environmentOverrides: { INDEX_NAME: "my-index" }
+      })
+    - Available requests include: "Create Index", "Put Vectors with Metadata", "Query Vectors with Filter", etc.
     
     CRITICAL PDF WORKFLOW:
     When handling PDFs, you MUST determine the user's intent:
@@ -186,6 +204,8 @@ const agentConfig: any = {
     - s3VectorsListIndicesTool: See all available indices
     - s3VectorsGetVectorsTool: Retrieve specific vectors from any index
     - s3VectorsPostmanQueryTool/ListTool/UploadTool: Postman-style API integration
+    - s3VectorsPostmanFlexibleTool: Execute ANY request from the Postman collection
+    - s3VectorsPostmanListRequestsTool: List all available Postman requests
   `,
   model: openai('gpt-4.1-test'),
   tools: { 
@@ -204,7 +224,9 @@ const agentConfig: any = {
     s3VectorsPostmanQueryTool,
     s3VectorsPostmanListTool,
     s3VectorsPostmanUploadTool,
-    s3VectorsBucketMonitorTool
+    s3VectorsBucketMonitorTool,
+    s3VectorsPostmanFlexibleTool,
+    s3VectorsPostmanListRequestsTool
   },
   toolChoice: 'auto', // Encourage tool use
 };
