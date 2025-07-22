@@ -10,10 +10,10 @@ const execAsync = promisify(exec);
 
 export const s3VectorsBucketMonitorTool = createTool({
   id: 's3-vectors-bucket-monitor',
-  description: 'Monitor the entire S3 Vectors bucket - list all indices, check bucket status, and get statistics',
+  description: 'Monitor the entire S3 Vectors bucket - list all indices, check bucket status, and get statistics. Valid actions: list-indices, bucket-stats, index-details',
   inputSchema: z.object({
-    action: z.enum(['list-indices', 'bucket-stats', 'index-details']).describe('Action to perform'),
-    indexName: z.string().optional().describe('Index name for index-details action'),
+    action: z.enum(['list-indices', 'bucket-stats', 'index-details']).describe('Action: "list-indices" to list all indices, "bucket-stats" for statistics, or "index-details" for specific index details'),
+    indexName: z.string().optional().describe('Index name (required only for index-details action)'),
   }),
   outputSchema: z.object({
     success: z.boolean(),
@@ -47,8 +47,21 @@ export const s3VectorsBucketMonitorTool = createTool({
     const region = process.env.S3_VECTORS_REGION || 'us-east-2';
     const awsPath = process.env.AWS_CLI_PATH || 'aws';
     
+    console.log(`[S3 Vectors Bucket Monitor] Received request:`, JSON.stringify(context));
     console.log(`[S3 Vectors Bucket Monitor] Action: ${context.action}`);
     console.log(`[S3 Vectors Bucket Monitor] Bucket: ${bucketName}, Region: ${region}`);
+    
+    // Validate action
+    if (!['list-indices', 'bucket-stats', 'index-details'].includes(context.action)) {
+      const errorMsg = `Invalid action "${context.action}". Valid actions are: "list-indices" (list all indices), "bucket-stats" (get bucket statistics), or "index-details" (get details for specific index)`;
+      console.error(`[S3 Vectors Bucket Monitor] ${errorMsg}`);
+      return {
+        success: false,
+        action: context.action,
+        message: errorMsg,
+        error: errorMsg,
+      };
+    }
     
     try {
       if (context.action === 'list-indices') {
@@ -116,7 +129,14 @@ export const s3VectorsBucketMonitorTool = createTool({
         
       } else if (context.action === 'index-details') {
         if (!context.indexName) {
-          throw new Error('Index name required for index-details action');
+          const errorMsg = 'Index name is required for index-details action. Please provide indexName parameter.';
+          console.error(`[S3 Vectors Bucket Monitor] ${errorMsg}`);
+          return {
+            success: false,
+            action: context.action,
+            message: errorMsg,
+            error: errorMsg,
+          };
         }
         
         // Get index information
@@ -166,15 +186,44 @@ export const s3VectorsBucketMonitorTool = createTool({
         };
       }
       
-      throw new Error('Invalid action');
-      
-    } catch (error) {
-      console.error('[S3 Vectors Bucket Monitor] Error:', error);
+      // This should never be reached due to validation above
+      const errorMsg = `Unexpected action: ${context.action}`;
+      console.error(`[S3 Vectors Bucket Monitor] ${errorMsg}`);
       return {
         success: false,
         action: context.action,
-        message: 'Failed to monitor S3 Vectors bucket',
-        error: error instanceof Error ? error.message : 'Unknown error',
+        message: errorMsg,
+        error: errorMsg,
+      };
+      
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      const errorDetails = {
+        action: context.action,
+        error: errorMsg,
+        stack: error instanceof Error ? error.stack : undefined,
+        bucket: bucketName,
+        region: region,
+        awsPath: awsPath
+      };
+      
+      console.error('[S3 Vectors Bucket Monitor] Error details:', errorDetails);
+      
+      // Provide helpful error messages for common issues
+      let helpfulMessage = `Failed to execute ${context.action}: ${errorMsg}`;
+      if (errorMsg.includes('command not found') || errorMsg.includes('aws: not found')) {
+        helpfulMessage += '. AWS CLI may not be installed or not in PATH.';
+      } else if (errorMsg.includes('UnauthorizedException') || errorMsg.includes('credentials')) {
+        helpfulMessage += '. Check AWS credentials (AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY).';
+      } else if (errorMsg.includes('NotFoundException')) {
+        helpfulMessage += '. The specified index or bucket may not exist.';
+      }
+      
+      return {
+        success: false,
+        action: context.action,
+        message: helpfulMessage,
+        error: errorMsg,
       };
     }
   },

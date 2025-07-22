@@ -54,8 +54,10 @@ const agentConfig: any = {
       * action: "process" - Chunks PDF and creates a FILE-SPECIFIC S3 VECTORS INDEX (file-[name]-[timestamp])
       * action: "query" - Searches chunks for specific information using the file-specific index
     - textReaderTool: Read text files
-    - s3VectorsMonitorTool: Monitor S3 Vectors bucket - check status and operations
+    - s3VectorsMonitorTool: Monitor vectors in mastra-chatbot index
+      * Actions: "list" (list vectors), "stats" (get statistics), "inspect" (inspect specific document)
     - s3VectorsBucketMonitorTool: Monitor entire bucket - list ALL indices, get bucket statistics
+      * Actions: "list-indices" (list all indices), "bucket-stats" (overview), "index-details" (specific index)
     - s3VectorsLogsTool: View S3 Vectors operation logs - see what was created/updated
     - s3VectorsDebugTool: Debug S3 Vectors logging and persistence
     - s3VectorsUploadTool: Upload vectors where key is the vector ID and value is the metadata
@@ -70,9 +72,14 @@ const agentConfig: any = {
     
     BUCKET MONITORING:
     When asked about S3 Vectors or the bucket:
-    - Use s3VectorsBucketMonitorTool with action: "list-indices" to see ALL indices in the bucket
-    - Use s3VectorsBucketMonitorTool with action: "bucket-stats" for overview statistics
-    - Use s3VectorsBucketMonitorTool with action: "index-details" to inspect a specific index
+    - To see ALL indices: s3VectorsBucketMonitorTool({action: "list-indices"})
+    - For overview: s3VectorsBucketMonitorTool({action: "bucket-stats"})
+    - For specific index: s3VectorsBucketMonitorTool({action: "index-details", indexName: "index-name"})
+    
+    For monitoring vectors in mastra-chatbot index:
+    - List vectors: s3VectorsMonitorTool({action: "list"})
+    - Get stats: s3VectorsMonitorTool({action: "stats"})
+    - Inspect document: s3VectorsMonitorTool({action: "inspect", documentId: "doc-id"})
     
     WORKFLOW:
     1. When asked about available files or to list files:
@@ -147,16 +154,17 @@ const agentConfig: any = {
     synthesize information from the relevant chunks into a coherent answer.
     
     S3 VECTORS MONITORING AND METADATA:
-    - Use s3VectorsMonitorTool to check bucket status and recent operations
-    - Use s3VectorsLogsTool to view detailed logs of vector operations
-    - Use s3VectorsDebugTool to test logging functionality and persistence
-    - Use s3VectorsUploadTool to store vectors with custom metadata
-    - Use s3VectorsReadMetadataTool to retrieve vector keys and their metadata
-    - Use s3VectorsQueryTool for semantic search with metadata filtering
-    - Use s3VectorsFlexibleQueryTool to query ANY index by name (e.g., file-specific indices)
-    - Use s3VectorsListIndicesTool to see all available indices
-    - Use s3VectorsGetVectorsTool to retrieve specific vectors from any index
-    - Use s3VectorsPostmanQueryTool/ListTool/UploadTool for Postman-style API integration
+    - s3VectorsMonitorTool: Monitor mastra-chatbot index (actions: "list", "stats", "inspect")
+    - s3VectorsBucketMonitorTool: Monitor entire bucket (actions: "list-indices", "bucket-stats", "index-details")
+    - s3VectorsLogsTool: View detailed logs of vector operations
+    - s3VectorsDebugTool: Test logging functionality and persistence
+    - s3VectorsUploadTool: Store vectors with custom metadata
+    - s3VectorsReadMetadataTool: Retrieve vector keys and their metadata
+    - s3VectorsQueryTool: Semantic search with metadata filtering
+    - s3VectorsFlexibleQueryTool: Query ANY index by name (e.g., file-specific indices)
+    - s3VectorsListIndicesTool: See all available indices
+    - s3VectorsGetVectorsTool: Retrieve specific vectors from any index
+    - s3VectorsPostmanQueryTool/ListTool/UploadTool: Postman-style API integration
   `,
   model: openai('gpt-4.1-test'),
   tools: { 

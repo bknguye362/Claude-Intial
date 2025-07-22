@@ -10,10 +10,10 @@ const execAsync = promisify(exec);
 
 export const s3VectorsMonitorTool = createTool({
   id: 's3-vectors-monitor',
-  description: 'Monitor and inspect vectors stored in S3 Vectors - check what documents are indexed and their status',
+  description: 'Monitor and inspect vectors stored in S3 Vectors - check what documents are indexed and their status. Valid actions: list, stats, inspect',
   inputSchema: z.object({
-    action: z.enum(['list', 'stats', 'inspect']).describe('Action: list all vectors, get stats, or inspect specific document'),
-    documentId: z.string().optional().describe('Document ID to inspect (for inspect action)'),
+    action: z.enum(['list', 'stats', 'inspect']).describe('Action: "list" to list all vectors, "stats" to get statistics, or "inspect" to inspect specific document'),
+    documentId: z.string().optional().describe('Document ID to inspect (required only for inspect action)'),
     limit: z.number().default(100).optional().describe('Maximum number of vectors to list'),
   }),
   outputSchema: z.object({
@@ -40,7 +40,20 @@ export const s3VectorsMonitorTool = createTool({
     const region = process.env.AWS_REGION || 'us-east-2';
     const awsPath = process.env.AWS_CLI_PATH || '~/.local/bin/aws';
     
+    console.log(`[S3 Vectors Monitor] Received request:`, JSON.stringify(context));
     console.log(`[S3 Vectors Monitor] Action: ${context.action}`);
+    console.log(`[S3 Vectors Monitor] Using bucket: ${bucketName}, index: ${indexName}, region: ${region}`);
+    
+    // Validate action
+    if (!['list', 'stats', 'inspect'].includes(context.action)) {
+      const errorMsg = `Invalid action "${context.action}". Valid actions are: "list" (list all vectors), "stats" (get statistics), or "inspect" (inspect specific document)`;
+      console.error(`[S3 Vectors Monitor] ${errorMsg}`);
+      return {
+        success: false,
+        action: context.action,
+        message: errorMsg,
+      };
+    }
     
     try {
       if (context.action === 'list' || context.action === 'stats') {
@@ -100,7 +113,13 @@ export const s3VectorsMonitorTool = createTool({
         
       } else if (context.action === 'inspect') {
         if (!context.documentId) {
-          throw new Error('Document ID required for inspect action');
+          const errorMsg = 'Document ID is required for inspect action. Please provide documentId parameter.';
+          console.error(`[S3 Vectors Monitor] ${errorMsg}`);
+          return {
+            success: false,
+            action: context.action,
+            message: errorMsg,
+          };
         }
         
         // List vectors for specific document
@@ -129,14 +148,29 @@ export const s3VectorsMonitorTool = createTool({
         };
       }
       
-      throw new Error('Invalid action');
-      
-    } catch (error) {
-      console.error('[S3 Vectors Monitor] Error:', error);
+      // This should never be reached due to validation above
+      const errorMsg = `Unexpected action: ${context.action}`;
+      console.error(`[S3 Vectors Monitor] ${errorMsg}`);
       return {
         success: false,
         action: context.action,
-        message: error instanceof Error ? error.message : 'Unknown error',
+        message: errorMsg,
+      };
+      
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      console.error('[S3 Vectors Monitor] Error details:', {
+        action: context.action,
+        error: errorMsg,
+        stack: error instanceof Error ? error.stack : undefined,
+        bucket: bucketName,
+        index: indexName,
+        region: region
+      });
+      return {
+        success: false,
+        action: context.action,
+        message: `Failed to execute ${context.action}: ${errorMsg}`,
       };
     }
   },
