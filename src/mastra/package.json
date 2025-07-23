@@ -28,6 +28,7 @@
     "@types/cheerio": "^0.22.35",
     "@types/pdf-parse": "^1.1.5",
     "cheerio": "^1.1.0",
+    "newman": "^6.1.1",
     "pdf-parse": "^1.1.1",
     "typescript": "^5.8.3",
     "zod": "^3.25.76"

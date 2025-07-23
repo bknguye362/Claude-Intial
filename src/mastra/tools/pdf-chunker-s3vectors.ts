@@ -305,7 +305,27 @@ export const pdfChunkerS3VectorsTool = createTool({
           
         } catch (error) {
           console.error('[PDF Chunker S3Vectors] Error with Newman/Postman operations:', error);
-          // Don't throw - return partial success
+          console.error('[PDF Chunker S3Vectors] Error details:', {
+            errorType: error instanceof Error ? error.constructor.name : typeof error,
+            message: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+            indexName: context.indexName,
+            chunksCount: chunks.length
+          });
+          
+          // Check if it's a Newman-specific error
+          let errorDetails = 'Unknown error';
+          if (error instanceof Error) {
+            errorDetails = error.message;
+            // Add more context for common errors
+            if (error.message.includes('ENOENT')) {
+              errorDetails = 'Newman executable not found. This might be a Heroku deployment issue.';
+            } else if (error.message.includes('spawn')) {
+              errorDetails = 'Failed to execute Newman. The Newman CLI might not be installed.';
+            }
+          }
+          
+          // Don't throw - return partial success with detailed error
           return {
             success: false,
             action: 'process',
@@ -318,8 +338,8 @@ export const pdfChunkerS3VectorsTool = createTool({
               pageEnd: c.metadata.pageEnd,
             })),
             metadata,
-            message: `Failed to create index or upload vectors: ${error instanceof Error ? error.message : 'Unknown error'}`,
-            error: error instanceof Error ? error.message : 'Unknown error',
+            message: `PDF was chunked successfully (${chunks.length} chunks) but failed to create S3 Vectors index: ${errorDetails}`,
+            error: errorDetails,
           };
         }
         
