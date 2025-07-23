@@ -4,8 +4,6 @@ import { queryVectorProcessorTool } from './query-vector-processor.js';
 import { multiIndexSimilaritySearchTool } from './multi-index-similarity-search.js';
 import { createOpenAI } from '../lib/azure-openai-direct.js';
 
-const openai = createOpenAI();
-
 export const ragQueryProcessorTool = createTool({
   id: 'rag-query-processor',
   description: 'Process user query end-to-end: convert to vector, store in S3, search similar chunks across indexes, and generate LLM response',
@@ -29,7 +27,7 @@ export const ragQueryProcessorTool = createTool({
     })).optional(),
     message: z.string(),
   }),
-  execute: async ({ context }) => {
+  execute: async ({ context, runtimeContext }) => {
     try {
       console.log(`[RAG Query Processor] Processing query: "${context.query}"`);
       
@@ -39,7 +37,8 @@ export const ragQueryProcessorTool = createTool({
         context: {
           query: context.query,
           userId: context.userId,
-        }
+        },
+        runtimeContext
       });
       
       if (!queryVectorResult.success || !queryVectorResult.embedding) {
@@ -56,7 +55,8 @@ export const ragQueryProcessorTool = createTool({
           indexPatterns: context.indexPatterns || ['file-*', 'document-*', 'pdf-*'],
           topK: context.topK,
           globalTopK: context.globalTopK,
-        }
+        },
+        runtimeContext
       });
       
       if (!searchResult.success) {
@@ -110,7 +110,9 @@ User Question: ${context.query}
 Please answer the question based on the context provided above. Cite your sources using [Source N] format.`;
       
       try {
-        const completion = await openai('gpt-4.1-test').doGenerate({
+        const openai = createOpenAI();
+        const model = openai('gpt-4.1-test') as any; // Type assertion needed due to dynamic method assignment
+        const completion = await model.doGenerate({
           inputFormat: 'messages',
           mode: {
             type: 'regular',
