@@ -177,8 +177,14 @@ const agentConfig: any = {
          For "summarize this" requests:
          → CALL: pdfChunkerTool({action: "summarize", filepath: "./uploads/document.pdf"})
          
-         For creating a CUSTOM INDEX with PDF content:
-         → CALL: pdfChunkerTool({action: "process", filepath: "./uploads/document.pdf", indexName: "test-index"})
+         CRITICAL: When user uploads a file and mentions ANY of these:
+         - "create index" or "create an index" 
+         - "index this" or "index the file"
+         - "store in index" or "put in index"
+         - mentions ANY index name (e.g., "store in test-index", "create my-docs index")
+         → ALWAYS CALL: pdfChunkerTool({action: "process", filepath: "./uploads/document.pdf", indexName: "the-index-name"})
+           - Extract the index name from the user's message
+           - If no specific name given, use a descriptive name based on the file
            - This creates the index AND uploads all chunks as vectors using Postman!
            - Each chunk becomes a vector with full metadata
          
@@ -190,7 +196,9 @@ const agentConfig: any = {
          → STEP 2 (ONLY AFTER STEP 1): pdfChunkerTool({action: "query", filepath: "./uploads/document.pdf", query: "specific question"})
            - This searches within the file-specific index created in Step 1
          
-         If you get "PDF not found in cache" error, it means you skipped step 1!
+         DEFAULT: If no specific intent is clear:
+         → CALL: pdfChunkerTool({action: "process", filepath: "./uploads/document.pdf"})
+           - This creates a file-specific index automatically
        
        DO NOT just say what you'll do - USE THE TOOLS!
     
