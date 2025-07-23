@@ -133,7 +133,8 @@ export async function createIndexWithNewman(indexName: string, dimension: number
     // Try to read any output file for more details
     if (outputFile && existsSync(outputFile)) {
       try {
-        const output = await import('fs').then(fs => fs.promises.readFile(outputFile, 'utf-8'));
+        const fs = await import('fs');
+        const output = await fs.promises.readFile(outputFile, 'utf-8');
         console.error('[Newman Executor] Newman output file:', output);
       } catch (e) {
         console.error('[Newman Executor] Could not read output file');
@@ -143,6 +144,7 @@ export async function createIndexWithNewman(indexName: string, dimension: number
   } finally {
     if (envFile && existsSync(envFile)) await unlink(envFile);
     if (outputFile && existsSync(outputFile)) await unlink(outputFile);
+    if (collectionFile && existsSync(collectionFile)) await unlink(collectionFile);
   }
 }
 
