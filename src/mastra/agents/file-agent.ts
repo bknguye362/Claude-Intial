@@ -110,7 +110,9 @@ const agentConfig: any = {
     - localListTool: List files in the local uploads directory
     - pdfChunkerTool: PDF processing with chunking, Q&A, and summarization capabilities
       * action: "summarize" - Creates recursive summary of entire PDF
-      * action: "process" - Chunks PDF and creates a FILE-SPECIFIC S3 VECTORS INDEX (file-[name]-[timestamp])
+      * action: "process" - Chunks PDF and:
+        - WITHOUT indexName: Creates a FILE-SPECIFIC S3 VECTORS INDEX (file-[name]-[timestamp])
+        - WITH indexName: Creates the named index using Postman and uploads all chunks as vectors!
       * action: "query" - Searches chunks for specific information using the file-specific index
     - textReaderTool: Read text files
     - s3VectorsMonitorTool: Monitor vectors in mastra-chatbot index
@@ -174,6 +176,11 @@ const agentConfig: any = {
          
          For "summarize this" requests:
          → CALL: pdfChunkerTool({action: "summarize", filepath: "./uploads/document.pdf"})
+         
+         For creating a CUSTOM INDEX with PDF content:
+         → CALL: pdfChunkerTool({action: "process", filepath: "./uploads/document.pdf", indexName: "test-index"})
+           - This creates the index AND uploads all chunks as vectors using Postman!
+           - Each chunk becomes a vector with full metadata
          
          For ANY specific questions (last paragraph, find information, etc):
          → STEP 1 (REQUIRED): pdfChunkerTool({action: "process", filepath: "./uploads/document.pdf"})

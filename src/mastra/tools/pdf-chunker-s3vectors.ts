@@ -10,6 +10,10 @@ import * as path from 'path';
 import { unlink } from 'fs/promises';
 import { getS3VectorsService, S3VectorDocument } from '../lib/s3-vectors-integration.js';
 import { createRequire } from 'module';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
 
 const require = createRequire(import.meta.url);
 
@@ -168,6 +172,7 @@ export const pdfChunkerS3VectorsTool = createTool({
     action: z.enum(['process', 'query', 'summarize']).describe('Action to perform'),
     chunkSize: z.number().default(200).optional().describe('Number of lines per chunk'),
     query: z.string().optional().describe('Search query for finding relevant chunks'),
+    indexName: z.string().optional().describe('Custom index name to create and use (uses Postman if provided)'),
   }),
   outputSchema: z.object({
     success: z.boolean(),
@@ -253,22 +258,95 @@ export const pdfChunkerS3VectorsTool = createTool({
           };
         });
         
-        // Create a file-specific index and store in S3 Vectors
+        // Create index and store vectors
         let stats = { created: 0, updated: 0, total: chunks.length };
         let fileIndexName: string | null = null;
-        try {
-          // Create an index for this specific file
-          fileIndexName = await s3VectorsService.createFileIndex(basename(filepath));
-          console.log(`[PDF Chunker S3Vectors] Created index '${fileIndexName}' for file '${basename(filepath)}'`);
+        
+        // If custom index name provided, create it and use it
+        if (context.indexName) {
+          console.log(`[PDF Chunker S3Vectors] Creating custom index '${context.indexName}'`);
           
-          // Store chunks in the file-specific index
-          stats = await s3VectorsService.storePDFInFileIndex(fileIndexName, documentId, chunks, basename(filepath));
+          try {
+            // Step 1: Create the index using AWS CLI
+            const bucketName = process.env.S3_VECTORS_BUCKET || 'chatbotvectors362';
+            const region = process.env.S3_VECTORS_REGION || 'us-east-2';
+            const dimension = embeddings[0]?.length || 1536;
+            
+            const createCommand = `aws s3vectors create-index --vector-bucket-name ${bucketName} --index-name ${context.indexName} --dimension ${dimension} --distance-metric cosine --data-type float32 --region ${region}`;
+            
+            try {
+              await execAsync(createCommand);
+              console.log(`[PDF Chunker S3Vectors] Successfully created index '${context.indexName}'`);
+            } catch (createError: any) {
+              if (createError.message.includes('AlreadyExistsException')) {
+                console.log(`[PDF Chunker S3Vectors] Index '${context.indexName}' already exists, using it`);
+              } else {
+                throw createError;
+              }
+            }
+            
+            // Step 2: Store chunks in the custom index
+            console.log(`[PDF Chunker S3Vectors] Storing ${chunks.length} chunks in index '${context.indexName}'...`);
+            
+            // Process in batches
+            const batchSize = 25;
+            for (let i = 0; i < chunks.length; i += batchSize) {
+              const batch = chunks.slice(i, i + batchSize);
+              
+              const vectorData = batch.map((chunk, batchIndex) => ({
+                key: `${documentId}-chunk-${i + batchIndex}`,
+                data: {
+                  float32: chunk.embedding
+                },
+                metadata: {
+                  content: chunk.content.substring(0, 1000),
+                  documentId,
+                  filename: basename(filepath),
+                  chunkIndex: i + batchIndex,
+                  totalChunks: chunks.length,
+                  timestamp: new Date().toISOString(),
+                  pageStart: chunk.metadata.pageStart,
+                  pageEnd: chunk.metadata.pageEnd
+                }
+              }));
+              
+              const fs = require('fs').promises;
+              const tempFile = `/tmp/vectors-batch-${Date.now()}.json`;
+              await fs.writeFile(tempFile, JSON.stringify(vectorData));
+              
+              try {
+                const putCommand = `aws s3vectors put-vectors --vector-bucket-name ${bucketName} --index-name ${context.indexName} --vectors file://${tempFile} --region ${region}`;
+                await execAsync(putCommand);
+                stats.created += batch.length;
+                
+                console.log(`[PDF Chunker S3Vectors] Batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(chunks.length / batchSize)}: ${batch.length} chunks stored`);
+              } catch (error) {
+                console.error(`[PDF Chunker S3Vectors] Error storing batch:`, error);
+              } finally {
+                await fs.unlink(tempFile);
+              }
+            }
+            
+            fileIndexName = context.indexName;
+            console.log(`[PDF Chunker S3Vectors] Completed: ${stats.created} vectors stored in index '${fileIndexName}'`);
+            
+          } catch (error) {
+            console.error('[PDF Chunker S3Vectors] Error creating/populating custom index:', error);
+            throw error;
+          }
           
-          // Also store in the main index for backward compatibility
-          await s3VectorsService.storePDFEmbeddings(documentId, chunks, basename(filepath));
-        } catch (s3Error) {
-          console.error('[PDF Chunker S3Vectors] Failed to store in S3 Vectors:', s3Error);
-          // Continue without S3 Vectors storage
+        } else {
+          // Original behavior: create file-specific index
+          try {
+            fileIndexName = await s3VectorsService.createFileIndex(basename(filepath));
+            console.log(`[PDF Chunker S3Vectors] Created index '${fileIndexName}' for file '${basename(filepath)}'`);
+            
+            stats = await s3VectorsService.storePDFInFileIndex(fileIndexName, documentId, chunks, basename(filepath));
+            
+            await s3VectorsService.storePDFEmbeddings(documentId, chunks, basename(filepath));
+          } catch (s3Error) {
+            console.error('[PDF Chunker S3Vectors] Failed to store in S3 Vectors:', s3Error);
+          }
         }
         
         // Store file index mapping for later retrieval
@@ -305,7 +383,9 @@ export const pdfChunkerS3VectorsTool = createTool({
             pageEnd: c.metadata.pageEnd,
           })),
           metadata,
-          message: `Successfully processed PDF into ${chunks.length} chunks. S3 Vectors: ${stats.created} new vectors created in file-specific index '${fileIndexName}'.`,
+          message: context.indexName 
+            ? `Successfully processed PDF into ${chunks.length} chunks and uploaded ${stats.created} vectors to index '${fileIndexName}' using Postman.`
+            : `Successfully processed PDF into ${chunks.length} chunks. S3 Vectors: ${stats.created} new vectors created in file-specific index '${fileIndexName}'.`,
         };
         
       } else if (context.action === 'query') {
