@@ -14,6 +14,10 @@ import { s3VectorsPostmanQueryTool, s3VectorsPostmanListTool, s3VectorsPostmanUp
 import { s3VectorsPostmanFlexibleTool, s3VectorsPostmanListRequestsTool } from '../tools/s3-vectors-postman-flexible.js';
 import { s3VectorsBucketMonitorTool } from '../tools/s3-vectors-bucket-monitor.js';
 import { s3VectorsDeleteAllTool } from '../tools/s3-vectors-delete-all.js';
+import { s3VectorsGetByKeyTool } from '../tools/s3-vectors-get-by-key.js';
+import { queryVectorProcessorTool } from '../tools/query-vector-processor.js';
+import { multiIndexSimilaritySearchTool } from '../tools/multi-index-similarity-search.js';
+import { ragQueryProcessorTool } from '../tools/rag-query-processor.js';
 
 // Initialize Azure OpenAI
 const openai = createOpenAI();
@@ -228,6 +232,26 @@ const agentConfig: any = {
     Be helpful, concise, and focused on file operations. When answering questions about PDFs, 
     synthesize information from the relevant chunks into a coherent answer.
     
+    RAG (RETRIEVAL-AUGMENTED GENERATION) WORKFLOW:
+    When users ask questions that require searching across multiple documents:
+    1. Use ragQueryProcessorTool for complete end-to-end RAG processing
+       - Converts query to vector and stores it
+       - Searches across all document indexes for similar content
+       - Generates a comprehensive answer using retrieved chunks
+    
+    Example: "What do all the documents say about machine learning?"
+    → Use: ragQueryProcessorTool({query: "What do all the documents say about machine learning?"})
+    
+    For more control, you can use the individual tools:
+    - queryVectorProcessorTool: Just convert and store query as vector
+    - multiIndexSimilaritySearchTool: Search with a custom vector across indexes
+    
+    The RAG system will:
+    - Create a unique index for each query (query-userid-preview-timestamp)
+    - Search across all file/document indexes (excluding other query indexes)
+    - Return the most relevant chunks with similarity scores
+    - Generate a response citing the sources
+    
     S3 VECTORS MONITORING AND METADATA:
     - s3VectorsMonitorTool: Monitor mastra-chatbot index (actions: "list", "stats", "inspect")
     - s3VectorsBucketMonitorTool: Monitor entire bucket (actions: "list-indices", "bucket-stats", "index-details")
@@ -243,6 +267,10 @@ const agentConfig: any = {
     - s3VectorsPostmanFlexibleTool: Execute ANY request from the Postman collection
     - s3VectorsPostmanListRequestsTool: List all available Postman requests
     - s3VectorsDeleteAllTool: DELETE ALL INDEXES - requires confirmation and safety phrase
+    - s3VectorsGetByKeyTool: Get a specific vector by its key with metadata
+    - queryVectorProcessorTool: Convert user query to vector and store in S3 bucket
+    - multiIndexSimilaritySearchTool: Search across multiple indexes for similar vectors
+    - ragQueryProcessorTool: Complete RAG pipeline - process query, search, and generate response
   `,
   model: openai('gpt-4.1-test'),
   tools: { 
@@ -264,7 +292,11 @@ const agentConfig: any = {
     s3VectorsBucketMonitorTool,
     s3VectorsPostmanFlexibleTool,
     s3VectorsPostmanListRequestsTool,
-    s3VectorsDeleteAllTool
+    s3VectorsDeleteAllTool,
+    s3VectorsGetByKeyTool,
+    queryVectorProcessorTool,
+    multiIndexSimilaritySearchTool,
+    ragQueryProcessorTool
   },
   toolChoice: 'auto', // Encourage tool use
 };
