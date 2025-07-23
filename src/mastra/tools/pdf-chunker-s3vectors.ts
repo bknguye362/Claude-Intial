@@ -262,8 +262,18 @@ export const pdfChunkerS3VectorsTool = createTool({
         // ALWAYS use Newman/Postman for index creation and vector storage
         // Generate index name if not provided
         if (!context.indexName) {
-          // Create file-specific index name
-          context.indexName = `file-${documentId}-${Date.now()}`;
+          // Create file-specific index name based on the original filename
+          // Remove special characters and spaces, keep it readable
+          const cleanName = documentId
+            .toLowerCase()
+            .replace(/[^a-z0-9-_]/g, '-')  // Replace special chars with hyphens
+            .replace(/-+/g, '-')           // Replace multiple hyphens with single
+            .replace(/^-|-$/g, '');        // Remove leading/trailing hyphens
+          
+          // Add a short timestamp suffix for uniqueness (just date, not full timestamp)
+          const dateStr = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+          context.indexName = `${cleanName}-${dateStr}`;
+          
           console.log(`[PDF Chunker S3Vectors] No index name provided, using: ${context.indexName}`);
         }
         
@@ -377,9 +387,8 @@ export const pdfChunkerS3VectorsTool = createTool({
             pageEnd: c.metadata.pageEnd,
           })),
           metadata,
-          message: context.indexName 
-            ? `Successfully processed PDF into ${chunks.length} chunks and uploaded ${stats.created} vectors to index '${fileIndexName}' using Postman.`
-            : `Successfully processed PDF into ${chunks.length} chunks. S3 Vectors: ${stats.created} new vectors created in file-specific index '${fileIndexName}'.`,
+          message: `Successfully processed PDF '${basename(filepath)}' into ${chunks.length} chunks and created S3 Vectors index '${fileIndexName}' with ${stats.created} vectors.`,
+          indexName: fileIndexName,
         };
         
       } else if (context.action === 'query') {
