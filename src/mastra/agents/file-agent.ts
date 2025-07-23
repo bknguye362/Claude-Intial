@@ -13,6 +13,7 @@ import { s3VectorsFlexibleQueryTool, s3VectorsListIndicesTool, s3VectorsGetVecto
 import { s3VectorsPostmanQueryTool, s3VectorsPostmanListTool, s3VectorsPostmanUploadTool } from '../tools/s3-vectors-postman.js';
 import { s3VectorsPostmanFlexibleTool, s3VectorsPostmanListRequestsTool } from '../tools/s3-vectors-postman-flexible.js';
 import { s3VectorsBucketMonitorTool } from '../tools/s3-vectors-bucket-monitor.js';
+import { s3VectorsDeleteAllTool } from '../tools/s3-vectors-delete-all.js';
 
 // Initialize Azure OpenAI
 const openai = createOpenAI();
@@ -241,6 +242,7 @@ const agentConfig: any = {
     - s3VectorsPostmanQueryTool/ListTool/UploadTool: Postman-style API integration
     - s3VectorsPostmanFlexibleTool: Execute ANY request from the Postman collection
     - s3VectorsPostmanListRequestsTool: List all available Postman requests
+    - s3VectorsDeleteAllTool: DELETE ALL INDEXES - requires confirmation and safety phrase
   `,
   model: openai('gpt-4.1-test'),
   tools: { 
@@ -261,7 +263,8 @@ const agentConfig: any = {
     s3VectorsPostmanUploadTool,
     s3VectorsBucketMonitorTool,
     s3VectorsPostmanFlexibleTool,
-    s3VectorsPostmanListRequestsTool
+    s3VectorsPostmanListRequestsTool,
+    s3VectorsDeleteAllTool
   },
   toolChoice: 'auto', // Encourage tool use
 };
