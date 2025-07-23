@@ -11,11 +11,30 @@ const REGION = process.env.S3_VECTORS_REGION || 'us-east-2';
 
 export async function createIndexWithNewman(indexName: string, dimension: number = 1536): Promise<boolean> {
   console.log(`[Newman Executor] Creating index '${indexName}' with dimension ${dimension}`);
+  console.log(`[Newman Executor] Current working directory: ${process.cwd()}`);
+  console.log(`[Newman Executor] Postman collection path: ${POSTMAN_COLLECTION}`);
+  console.log(`[Newman Executor] Collection exists: ${existsSync(POSTMAN_COLLECTION)}`);
+  
+  // Check if Newman is available
+  try {
+    const { stdout: newmanVersion } = await execAsync('newman --version');
+    console.log(`[Newman Executor] Newman version: ${newmanVersion.trim()}`);
+  } catch (e) {
+    console.error('[Newman Executor] Newman not found in PATH:', e);
+    console.log('[Newman Executor] Trying npx newman...');
+  }
   
   let envFile: string | null = null;
   let outputFile: string | null = null;
+  let collectionFile: string | null = null;
   
   try {
+    // Log AWS credentials (safely)
+    console.log(`[Newman Executor] AWS_ACCESS_KEY_ID: ${process.env.AWS_ACCESS_KEY_ID ? 'Set (ends with ...' + process.env.AWS_ACCESS_KEY_ID.slice(-4) + ')' : 'NOT SET'}`);
+    console.log(`[Newman Executor] AWS_SECRET_ACCESS_KEY: ${process.env.AWS_SECRET_ACCESS_KEY ? 'Set' : 'NOT SET'}`);
+    console.log(`[Newman Executor] AWS_REGION: ${REGION}`);
+    console.log(`[Newman Executor] BUCKET_NAME: ${BUCKET_NAME}`);
+    
     // Create environment file
     const envData = {
       values: [
@@ -29,6 +48,7 @@ export async function createIndexWithNewman(indexName: string, dimension: number
     
     envFile = `/tmp/newman-env-${Date.now()}.json`;
     await writeFile(envFile, JSON.stringify(envData));
+    console.log(`[Newman Executor] Created environment file: ${envFile}`);
     
     // Create custom collection with the specific request body
     const customCollection = {
@@ -70,14 +90,18 @@ export async function createIndexWithNewman(indexName: string, dimension: number
       }]
     };
     
-    const collectionFile = `/tmp/newman-collection-${Date.now()}.json`;
+    collectionFile = `/tmp/newman-collection-${Date.now()}.json`;
     await writeFile(collectionFile, JSON.stringify(customCollection));
+    console.log(`[Newman Executor] Created collection file: ${collectionFile}`);
     
     // Run Newman
     outputFile = `/tmp/newman-output-${Date.now()}.json`;
-    const command = `newman run "${collectionFile}" --environment "${envFile}" --reporters cli,json --reporter-json-export "${outputFile}"`;
+    const command = `npx newman run "${collectionFile}" --environment "${envFile}" --reporters cli,json --reporter-json-export "${outputFile}"`;
+    console.log(`[Newman Executor] Running command: ${command}`);
     
     const { stdout, stderr } = await execAsync(command);
+    console.log(`[Newman Executor] Newman stdout:`, stdout);
+    if (stderr) console.log(`[Newman Executor] Newman stderr:`, stderr);
     
     // Check results
     if (outputFile && existsSync(outputFile)) {
@@ -101,6 +125,20 @@ export async function createIndexWithNewman(indexName: string, dimension: number
     
   } catch (error) {
     console.error('[Newman Executor] Error creating index:', error);
+    console.error('[Newman Executor] Error type:', error instanceof Error ? error.constructor.name : typeof error);
+    console.error('[Newman Executor] Error message:', error instanceof Error ? error.message : String(error));
+    if (error instanceof Error && error.stack) {
+      console.error('[Newman Executor] Stack trace:', error.stack);
+    }
+    // Try to read any output file for more details
+    if (outputFile && existsSync(outputFile)) {
+      try {
+        const output = await import('fs').then(fs => fs.promises.readFile(outputFile, 'utf-8'));
+        console.error('[Newman Executor] Newman output file:', output);
+      } catch (e) {
+        console.error('[Newman Executor] Could not read output file');
+      }
+    }
     return false;
   } finally {
     if (envFile && existsSync(envFile)) await unlink(envFile);
@@ -123,6 +161,12 @@ export async function uploadVectorsWithNewman(
   let uploaded = 0;
   
   try {
+    // Log AWS credentials (safely)
+    console.log(`[Newman Executor] AWS_ACCESS_KEY_ID: ${process.env.AWS_ACCESS_KEY_ID ? 'Set (ends with ...' + process.env.AWS_ACCESS_KEY_ID.slice(-4) + ')' : 'NOT SET'}`);
+    console.log(`[Newman Executor] AWS_SECRET_ACCESS_KEY: ${process.env.AWS_SECRET_ACCESS_KEY ? 'Set' : 'NOT SET'}`);
+    console.log(`[Newman Executor] AWS_REGION: ${REGION}`);
+    console.log(`[Newman Executor] BUCKET_NAME: ${BUCKET_NAME}`);
+    
     // Create environment file
     const envData = {
       values: [
@@ -136,6 +180,7 @@ export async function uploadVectorsWithNewman(
     
     envFile = `/tmp/newman-env-${Date.now()}.json`;
     await writeFile(envFile, JSON.stringify(envData));
+    console.log(`[Newman Executor] Created environment file: ${envFile}`);
     
     // Process in batches
     const batchSize = 10;
@@ -189,7 +234,7 @@ export async function uploadVectorsWithNewman(
       
       // Run Newman for this batch
       outputFile = `/tmp/newman-output-batch-${Date.now()}.json`;
-      const command = `newman run "${collectionFile}" --environment "${envFile}" --reporters cli,json --reporter-json-export "${outputFile}"`;
+      const command = `npx newman run "${collectionFile}" --environment "${envFile}" --reporters cli,json --reporter-json-export "${outputFile}"`;
       
       try {
         await execAsync(command);
