@@ -311,6 +311,35 @@
           ]
         }
       }
+    },
+    {
+      "name": "List All Indexes",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"vectorBucketName\": \"{{BUCKET_NAME}}\"\n}"
+        },
+        "url": {
+          "raw": "https://s3vectors.{{AWS_REGION}}.api.aws/ListIndexes",
+          "protocol": "https",
+          "host": [
+            "s3vectors",
+            "{{AWS_REGION}}",
+            "api",
+            "aws"
+          ],
+          "path": [
+            "ListIndexes"
+          ]
+        }
+      }
     }
   ]
 }
