@@ -5,7 +5,7 @@ import { existsSync } from 'fs';
 
 const execAsync = promisify(exec);
 
-const POSTMAN_COLLECTION = '/home/bkngu/Claude/s3-vectors/postman-s3-vectors-working.json';
+const POSTMAN_COLLECTION = './postman-s3-vectors.json';
 const BUCKET_NAME = process.env.S3_VECTORS_BUCKET || 'chatbotvectors362';
 const REGION = process.env.S3_VECTORS_REGION || 'us-east-2';
 
