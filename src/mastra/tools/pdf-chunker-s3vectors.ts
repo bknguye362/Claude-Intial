@@ -259,61 +259,68 @@ export const pdfChunkerS3VectorsTool = createTool({
         let stats = { created: 0, updated: 0, total: chunks.length };
         let fileIndexName: string | null = null;
         
-        // If custom index name provided, use Newman/Postman to create and populate it
-        if (context.indexName) {
-          console.log(`[PDF Chunker S3Vectors] Using Newman/Postman to create index '${context.indexName}'`);
+        // ALWAYS use Newman/Postman for index creation and vector storage
+        // Generate index name if not provided
+        if (!context.indexName) {
+          // Create file-specific index name
+          context.indexName = `file-${documentId}-${Date.now()}`;
+          console.log(`[PDF Chunker S3Vectors] No index name provided, using: ${context.indexName}`);
+        }
+        
+        console.log(`[PDF Chunker S3Vectors] Using Newman/Postman to create index '${context.indexName}'`);
+        
+        try {
+          // Step 1: Create the index using Newman
+          const dimension = embeddings[0]?.length || 1536;
+          const indexCreated = await createIndexWithNewman(context.indexName, dimension);
           
-          try {
-            // Step 1: Create the index using Newman
-            const dimension = embeddings[0]?.length || 1536;
-            const indexCreated = await createIndexWithNewman(context.indexName, dimension);
-            
-            if (!indexCreated) {
-              throw new Error(`Failed to create index '${context.indexName}'`);
+          if (!indexCreated) {
+            throw new Error(`Failed to create index '${context.indexName}'`);
+          }
+          
+          // Step 2: Upload vectors using Newman
+          console.log(`[PDF Chunker S3Vectors] Uploading ${chunks.length} chunks to index '${context.indexName}' using Newman...`);
+          
+          // Prepare vectors for upload
+          const vectors = chunks.map((chunk, index) => ({
+            key: `${documentId}-chunk-${index}`,
+            embedding: chunk.embedding,
+            metadata: {
+              content: chunk.content.substring(0, 1000),
+              documentId,
+              filename: basename(filepath),
+              chunkIndex: index,
+              totalChunks: chunks.length,
+              pageStart: chunk.metadata.pageStart,
+              pageEnd: chunk.metadata.pageEnd,
+              timestamp: new Date().toISOString()
             }
-            
-            // Step 2: Upload vectors using Newman
-            console.log(`[PDF Chunker S3Vectors] Uploading ${chunks.length} chunks to index '${context.indexName}' using Newman...`);
-            
-            // Prepare vectors for upload
-            const vectors = chunks.map((chunk, index) => ({
-              key: `${documentId}-chunk-${index}`,
-              embedding: chunk.embedding,
-              metadata: {
-                content: chunk.content.substring(0, 1000),
-                documentId,
-                filename: basename(filepath),
-                chunkIndex: index,
-                totalChunks: chunks.length,
-                pageStart: chunk.metadata.pageStart,
-                pageEnd: chunk.metadata.pageEnd,
-                timestamp: new Date().toISOString()
-              }
-            }));
-            
-            const uploadedCount = await uploadVectorsWithNewman(context.indexName, vectors);
-            stats.created = uploadedCount;
-            
-            fileIndexName = context.indexName;
-            console.log(`[PDF Chunker S3Vectors] Completed: ${stats.created} vectors uploaded to index '${fileIndexName}' using Newman/Postman`);
-            
-          } catch (error) {
-            console.error('[PDF Chunker S3Vectors] Error with Newman/Postman operations:', error);
-            throw error;
-          }
+          }));
           
-        } else {
-          // Original behavior: create file-specific index
-          try {
-            fileIndexName = await s3VectorsService.createFileIndex(basename(filepath));
-            console.log(`[PDF Chunker S3Vectors] Created index '${fileIndexName}' for file '${basename(filepath)}'`);
-            
-            stats = await s3VectorsService.storePDFInFileIndex(fileIndexName, documentId, chunks, basename(filepath));
-            
-            await s3VectorsService.storePDFEmbeddings(documentId, chunks, basename(filepath));
-          } catch (s3Error) {
-            console.error('[PDF Chunker S3Vectors] Failed to store in S3 Vectors:', s3Error);
-          }
+          const uploadedCount = await uploadVectorsWithNewman(context.indexName, vectors);
+          stats.created = uploadedCount;
+          
+          fileIndexName = context.indexName;
+          console.log(`[PDF Chunker S3Vectors] Completed: ${stats.created} vectors uploaded to index '${fileIndexName}' using Newman/Postman`);
+          
+        } catch (error) {
+          console.error('[PDF Chunker S3Vectors] Error with Newman/Postman operations:', error);
+          // Don't throw - return partial success
+          return {
+            success: false,
+            action: 'process',
+            filename: basename(filepath),
+            totalChunks: chunks.length,
+            chunks: chunks.slice(0, 3).map((c, i) => ({
+              index: i,
+              content: c.content,
+              pageStart: c.metadata.pageStart,
+              pageEnd: c.metadata.pageEnd,
+            })),
+            metadata,
+            message: `Failed to create index or upload vectors: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          };
         }
         
         // Store file index mapping for later retrieval
@@ -365,91 +372,77 @@ export const pdfChunkerS3VectorsTool = createTool({
         // Generate embedding for query
         const queryEmbedding = await generateEmbedding(context.query);
         
-        // Search in S3 Vectors
+        // Search in S3 Vectors using the file index mapping
         let results: any[] = [];
-        try {
-          // First try to find the file-specific index
-          const mappingPath = join('/tmp', 'file-index-mappings.json');
-          let fileIndexName: string | null = null;
-          
-          try {
-            const mappingData = await readFile(mappingPath, 'utf-8');
-            const mappings = JSON.parse(mappingData);
-            const filename = basename(filepath);
-            fileIndexName = mappings[filename];
-            console.log(`[PDF Chunker S3Vectors] Found file index for '${filename}': ${fileIndexName}`);
-          } catch (e) {
-            console.log('[PDF Chunker S3Vectors] No file index mapping found, using main index');
-          }
-          
-          if (fileIndexName) {
-            // Search in the file-specific index
-            results = await s3VectorsService.searchFileIndex(fileIndexName, queryEmbedding, 5);
-            console.log(`[PDF Chunker S3Vectors] Searched in file index '${fileIndexName}', found ${results.length} results`);
-          } else {
-            // Fallback to searching the main index
-            results = await s3VectorsService.searchPDFContent(queryEmbedding, 5);
-            console.log(`[PDF Chunker S3Vectors] Searched in main index, found ${results.length} results`);
-          }
-        } catch (searchError) {
-          console.error('[PDF Chunker S3Vectors] S3 Vectors search failed:', searchError);
-          // Fallback: return empty results
-          results = [];
-        }
+        let fileIndexName: string | null = null;
         
-        if (results.length === 0) {
+        // First try to find the file-specific index
+        const mappingPath = join('/tmp', 'file-index-mappings.json');
+        
+        try {
+          const mappingData = await readFile(mappingPath, 'utf-8');
+          const mappings = JSON.parse(mappingData);
+          const filename = basename(filepath);
+          fileIndexName = mappings[filename];
+          console.log(`[PDF Chunker S3Vectors] Found file index for '${filename}': ${fileIndexName}`);
+        } catch (e) {
+          console.log('[PDF Chunker S3Vectors] No file index mapping found');
+          // Return message asking user to process the file first
           return {
-            success: true,
+            success: false,
             action: 'query',
             filename: basename(filepath),
-            message: `No matches found for "${context.query}"`,
+            message: `PDF not processed yet. Please process the PDF first before querying.`,
             chunks: [],
           };
         }
         
-        // Convert results to expected format
-        const chunks = results.map((result, index) => ({
-          index: result.chunkIndex || index,
-          content: result.content,
-          pageStart: 1,
-          pageEnd: 1,
-          relevanceScore: result.score,
-        }));
+        if (!fileIndexName) {
+          return {
+            success: false,
+            action: 'query',
+            filename: basename(filepath),
+            message: `No index found for this PDF. Please process the PDF first.`,
+            chunks: [],
+          };
+        }
+        
+        // For now, return a message since we can't query via Newman yet
+        // TODO: Implement query via Newman/Postman
+        console.log(`[PDF Chunker S3Vectors] Query functionality via Newman not yet implemented`);
         
         return {
-          success: true,
+          success: false,
           action: 'query',
-          filename: results[0]?.filename || basename(filepath),
-          totalChunks: chunks.length,
-          chunks,
-          message: `Found ${results.length} relevant chunks using S3 Vectors semantic search`,
+          filename: basename(filepath),
+          message: `Query functionality is not yet available. The PDF has been indexed as '${fileIndexName}' but querying requires AWS CLI which is not available in this environment.`,
+          chunks: [],
         };
         
       } else if (context.action === 'summarize') {
         console.log(`[PDF Chunker S3Vectors] Creating summary for: ${filepath}`);
         
-        // For summarize, we need to process if not already done
-        const queryEmbedding = await generateEmbedding("document summary overview");
-        const results = await s3VectorsService.searchPDFContent(queryEmbedding, 10);
+        // Read and parse PDF directly for summarization
+        const dataBuffer = await readFile(filepath);
+        const pdfData = await pdf(dataBuffer);
         
-        let summary: string;
-        if (results.length > 0) {
-          // Use existing chunks
-          const texts = results.map(r => r.content);
-          summary = createSummary(texts.join('\n\n'), 1000);
-        } else {
-          // Process the PDF first
-          const dataBuffer = await readFile(filepath);
-          const pdfData = await pdf(dataBuffer);
-          summary = createSummary(pdfData.text, 1000);
-        }
+        const metadata = {
+          title: pdfData.info?.Title,
+          author: pdfData.info?.Author,
+          pages: pdfData.numpages,
+          characters: pdfData.text.length,
+        };
+        
+        // Create summary from the full text
+        const summary = createSummary(pdfData.text, 1000);
         
         return {
           success: true,
           action: 'summarize',
           filename: basename(filepath),
           summary,
-          message: 'Successfully created summary using S3 Vectors',
+          metadata,
+          message: 'Successfully created summary',
         };
       }
       
