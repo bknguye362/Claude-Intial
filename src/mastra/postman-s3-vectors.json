@@ -253,6 +253,64 @@
           ]
         }
       }
+    },
+    {
+      "name": "Delete Index",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"vectorBucketName\": \"{{BUCKET_NAME}}\",\n  \"indexName\": \"{{INDEX_NAME}}\"\n}"
+        },
+        "url": {
+          "raw": "https://s3vectors.{{AWS_REGION}}.api.aws/DeleteIndex",
+          "protocol": "https",
+          "host": [
+            "s3vectors",
+            "{{AWS_REGION}}",
+            "api",
+            "aws"
+          ],
+          "path": [
+            "DeleteIndex"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Delete Vectors",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"vectorBucketName\": \"{{BUCKET_NAME}}\",\n  \"indexName\": \"{{INDEX_NAME}}\",\n  \"keys\": [\"vector-key-1\", \"vector-key-2\"]\n}"
+        },
+        "url": {
+          "raw": "https://s3vectors.{{AWS_REGION}}.api.aws/DeleteVectors",
+          "protocol": "https",
+          "host": [
+            "s3vectors",
+            "{{AWS_REGION}}",
+            "api",
+            "aws"
+          ],
+          "path": [
+            "DeleteVectors"
+          ]
+        }
+      }
     }
   ]
 }
