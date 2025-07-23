@@ -10,10 +10,7 @@ import * as path from 'path';
 import { unlink } from 'fs/promises';
 import { getS3VectorsService, S3VectorDocument } from '../lib/s3-vectors-integration.js';
 import { createRequire } from 'module';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-
-const execAsync = promisify(exec);
+import { createIndexWithNewman, uploadVectorsWithNewman } from '../lib/newman-executor.js';
 
 const require = createRequire(import.meta.url);
 
@@ -262,76 +259,46 @@ export const pdfChunkerS3VectorsTool = createTool({
         let stats = { created: 0, updated: 0, total: chunks.length };
         let fileIndexName: string | null = null;
         
-        // If custom index name provided, create it and use it
+        // If custom index name provided, use Newman/Postman to create and populate it
         if (context.indexName) {
-          console.log(`[PDF Chunker S3Vectors] Creating custom index '${context.indexName}'`);
+          console.log(`[PDF Chunker S3Vectors] Using Newman/Postman to create index '${context.indexName}'`);
           
           try {
-            // Step 1: Create the index using AWS CLI
-            const bucketName = process.env.S3_VECTORS_BUCKET || 'chatbotvectors362';
-            const region = process.env.S3_VECTORS_REGION || 'us-east-2';
+            // Step 1: Create the index using Newman
             const dimension = embeddings[0]?.length || 1536;
+            const indexCreated = await createIndexWithNewman(context.indexName, dimension);
             
-            const createCommand = `aws s3vectors create-index --vector-bucket-name ${bucketName} --index-name ${context.indexName} --dimension ${dimension} --distance-metric cosine --data-type float32 --region ${region}`;
-            
-            try {
-              await execAsync(createCommand);
-              console.log(`[PDF Chunker S3Vectors] Successfully created index '${context.indexName}'`);
-            } catch (createError: any) {
-              if (createError.message.includes('AlreadyExistsException')) {
-                console.log(`[PDF Chunker S3Vectors] Index '${context.indexName}' already exists, using it`);
-              } else {
-                throw createError;
-              }
+            if (!indexCreated) {
+              throw new Error(`Failed to create index '${context.indexName}'`);
             }
             
-            // Step 2: Store chunks in the custom index
-            console.log(`[PDF Chunker S3Vectors] Storing ${chunks.length} chunks in index '${context.indexName}'...`);
+            // Step 2: Upload vectors using Newman
+            console.log(`[PDF Chunker S3Vectors] Uploading ${chunks.length} chunks to index '${context.indexName}' using Newman...`);
             
-            // Process in batches
-            const batchSize = 25;
-            for (let i = 0; i < chunks.length; i += batchSize) {
-              const batch = chunks.slice(i, i + batchSize);
-              
-              const vectorData = batch.map((chunk, batchIndex) => ({
-                key: `${documentId}-chunk-${i + batchIndex}`,
-                data: {
-                  float32: chunk.embedding
-                },
-                metadata: {
-                  content: chunk.content.substring(0, 1000),
-                  documentId,
-                  filename: basename(filepath),
-                  chunkIndex: i + batchIndex,
-                  totalChunks: chunks.length,
-                  timestamp: new Date().toISOString(),
-                  pageStart: chunk.metadata.pageStart,
-                  pageEnd: chunk.metadata.pageEnd
-                }
-              }));
-              
-              const fs = require('fs').promises;
-              const tempFile = `/tmp/vectors-batch-${Date.now()}.json`;
-              await fs.writeFile(tempFile, JSON.stringify(vectorData));
-              
-              try {
-                const putCommand = `aws s3vectors put-vectors --vector-bucket-name ${bucketName} --index-name ${context.indexName} --vectors file://${tempFile} --region ${region}`;
-                await execAsync(putCommand);
-                stats.created += batch.length;
-                
-                console.log(`[PDF Chunker S3Vectors] Batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(chunks.length / batchSize)}: ${batch.length} chunks stored`);
-              } catch (error) {
-                console.error(`[PDF Chunker S3Vectors] Error storing batch:`, error);
-              } finally {
-                await fs.unlink(tempFile);
+            // Prepare vectors for upload
+            const vectors = chunks.map((chunk, index) => ({
+              key: `${documentId}-chunk-${index}`,
+              embedding: chunk.embedding,
+              metadata: {
+                content: chunk.content.substring(0, 1000),
+                documentId,
+                filename: basename(filepath),
+                chunkIndex: index,
+                totalChunks: chunks.length,
+                pageStart: chunk.metadata.pageStart,
+                pageEnd: chunk.metadata.pageEnd,
+                timestamp: new Date().toISOString()
               }
-            }
+            }));
+            
+            const uploadedCount = await uploadVectorsWithNewman(context.indexName, vectors);
+            stats.created = uploadedCount;
             
             fileIndexName = context.indexName;
-            console.log(`[PDF Chunker S3Vectors] Completed: ${stats.created} vectors stored in index '${fileIndexName}'`);
+            console.log(`[PDF Chunker S3Vectors] Completed: ${stats.created} vectors uploaded to index '${fileIndexName}' using Newman/Postman`);
             
           } catch (error) {
-            console.error('[PDF Chunker S3Vectors] Error creating/populating custom index:', error);
+            console.error('[PDF Chunker S3Vectors] Error with Newman/Postman operations:', error);
             throw error;
           }
           
