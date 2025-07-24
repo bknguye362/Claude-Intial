@@ -8,11 +8,12 @@ import { knowledgeTool } from '../tools/knowledge-tool.js';
 // import { pdfReaderTool } from '../tools/pdf-reader-tool.js'; // Removed - causes pdf-parse debug mode
 import { pdfChunkerS3VectorsTool as pdfChunkerTool } from '../tools/pdf-chunker-s3vectors.js';
 import { textReaderTool } from '../tools/text-reader-tool.js';
-import { localListTool } from '../tools/local-list-tool.js';
+// import { localListTool } from '../tools/local-list-tool.js'; // TEMPORARILY DISABLED
 import { agentCoordinationTool } from '../tools/agent-coordination-tool.js';
 import { s3VectorsMonitorTool } from '../tools/s3-vectors-monitor.js';
 import { s3VectorsLogsTool } from '../tools/s3-vectors-logs.js';
 import { s3VectorsDebugTool } from '../tools/s3-vectors-debug.js';
+import { queryCommandTool } from '../tools/query-command-tool.js';
 
 // Manual tool registry
 const manualTools = {
@@ -24,11 +25,12 @@ const manualTools = {
   pdfChunkerS3VectorsTool: pdfChunkerTool, // Also register under original name
   'pdf-chunker-s3vectors': pdfChunkerTool, // Register under the tool's ID
   textReaderTool,
-  localListTool,
+  // localListTool, // TEMPORARILY DISABLED
   agentCoordinationTool,
   s3VectorsMonitorTool,
   s3VectorsLogsTool,
-  s3VectorsDebugTool
+  s3VectorsDebugTool,
+  queryCommandTool
 };
 
 export function createOpenAI(options?: any) {
@@ -204,24 +206,43 @@ export function createOpenAI(options?: any) {
             
             // Manually define the tools for file agent
             requestBody.tools = [
+              // Add queryCommandTool FIRST for highest priority
               {
                 type: 'function',
                 function: {
-                  name: 'localListTool',
-                  description: 'List files available in the local uploads directory',
+                  name: 'queryCommandTool',
+                  description: 'Process Query: command to vectorize user questions. Use when user message starts with "Query:"',
                   parameters: {
                     type: 'object',
                     properties: {
-                      directory: {
+                      fullMessage: {
                         type: 'string',
-                        description: 'Directory to list files from',
-                        default: './uploads'
+                        description: 'The full user message starting with Query:'
                       }
                     },
-                    required: []
+                    required: ['fullMessage']
                   }
                 }
               },
+              // TEMPORARILY DISABLED localListTool
+              // {
+              //   type: 'function',
+              //   function: {
+              //     name: 'localListTool',
+              //     description: 'List files available in the local uploads directory',
+              //     parameters: {
+              //       type: 'object',
+              //       properties: {
+              //         directory: {
+              //           type: 'string',
+              //           description: 'Directory to list files from',
+              //           default: './uploads'
+              //         }
+              //       },
+              //       required: []
+              //     }
+              //   }
+              // },
               {
                 type: 'function',
                 function: {
