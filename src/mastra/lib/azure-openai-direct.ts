@@ -13,7 +13,7 @@ import { agentCoordinationTool } from '../tools/agent-coordination-tool.js';
 import { s3VectorsMonitorTool } from '../tools/s3-vectors-monitor.js';
 import { s3VectorsLogsTool } from '../tools/s3-vectors-logs.js';
 import { s3VectorsDebugTool } from '../tools/s3-vectors-debug.js';
-import { queryCommandTool } from '../tools/query-command-tool.js';
+// import { queryCommandTool } from '../tools/query-command-tool.js'; // No longer needed
 
 // Manual tool registry
 const manualTools = {
@@ -29,8 +29,8 @@ const manualTools = {
   agentCoordinationTool,
   s3VectorsMonitorTool,
   s3VectorsLogsTool,
-  s3VectorsDebugTool,
-  queryCommandTool
+  s3VectorsDebugTool
+  // queryCommandTool // No longer needed
 };
 
 export function createOpenAI(options?: any) {
@@ -206,24 +206,6 @@ export function createOpenAI(options?: any) {
             
             // Manually define the tools for file agent
             requestBody.tools = [
-              // Add queryCommandTool FIRST for highest priority
-              {
-                type: 'function',
-                function: {
-                  name: 'queryCommandTool',
-                  description: 'Process Query: command to vectorize user questions. Use when user message starts with "Query:"',
-                  parameters: {
-                    type: 'object',
-                    properties: {
-                      fullMessage: {
-                        type: 'string',
-                        description: 'The full user message starting with Query:'
-                      }
-                    },
-                    required: ['fullMessage']
-                  }
-                }
-              },
               // TEMPORARILY DISABLED localListTool
               // {
               //   type: 'function',

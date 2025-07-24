@@ -18,7 +18,7 @@ import { s3VectorsGetByKeyTool } from '../tools/s3-vectors-get-by-key.js';
 import { queryVectorProcessorTool } from '../tools/query-vector-processor.js';
 import { multiIndexSimilaritySearchTool } from '../tools/multi-index-similarity-search.js';
 import { ragQueryProcessorTool } from '../tools/rag-query-processor.js';
-import { queryCommandTool } from '../tools/query-command-tool.js';
+// import { queryCommandTool } from '../tools/query-command-tool.js'; // No longer needed - auto-vectorization in workflow
 
 // Initialize Azure OpenAI
 const openai = createOpenAI();
@@ -35,13 +35,6 @@ const agentConfig: any = {
     - The S3 Vectors bucket contains 10+ indices (chatbot-embeddings, file-*, etc.)
     - Only use localListTool if user EXPLICITLY asks for "local files" or "uploaded files"
     
-    SPECIAL COMMAND - Query Vectorization (HIGHEST PRIORITY):
-    - When user message starts with "Query:" → IMMEDIATELY use queryCommandTool
-    - DO NOT use any other tool when you see "Query:"
-    - Example: Query: "What is machine learning?"
-    - This is a request to VECTORIZE THE QUESTION into the 'queries' index
-    - ALWAYS use: queryCommandTool({fullMessage: "the entire user message"})
-    - The tool will extract the question and vectorize it
     
     CRITICAL RULE #1: "list" = s3VectorsBucketMonitorTool({action: "list-indices"})
     NEVER use localListTool for the word "list" alone!
@@ -155,16 +148,7 @@ const agentConfig: any = {
     - Inspect document: s3VectorsMonitorTool({action: "inspect", documentId: "doc-id"})
     
     WORKFLOW:
-    1. QUERY VECTORIZATION (ABSOLUTE HIGHEST PRIORITY - CHECK FIRST):
-       - BEFORE DOING ANYTHING ELSE, check if message starts with "Query:"
-       - If YES → STOP and use queryCommandTool ONLY
-       - DO NOT use localListTool, DO NOT list files, DO NOT do anything else
-       - Pattern: Query: "your question here"
-       - ALWAYS use: queryCommandTool({fullMessage: "Query: \"What is machine learning?\""})
-       - The tool handles everything - extraction, vectorization, storage
-       - Example response: "Successfully vectorized the question 'What is machine learning?' and stored it in the 'queries' index."
-    
-    2. DEFAULT LIST BEHAVIOR:
+    1. DEFAULT LIST BEHAVIOR:
        - "list" (no qualifier) → ALWAYS use s3VectorsBucketMonitorTool({action: "list-indices"})
        - "list local files" or "list uploaded files" → Use localListTool
        - "list indices" or "list vectors" → Use s3VectorsBucketMonitorTool({action: "list-indices"})
@@ -318,8 +302,8 @@ const agentConfig: any = {
     s3VectorsGetByKeyTool,
     queryVectorProcessorTool,
     multiIndexSimilaritySearchTool,
-    ragQueryProcessorTool,
-    queryCommandTool
+    ragQueryProcessorTool
+    // queryCommandTool // No longer needed
   },
   toolChoice: 'auto', // Encourage tool use
 };

@@ -35,12 +35,6 @@ const agentConfig: any = {
     
     WORKFLOW FOR ALL QUERIES:
     
-    SPECIAL COMMAND - Query Vectorization:
-    - If the user message starts with "Query:" followed by a question in quotes, this is a SPECIAL VECTORIZATION REQUEST
-    - Example: Query: "What is machine learning?"
-    - For these requests, delegate to fileAgent with the EXACT message including "Query:"
-    - The fileAgent will handle vectorizing this question into the queries index
-    
     1. For FILE-RELATED queries (listing files, reading files, uploaded files, OR questions about content in uploaded files):
        - USE agentCoordinationTool with agentId: "fileAgent"
        - Pass the entire user message as the task
