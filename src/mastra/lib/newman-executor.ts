@@ -189,6 +189,15 @@ export async function uploadVectorsWithNewman(
     for (let i = 0; i < vectors.length; i += batchSize) {
       const batch = vectors.slice(i, i + batchSize);
       
+      // Log the vector format for debugging
+      if (i === 0) { // Only log first batch
+        console.log(`[Newman Executor] Sample vector format:`, JSON.stringify({
+          key: batch[0].key,
+          data: { float32: batch[0].embedding.slice(0, 5) }, // Just first 5 values
+          metadata: batch[0].metadata
+        }, null, 2));
+      }
+      
       // Create custom collection for this batch
       const customCollection = {
         info: {
@@ -239,12 +248,31 @@ export async function uploadVectorsWithNewman(
       const command = `npx newman run "${collectionFile}" --environment "${envFile}" --reporters cli,json --reporter-json-export "${outputFile}"`;
       
       try {
-        await execAsync(command);
+        const { stdout, stderr } = await execAsync(command);
         uploaded += batch.length;
         
         console.log(`[Newman Executor] Batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(vectors.length / batchSize)}: ${batch.length} vectors uploaded`);
+        
+        // Check if output file exists and read the result
+        if (outputFile && existsSync(outputFile)) {
+          try {
+            const fs = await import('fs');
+            const outputData = await fs.promises.readFile(outputFile, 'utf-8');
+            const result = JSON.parse(outputData);
+            
+            // Check for errors in the Newman run
+            if (result.run?.stats?.assertions?.failed > 0 || result.run?.stats?.requests?.failed > 0) {
+              const response = result.run?.executions?.[0]?.response?.stream?.toString() || '';
+              console.error(`[Newman Executor] Upload may have failed. Response: ${response}`);
+              uploaded -= batch.length; // Subtract if failed
+            }
+          } catch (readError) {
+            console.error(`[Newman Executor] Could not read output file:`, readError);
+          }
+        }
       } catch (error) {
         console.error(`[Newman Executor] Error uploading batch:`, error);
+        // Don't count this batch as uploaded
       } finally {
         await unlink(collectionFile);
         if (outputFile && existsSync(outputFile)) await unlink(outputFile);
