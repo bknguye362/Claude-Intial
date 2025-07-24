@@ -103,21 +103,39 @@ export const queryCommandTool = createTool({
       
       // Upload to queries index
       console.log(`[Query Command Tool] Uploading vector to 'queries' index...`);
-      const uploadedCount = await uploadVectorsWithNewman('queries', vectors);
+      console.log(`[Query Command Tool] Vector details:`, {
+        key: vectorKey,
+        embeddingLength: embedding.length,
+        metadataKeys: Object.keys(vectors[0].metadata),
+        indexName: 'queries'
+      });
       
-      if (uploadedCount > 0) {
-        console.log(`[Query Command Tool] Successfully uploaded vector ${vectorKey}`);
-        return {
-          success: true,
-          question: question,
-          vectorKey: vectorKey,
-          message: `Successfully vectorized the question "${question}" and stored it in the 'queries' index with key ${vectorKey}.`,
-        };
-      } else {
+      try {
+        const uploadedCount = await uploadVectorsWithNewman('queries', vectors);
+        console.log(`[Query Command Tool] Upload result: ${uploadedCount} vectors uploaded`);
+        
+        if (uploadedCount > 0) {
+          console.log(`[Query Command Tool] Successfully uploaded vector ${vectorKey}`);
+          return {
+            success: true,
+            question: question,
+            vectorKey: vectorKey,
+            message: `Successfully vectorized the question "${question}" and stored it in the 'queries' index with key ${vectorKey}.`,
+          };
+        } else {
+          console.log(`[Query Command Tool] Upload returned 0 vectors uploaded`);
+          return {
+            success: false,
+            question: question,
+            message: 'Failed to upload vector to queries index - uploadVectorsWithNewman returned 0',
+          };
+        }
+      } catch (uploadError) {
+        console.error(`[Query Command Tool] Upload error:`, uploadError);
         return {
           success: false,
           question: question,
-          message: 'Failed to upload vector to queries index',
+          message: `Upload error: ${uploadError instanceof Error ? uploadError.message : 'Unknown error'}`,
         };
       }
       
