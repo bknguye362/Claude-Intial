@@ -1,11 +1,157 @@
 import { createStep, createWorkflow } from '@mastra/core/workflows';
 import { z } from 'zod';
+import { createIndexWithNewman, uploadVectorsWithNewman } from '../lib/newman-executor.js';
+
+// Azure OpenAI configuration for embeddings
+const AZURE_OPENAI_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT || 'https://franklin-open-ai-test.openai.azure.com';
+const AZURE_OPENAI_API_KEY = process.env.AZURE_OPENAI_API_KEY || process.env.AZURE_API_KEY || process.env.OPENAI_API_KEY || '';
+const AZURE_OPENAI_API_VERSION = process.env.AZURE_OPENAI_API_VERSION || '2023-12-01-preview';
+const EMBEDDINGS_DEPLOYMENT = 'text-embedding-ada-002';
+
+// Helper function to generate embeddings
+async function generateEmbedding(text: string): Promise<number[]> {
+  if (!AZURE_OPENAI_API_KEY) {
+    console.log('[Assistant Workflow] No API key for embeddings, using mock embeddings...');
+    const hash = text.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    return Array(1536).fill(0).map((_, i) => Math.sin(hash + i) * 0.5 + 0.5);
+  }
+
+  try {
+    const url = `${AZURE_OPENAI_ENDPOINT}/openai/deployments/${EMBEDDINGS_DEPLOYMENT}/embeddings?api-version=${AZURE_OPENAI_API_VERSION}`;
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'api-key': AZURE_OPENAI_API_KEY
+      },
+      body: JSON.stringify({
+        input: text.slice(0, 8000),
+        model: 'text-embedding-ada-002'
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Embedding API error: ${response.status} ${response.statusText}`);
+    }
+
+    const data: any = await response.json();
+    return data.data[0].embedding;
+  } catch (error) {
+    console.error('[Assistant Workflow] Error generating embedding:', error);
+    const hash = text.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    return Array(1536).fill(0).map((_, i) => Math.sin(hash + i) * 0.5 + 0.5);
+  }
+}
+
+// Check if input is a question
+function isQuestion(input: string): boolean {
+  const questionPatterns = [
+    /\?/,
+    /^what\s/i,
+    /^how\s/i,
+    /^why\s/i,
+    /^when\s/i,
+    /^where\s/i,
+    /^who\s/i,
+    /^which\s/i,
+    /^explain\s/i,
+    /^can\s/i,
+    /^could\s/i,
+    /^should\s/i,
+    /^would\s/i,
+    /^is\s/i,
+    /^are\s/i,
+    /^do\s/i,
+    /^does\s/i,
+    /^did\s/i,
+  ];
+  
+  return questionPatterns.some(pattern => pattern.test(input));
+}
+
+// New step to automatically vectorize questions
+const autoVectorizeQuestion = createStep({
+  id: 'auto-vectorize-question',
+  description: 'Automatically detects and vectorizes questions',
+  inputSchema: z.object({
+    message: z.string().describe('User message to check and potentially vectorize'),
+  }),
+  outputSchema: z.object({
+    message: z.string(),
+    isQuestion: z.boolean(),
+    vectorized: z.boolean(),
+    vectorKey: z.string().optional(),
+  }),
+  execute: async ({ inputData }) => {
+    if (!inputData) {
+      throw new Error('Input data not found');
+    }
+
+    const message = inputData.message;
+    const isQuestionResult = isQuestion(message);
+    let vectorized = false;
+    let vectorKey: string | undefined;
+
+    if (isQuestionResult) {
+      console.log(`[Assistant Workflow] AUTO-DETECTED QUESTION: "${message}"`);
+      console.log(`[Assistant Workflow] Automatically vectorizing question...`);
+      
+      try {
+        // Generate embedding for the question
+        const embedding = await generateEmbedding(message);
+        const timestamp = Date.now();
+        vectorKey = `auto-question-${timestamp}`;
+        
+        // Create vector in same format as PDF chunker
+        const vectors = [{
+          key: vectorKey,
+          embedding: embedding,
+          metadata: {
+            question: message,
+            timestamp: new Date().toISOString(),
+            source: 'assistant-workflow-auto',
+            type: 'user-question',
+            automatic: true
+          }
+        }];
+        
+        // Upload to queries index
+        console.log(`[Assistant Workflow] Uploading question vector to 'queries' index...`);
+        const uploadedCount = await uploadVectorsWithNewman('queries', vectors);
+        
+        if (uploadedCount > 0) {
+          console.log(`[Assistant Workflow] Successfully auto-vectorized question with key: ${vectorKey}`);
+          vectorized = true;
+        } else {
+          console.log(`[Assistant Workflow] Failed to upload vector`);
+        }
+        
+      } catch (error) {
+        console.error(`[Assistant Workflow] Error auto-vectorizing question:`, error);
+        // Continue with workflow even if vectorization fails
+      }
+    } else {
+      console.log(`[Assistant Workflow] Not a question: "${message}"`);
+    }
+
+    return { 
+      message: inputData.message, 
+      isQuestion: isQuestionResult,
+      vectorized: vectorized,
+      vectorKey: vectorKey
+    };
+  },
+});
 
 const analyzeIntent = createStep({
   id: 'analyze-intent',
   description: 'Analyzes user intent to route to appropriate response',
   inputSchema: z.object({
     message: z.string().describe('User message to analyze'),
+    isQuestion: z.boolean(),
+    vectorized: z.boolean(),
+    vectorKey: z.string().optional(),
   }),
   outputSchema: z.object({
     message: z.string(),
@@ -139,6 +285,7 @@ const assistantWorkflow = createWorkflow({
     response: z.string(),
   }),
 })
+  .then(autoVectorizeQuestion)
   .then(analyzeIntent)
   .then(generateResponse);
 
