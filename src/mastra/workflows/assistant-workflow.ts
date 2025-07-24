@@ -13,7 +13,8 @@ async function generateEmbedding(text: string): Promise<number[]> {
   if (!AZURE_OPENAI_API_KEY) {
     console.log('[Assistant Workflow] No API key for embeddings, using mock embeddings...');
     const hash = text.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-    return Array(1536).fill(0).map((_, i) => Math.sin(hash + i) * 0.5 + 0.5);
+    // Note: queries index has dimension 384, not 1536
+    return Array(384).fill(0).map((_, i) => Math.sin(hash + i) * 0.5 + 0.5);
   }
 
   try {
@@ -84,12 +85,18 @@ const autoVectorizeQuestion = createStep({
     vectorKey: z.string().optional(),
   }),
   execute: async ({ inputData }) => {
+    console.log(`[Assistant Workflow - AutoVectorize] Step executed with input:`, inputData);
+    
     if (!inputData) {
       throw new Error('Input data not found');
     }
 
     const message = inputData.message;
+    console.log(`[Assistant Workflow - AutoVectorize] Checking message: "${message}"`);
+    
     const isQuestionResult = isQuestion(message);
+    console.log(`[Assistant Workflow - AutoVectorize] Is question? ${isQuestionResult}`);
+    
     let vectorized = false;
     let vectorKey: string | undefined;
 
@@ -99,7 +106,10 @@ const autoVectorizeQuestion = createStep({
       
       try {
         // Generate embedding for the question
+        console.log(`[Assistant Workflow] Generating embedding...`);
         const embedding = await generateEmbedding(message);
+        console.log(`[Assistant Workflow] Generated embedding with length: ${embedding.length}`);
+        
         const timestamp = Date.now();
         vectorKey = `auto-question-${timestamp}`;
         
@@ -118,17 +128,25 @@ const autoVectorizeQuestion = createStep({
         
         // Upload to queries index
         console.log(`[Assistant Workflow] Uploading question vector to 'queries' index...`);
+        console.log(`[Assistant Workflow] Vector details:`, {
+          key: vectorKey,
+          embeddingLength: embedding.length,
+          metadataKeys: Object.keys(vectors[0].metadata)
+        });
+        
         const uploadedCount = await uploadVectorsWithNewman('queries', vectors);
+        console.log(`[Assistant Workflow] Upload result: ${uploadedCount} vectors`);
         
         if (uploadedCount > 0) {
           console.log(`[Assistant Workflow] Successfully auto-vectorized question with key: ${vectorKey}`);
           vectorized = true;
         } else {
-          console.log(`[Assistant Workflow] Failed to upload vector`);
+          console.log(`[Assistant Workflow] Failed to upload vector - uploadedCount is 0`);
         }
         
       } catch (error) {
         console.error(`[Assistant Workflow] Error auto-vectorizing question:`, error);
+        console.error(`[Assistant Workflow] Error stack:`, error instanceof Error ? error.stack : 'No stack');
         // Continue with workflow even if vectorization fails
       }
     } else {

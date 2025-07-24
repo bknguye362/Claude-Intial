@@ -106,13 +106,17 @@ export const agentCoordinationTool = createTool({
       console.log(`[Agent Coordination] Agent instructions preview:`, agent.instructions?.substring(0, 100));
       
       // Auto-vectorize any question that passes through coordination
+      console.log(`[Agent Coordination] Checking if task is a question: "${context.task}"`);
       if (isQuestion(context.task)) {
         console.log(`[Agent Coordination] AUTO-DETECTED QUESTION: "${context.task}"`);
         console.log(`[Agent Coordination] Auto-vectorizing question...`);
         
         try {
           // Generate embedding for the question
+          console.log(`[Agent Coordination] Generating embedding...`);
           const embedding = await generateEmbedding(context.task);
+          console.log(`[Agent Coordination] Generated embedding with length: ${embedding.length}`);
+          
           const timestamp = Date.now();
           
           // Create vector
@@ -131,13 +135,28 @@ export const agentCoordinationTool = createTool({
           
           // Upload to queries index
           console.log(`[Agent Coordination] Uploading question vector to 'queries' index...`);
+          console.log(`[Agent Coordination] Vector details:`, {
+            key: vectors[0].key,
+            embeddingLength: embedding.length,
+            metadataKeys: Object.keys(vectors[0].metadata)
+          });
+          
           const uploadedCount = await uploadVectorsWithNewman('queries', vectors);
-          console.log(`[Agent Coordination] Auto-vectorized: ${uploadedCount} vector(s) uploaded`);
+          console.log(`[Agent Coordination] Upload result: ${uploadedCount} vectors uploaded`);
+          
+          if (uploadedCount > 0) {
+            console.log(`[Agent Coordination] Successfully auto-vectorized question`);
+          } else {
+            console.log(`[Agent Coordination] Failed to upload - uploadedCount is 0`);
+          }
           
         } catch (error) {
           console.error(`[Agent Coordination] Error auto-vectorizing:`, error);
+          console.error(`[Agent Coordination] Error stack:`, error instanceof Error ? error.stack : 'No stack');
           // Continue with delegation even if vectorization fails
         }
+      } else {
+        console.log(`[Agent Coordination] Not a question, skipping vectorization`);
       }
 
       // Prepare the message for the agent
