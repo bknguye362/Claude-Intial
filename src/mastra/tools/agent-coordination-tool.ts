@@ -1,6 +1,75 @@
 import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
 import { mastra } from '../index.js';
+import { createIndexWithNewman, uploadVectorsWithNewman } from '../lib/newman-executor.js';
+
+// Azure OpenAI configuration for embeddings
+const AZURE_OPENAI_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT || 'https://franklin-open-ai-test.openai.azure.com';
+const AZURE_OPENAI_API_KEY = process.env.AZURE_OPENAI_API_KEY || process.env.AZURE_API_KEY || process.env.OPENAI_API_KEY || '';
+const AZURE_OPENAI_API_VERSION = process.env.AZURE_OPENAI_API_VERSION || '2023-12-01-preview';
+const EMBEDDINGS_DEPLOYMENT = 'text-embedding-ada-002';
+
+// Helper function to generate embeddings
+async function generateEmbedding(text: string): Promise<number[]> {
+  if (!AZURE_OPENAI_API_KEY) {
+    console.log('[Agent Coordination] No API key for embeddings, using mock embeddings...');
+    const hash = text.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    return Array(1536).fill(0).map((_, i) => Math.sin(hash + i) * 0.5 + 0.5);
+  }
+
+  try {
+    const url = `${AZURE_OPENAI_ENDPOINT}/openai/deployments/${EMBEDDINGS_DEPLOYMENT}/embeddings?api-version=${AZURE_OPENAI_API_VERSION}`;
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'api-key': AZURE_OPENAI_API_KEY
+      },
+      body: JSON.stringify({
+        input: text.slice(0, 8000),
+        model: 'text-embedding-ada-002'
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Embedding API error: ${response.status} ${response.statusText}`);
+    }
+
+    const data: any = await response.json();
+    return data.data[0].embedding;
+  } catch (error) {
+    console.error('[Agent Coordination] Error generating embedding:', error);
+    const hash = text.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    return Array(1536).fill(0).map((_, i) => Math.sin(hash + i) * 0.5 + 0.5);
+  }
+}
+
+// Check if input is a question
+function isQuestion(input: string): boolean {
+  const questionPatterns = [
+    /\?/,
+    /^what\s/i,
+    /^how\s/i,
+    /^why\s/i,
+    /^when\s/i,
+    /^where\s/i,
+    /^who\s/i,
+    /^which\s/i,
+    /^explain\s/i,
+    /^can\s/i,
+    /^could\s/i,
+    /^should\s/i,
+    /^would\s/i,
+    /^is\s/i,
+    /^are\s/i,
+    /^do\s/i,
+    /^does\s/i,
+    /^did\s/i,
+  ];
+  
+  return questionPatterns.some(pattern => pattern.test(input));
+}
 
 export const agentCoordinationTool = createTool({
   id: 'coordinate-with-agent',
@@ -35,6 +104,41 @@ export const agentCoordinationTool = createTool({
       // Debug: Verify we got the right agent
       console.log(`[Agent Coordination] Retrieved agent name:`, agent.name);
       console.log(`[Agent Coordination] Agent instructions preview:`, agent.instructions?.substring(0, 100));
+      
+      // Auto-vectorize any question that passes through coordination
+      if (isQuestion(context.task)) {
+        console.log(`[Agent Coordination] AUTO-DETECTED QUESTION: "${context.task}"`);
+        console.log(`[Agent Coordination] Auto-vectorizing question...`);
+        
+        try {
+          // Generate embedding for the question
+          const embedding = await generateEmbedding(context.task);
+          const timestamp = Date.now();
+          
+          // Create vector
+          const vectors = [{
+            key: `question-auto-coord-${timestamp}`,
+            embedding: embedding,
+            metadata: {
+              question: context.task,
+              timestamp: new Date().toISOString(),
+              source: 'agent-coordination-auto',
+              targetAgentId: context.agentId,
+              type: 'user-question',
+              automatic: true
+            }
+          }];
+          
+          // Upload to queries index
+          console.log(`[Agent Coordination] Uploading question vector to 'queries' index...`);
+          const uploadedCount = await uploadVectorsWithNewman('queries', vectors);
+          console.log(`[Agent Coordination] Auto-vectorized: ${uploadedCount} vector(s) uploaded`);
+          
+        } catch (error) {
+          console.error(`[Agent Coordination] Error auto-vectorizing:`, error);
+          // Continue with delegation even if vectorization fails
+        }
+      }
 
       // Prepare the message for the agent
       // For file agent, add a marker to help with identification
