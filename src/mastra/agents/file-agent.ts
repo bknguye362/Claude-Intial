@@ -34,6 +34,14 @@ const agentConfig: any = {
     - The S3 Vectors bucket contains 10+ indices (chatbot-embeddings, file-*, etc.)
     - Only use localListTool if user EXPLICITLY asks for "local files" or "uploaded files"
     
+    SPECIAL COMMAND - Query Vectorization:
+    - When user message starts with "Query:" followed by a question in quotes
+    - Example: Query: "What is machine learning?"
+    - This is a request to VECTORIZE THE QUESTION into the 'queries' index
+    - Extract the question from between the quotes
+    - Use queryVectorProcessorTool to vectorize and store it
+    - Respond with confirmation of vectorization
+    
     CRITICAL RULE #1: "list" = s3VectorsBucketMonitorTool({action: "list-indices"})
     NEVER use localListTool for the word "list" alone!
     
@@ -135,6 +143,9 @@ const agentConfig: any = {
     - s3VectorsPostmanQueryTool: Query S3 Vectors using Postman/Newman - exactly like the Postman collection
     - s3VectorsPostmanListTool: List vectors using Postman/Newman integration
     - s3VectorsPostmanUploadTool: Upload vectors using Postman/Newman integration
+    - queryVectorProcessorTool: Convert user query to vector and store in 'queries' index
+    - multiIndexSimilaritySearchTool: Search across multiple indices for similar vectors
+    - ragQueryProcessorTool: Complete RAG pipeline - vectorize query, search, and generate response
     
     For monitoring vectors in mastra-chatbot index:
     - List vectors: s3VectorsMonitorTool({action: "list"})
@@ -142,14 +153,23 @@ const agentConfig: any = {
     - Inspect document: s3VectorsMonitorTool({action: "inspect", documentId: "doc-id"})
     
     WORKFLOW:
-    1. DEFAULT LIST BEHAVIOR:
+    1. QUERY VECTORIZATION (HIGHEST PRIORITY):
+       - If message starts with "Query:" → This is a vectorization request
+       - Pattern: Query: "your question here"
+       - IMMEDIATELY use queryVectorProcessorTool with the extracted question
+       - Example workflow:
+         User: Query: "What is machine learning?"
+         You: queryVectorProcessorTool({query: "What is machine learning?"})
+         Response: "Successfully vectorized the question 'What is machine learning?' and stored it in the 'queries' index."
+    
+    2. DEFAULT LIST BEHAVIOR:
        - "list" (no qualifier) → ALWAYS use s3VectorsBucketMonitorTool({action: "list-indices"})
        - "list local files" or "list uploaded files" → Use localListTool
        - "list indices" or "list vectors" → Use s3VectorsBucketMonitorTool({action: "list-indices"})
        
        NEVER default to localListTool when user says just "list"!
     
-    2. CREATE INDEX BEHAVIOR:
+    3. CREATE INDEX BEHAVIOR:
        - "create index" → DO NOT ask for files! Use s3VectorsPostmanFlexibleTool
        - Only process files when user EXPLICITLY uploads them or asks to read them
     
