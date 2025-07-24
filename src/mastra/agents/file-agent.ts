@@ -23,6 +23,77 @@ import { ragQueryProcessorTool } from '../tools/rag-query-processor.js';
 // Initialize Azure OpenAI
 const openai = createOpenAI();
 
+// Import vectorization utilities
+import { createIndexWithNewman, uploadVectorsWithNewman } from '../lib/newman-executor.js';
+
+// Azure OpenAI configuration for embeddings
+const AZURE_OPENAI_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT || 'https://franklin-open-ai-test.openai.azure.com';
+const AZURE_OPENAI_API_KEY = process.env.AZURE_OPENAI_API_KEY || process.env.AZURE_API_KEY || process.env.OPENAI_API_KEY || '';
+const AZURE_OPENAI_API_VERSION = process.env.AZURE_OPENAI_API_VERSION || '2023-12-01-preview';
+const EMBEDDINGS_DEPLOYMENT = 'text-embedding-ada-002';
+
+// Helper function to generate embeddings
+async function generateEmbedding(text: string): Promise<number[]> {
+  if (!AZURE_OPENAI_API_KEY) {
+    console.log('[File Agent] No API key for embeddings, using mock embeddings...');
+    const hash = text.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    return Array(1536).fill(0).map((_, i) => Math.sin(hash + i) * 0.5 + 0.5);
+  }
+
+  try {
+    const url = `${AZURE_OPENAI_ENDPOINT}/openai/deployments/${EMBEDDINGS_DEPLOYMENT}/embeddings?api-version=${AZURE_OPENAI_API_VERSION}`;
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'api-key': AZURE_OPENAI_API_KEY
+      },
+      body: JSON.stringify({
+        input: text.slice(0, 8000),
+        model: 'text-embedding-ada-002'
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Embedding API error: ${response.status} ${response.statusText}`);
+    }
+
+    const data: any = await response.json();
+    return data.data[0].embedding;
+  } catch (error) {
+    console.error('[File Agent] Error generating embedding:', error);
+    const hash = text.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    return Array(1536).fill(0).map((_, i) => Math.sin(hash + i) * 0.5 + 0.5);
+  }
+}
+
+// Check if input is a question
+function isQuestion(input: string): boolean {
+  const questionPatterns = [
+    /\?/,
+    /^what\s/i,
+    /^how\s/i,
+    /^why\s/i,
+    /^when\s/i,
+    /^where\s/i,
+    /^who\s/i,
+    /^which\s/i,
+    /^explain\s/i,
+    /^can\s/i,
+    /^could\s/i,
+    /^should\s/i,
+    /^would\s/i,
+    /^is\s/i,
+    /^are\s/i,
+    /^do\s/i,
+    /^does\s/i,
+    /^did\s/i,
+  ];
+  
+  return questionPatterns.some(pattern => pattern.test(input));
+}
+
 // Create memory only if not in production (Heroku)
 const agentConfig: any = {
   name: 'S3 Vectors and File Agent',
@@ -317,4 +388,86 @@ if (process.env.NODE_ENV !== 'production') {
   });
 }
 
-export const fileAgent = new Agent(agentConfig);
+// Create the base agent
+const baseFileAgent = new Agent(agentConfig);
+
+// Wrap the agent to add auto-vectorization
+export const fileAgent = {
+  ...baseFileAgent,
+  
+  // Override the stream method to add auto-vectorization
+  async stream(messages: any[]) {
+    console.log('[File Agent] ========= STREAM METHOD INTERCEPTED =========');
+    console.log('[File Agent] Messages received:', messages.length);
+    
+    // Check the last message for questions
+    if (messages.length > 0) {
+      const lastMessage = messages[messages.length - 1];
+      const content = lastMessage.content || '';
+      
+      console.log('[File Agent] Last message content:', content.substring(0, 200));
+      console.log('[File Agent] Checking if message is a question...');
+      
+      if (isQuestion(content)) {
+        console.log(`[File Agent] AUTO-DETECTED QUESTION: "${content}"`);
+        console.log('[File Agent] Auto-vectorizing question before processing...');
+        
+        try {
+          // Generate embedding for the question
+          const embedding = await generateEmbedding(content);
+          console.log(`[File Agent] Generated embedding with length: ${embedding.length}`);
+          
+          const timestamp = Date.now();
+          
+          // Create vector
+          const vectors = [{
+            key: `question-auto-fileagent-${timestamp}`,
+            embedding: embedding,
+            metadata: {
+              question: content,
+              timestamp: new Date().toISOString(),
+              source: 'file-agent-auto',
+              type: 'user-question',
+              automatic: true,
+              agent: 'fileAgent'
+            }
+          }];
+          
+          // Upload to queries index
+          console.log('[File Agent] Uploading question vector to "queries" index...');
+          console.log('[File Agent] Vector details:', {
+            key: vectors[0].key,
+            embeddingLength: embedding.length,
+            metadataKeys: Object.keys(vectors[0].metadata)
+          });
+          
+          const uploadedCount = await uploadVectorsWithNewman('queries', vectors);
+          console.log(`[File Agent] Upload result: ${uploadedCount} vectors uploaded`);
+          
+          if (uploadedCount > 0) {
+            console.log('[File Agent] Successfully auto-vectorized question');
+          } else {
+            console.log('[File Agent] Failed to upload - uploadedCount is 0');
+          }
+          
+        } catch (error) {
+          console.error('[File Agent] Error auto-vectorizing:', error);
+          // Continue with normal processing even if vectorization fails
+        }
+      } else {
+        console.log('[File Agent] Not a question, skipping auto-vectorization');
+      }
+    }
+    
+    // Call the original stream method
+    console.log('[File Agent] Proceeding with normal agent processing...');
+    return baseFileAgent.stream(messages);
+  },
+  
+  // Keep all other properties and methods
+  name: baseFileAgent.name,
+  instructions: baseFileAgent.instructions,
+  tools: baseFileAgent.tools,
+  model: baseFileAgent.model,
+  memory: baseFileAgent.memory
+};
