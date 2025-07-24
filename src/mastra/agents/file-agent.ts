@@ -18,6 +18,7 @@ import { s3VectorsGetByKeyTool } from '../tools/s3-vectors-get-by-key.js';
 import { queryVectorProcessorTool } from '../tools/query-vector-processor.js';
 import { multiIndexSimilaritySearchTool } from '../tools/multi-index-similarity-search.js';
 import { ragQueryProcessorTool } from '../tools/rag-query-processor.js';
+import { queryCommandTool } from '../tools/query-command-tool.js';
 
 // Initialize Azure OpenAI
 const openai = createOpenAI();
@@ -34,13 +35,13 @@ const agentConfig: any = {
     - The S3 Vectors bucket contains 10+ indices (chatbot-embeddings, file-*, etc.)
     - Only use localListTool if user EXPLICITLY asks for "local files" or "uploaded files"
     
-    SPECIAL COMMAND - Query Vectorization:
-    - When user message starts with "Query:" followed by a question in quotes
+    SPECIAL COMMAND - Query Vectorization (HIGHEST PRIORITY):
+    - When user message starts with "Query:" → IMMEDIATELY use queryCommandTool
+    - DO NOT use any other tool when you see "Query:"
     - Example: Query: "What is machine learning?"
     - This is a request to VECTORIZE THE QUESTION into the 'queries' index
-    - Extract the question from between the quotes
-    - Use queryVectorProcessorTool to vectorize and store it
-    - Respond with confirmation of vectorization
+    - ALWAYS use: queryCommandTool({fullMessage: "the entire user message"})
+    - The tool will extract the question and vectorize it
     
     CRITICAL RULE #1: "list" = s3VectorsBucketMonitorTool({action: "list-indices"})
     NEVER use localListTool for the word "list" alone!
@@ -143,6 +144,7 @@ const agentConfig: any = {
     - s3VectorsPostmanQueryTool: Query S3 Vectors using Postman/Newman - exactly like the Postman collection
     - s3VectorsPostmanListTool: List vectors using Postman/Newman integration
     - s3VectorsPostmanUploadTool: Upload vectors using Postman/Newman integration
+    - queryCommandTool: Process Query: commands to vectorize questions (USE THIS FOR Query:)
     - queryVectorProcessorTool: Convert user query to vector and store in 'queries' index
     - multiIndexSimilaritySearchTool: Search across multiple indices for similar vectors
     - ragQueryProcessorTool: Complete RAG pipeline - vectorize query, search, and generate response
@@ -153,14 +155,14 @@ const agentConfig: any = {
     - Inspect document: s3VectorsMonitorTool({action: "inspect", documentId: "doc-id"})
     
     WORKFLOW:
-    1. QUERY VECTORIZATION (HIGHEST PRIORITY):
-       - If message starts with "Query:" → This is a vectorization request
+    1. QUERY VECTORIZATION (ABSOLUTE HIGHEST PRIORITY - CHECK FIRST):
+       - BEFORE DOING ANYTHING ELSE, check if message starts with "Query:"
+       - If YES → STOP and use queryCommandTool ONLY
+       - DO NOT use localListTool, DO NOT list files, DO NOT do anything else
        - Pattern: Query: "your question here"
-       - IMMEDIATELY use queryVectorProcessorTool with the extracted question
-       - Example workflow:
-         User: Query: "What is machine learning?"
-         You: queryVectorProcessorTool({query: "What is machine learning?"})
-         Response: "Successfully vectorized the question 'What is machine learning?' and stored it in the 'queries' index."
+       - ALWAYS use: queryCommandTool({fullMessage: "Query: \"What is machine learning?\""})
+       - The tool handles everything - extraction, vectorization, storage
+       - Example response: "Successfully vectorized the question 'What is machine learning?' and stored it in the 'queries' index."
     
     2. DEFAULT LIST BEHAVIOR:
        - "list" (no qualifier) → ALWAYS use s3VectorsBucketMonitorTool({action: "list-indices"})
@@ -316,7 +318,8 @@ const agentConfig: any = {
     s3VectorsGetByKeyTool,
     queryVectorProcessorTool,
     multiIndexSimilaritySearchTool,
-    ragQueryProcessorTool
+    ragQueryProcessorTool,
+    queryCommandTool
   },
   toolChoice: 'auto', // Encourage tool use
 };
