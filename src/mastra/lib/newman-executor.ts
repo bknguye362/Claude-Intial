@@ -1,7 +1,9 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { writeFile, unlink } from 'fs/promises';
+import { writeFile, unlink, readFile } from 'fs/promises';
 import { existsSync } from 'fs';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 
 const execAsync = promisify(exec);
 
@@ -286,5 +288,81 @@ export async function uploadVectorsWithNewman(
     return uploaded;
   } finally {
     if (envFile && existsSync(envFile)) await unlink(envFile);
+  }
+}
+
+// Query vectors using Newman and Postman collection
+export async function queryVectorsWithNewman(
+  indexName: string,
+  queryVector: number[],
+  topK: number = 10
+): Promise<any[]> {
+  const collectionFile = './postman/s3-vectors-collection.json';
+  const envFile = './postman/s3-vectors-env-temp.json';
+  const outputFile = './postman/newman-query-output.json';
+  
+  try {
+    // Create environment file with query parameters
+    const envData = {
+      values: [
+        { key: 'bucketName', value: process.env.S3_VECTORS_BUCKET || 'chatbotvectors362' },
+        { key: 'region', value: process.env.S3_VECTORS_REGION || 'us-east-2' },
+        { key: 'awsAccessKeyId', value: process.env.AWS_ACCESS_KEY_ID || '' },
+        { key: 'awsSecretAccessKey', value: process.env.AWS_SECRET_ACCESS_KEY || '' },
+        { key: 'currentIndexName', value: indexName },
+        { key: 'currentQueryVector', value: JSON.stringify(queryVector) },
+        { key: 'currentTopK', value: topK.toString() }
+      ]
+    };
+    
+    await fs.writeFile(envFile, JSON.stringify(envData, null, 2));
+    
+    // Run Newman with the Query Vectors request
+    const command = `npx newman run "${collectionFile}" --environment "${envFile}" --folder "Query Vectors" --reporters cli,json --reporter-json-export "${outputFile}"`;
+    
+    console.log('[Newman Query] Executing query command...');
+    const { stdout, stderr } = await execAsync(command);
+    
+    if (stderr && !stderr.includes('Newman v')) {
+      console.error('[Newman Query] Error output:', stderr);
+    }
+    
+    // Parse the output to get results
+    if (existsSync(outputFile)) {
+      const output = JSON.parse(await fs.readFile(outputFile, 'utf-8'));
+      
+      // Find the Query Vectors request execution
+      const queryExecution = output.run?.executions?.find((exec: any) => 
+        exec.item?.name === 'Query Vectors' || 
+        exec.item?.name === 'Query Vectors with Filter'
+      );
+      
+      if (queryExecution?.response?.stream) {
+        const responseBody = queryExecution.response.stream.toString();
+        const response = JSON.parse(responseBody);
+        
+        if (response.vectors && Array.isArray(response.vectors)) {
+          console.log(`[Newman Query] Found ${response.vectors.length} similar vectors`);
+          return response.vectors;
+        }
+      }
+      
+      // Clean up output file
+      await fs.unlink(outputFile);
+    }
+    
+    return [];
+    
+  } catch (error) {
+    console.error('[Newman Query] Error querying vectors:', error);
+    return [];
+  } finally {
+    // Clean up temp files
+    try {
+      if (existsSync(envFile)) await fs.unlink(envFile);
+      if (existsSync(outputFile)) await fs.unlink(outputFile);
+    } catch (cleanupError) {
+      console.error('[Newman Query] Cleanup error:', cleanupError);
+    }
   }
 }

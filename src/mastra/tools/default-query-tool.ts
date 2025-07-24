@@ -1,6 +1,6 @@
 import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
-import { uploadVectorsWithNewman } from '../lib/newman-executor.js';
+import { uploadVectorsWithNewman, queryVectorsWithNewman } from '../lib/newman-executor.js';
 
 // Azure OpenAI configuration for embeddings
 const AZURE_OPENAI_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT || 'https://franklin-open-ai-test.openai.azure.com';
@@ -93,15 +93,72 @@ export const defaultQueryTool = createTool({
       if (uploadedCount > 0) {
         console.log('[Default Query Tool] Successfully vectorized and stored question');
         
-        return {
-          success: true,
-          message: 'Question vectorized and stored successfully',
-          vectorKey: vectors[0].key,
-          index: 'queries',
-          timestamp: new Date().toISOString(),
-          questionLength: context.question.length,
-          embeddingDimension: embedding.length
-        };
+        // Now search for similar vectors across relevant indexes
+        console.log('[Default Query Tool] Searching for similar content across indexes...');
+        
+        try {
+          // Search in file-* indexes for document chunks
+          const searchIndexes = ['file-*', 'chatbot-embeddings'];
+          const similarResults = [];
+          
+          for (const indexPattern of searchIndexes) {
+            console.log(`[Default Query Tool] Searching in index pattern: ${indexPattern}`);
+            
+            try {
+              const results = await queryVectorsWithNewman(indexPattern, embedding, 5);
+              
+              if (results && results.length > 0) {
+                console.log(`[Default Query Tool] Found ${results.length} similar vectors in ${indexPattern}`);
+                similarResults.push(...results.map(r => ({
+                  ...r,
+                  index: indexPattern
+                })));
+              }
+            } catch (searchError) {
+              console.log(`[Default Query Tool] No results or error searching ${indexPattern}:`, searchError);
+            }
+          }
+          
+          // Sort by similarity score (higher is better)
+          similarResults.sort((a, b) => (b.score || 0) - (a.score || 0));
+          
+          // Take top 10 results
+          const topResults = similarResults.slice(0, 10);
+          
+          console.log(`[Default Query Tool] Found ${topResults.length} relevant chunks total`);
+          
+          return {
+            success: true,
+            message: 'Question vectorized, stored, and similar content found',
+            vectorKey: vectors[0].key,
+            index: 'queries',
+            timestamp: new Date().toISOString(),
+            questionLength: context.question.length,
+            embeddingDimension: embedding.length,
+            similarChunks: topResults.map(r => ({
+              key: r.key,
+              score: r.score,
+              index: r.index,
+              metadata: r.metadata,
+              content: r.metadata?.content || r.metadata?.text || 'No content available'
+            })),
+            totalSimilarChunks: topResults.length
+          };
+        } catch (searchError) {
+          console.error('[Default Query Tool] Error searching for similar content:', searchError);
+          
+          // Still return success for vectorization even if search fails
+          return {
+            success: true,
+            message: 'Question vectorized and stored successfully (search failed)',
+            vectorKey: vectors[0].key,
+            index: 'queries',
+            timestamp: new Date().toISOString(),
+            questionLength: context.question.length,
+            embeddingDimension: embedding.length,
+            searchError: searchError instanceof Error ? searchError.message : 'Unknown search error'
+          };
+        }
       } else {
         console.log('[Default Query Tool] Failed to upload vector');
         return {
