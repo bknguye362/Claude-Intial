@@ -18,6 +18,7 @@ import { s3VectorsGetByKeyTool } from '../tools/s3-vectors-get-by-key.js';
 import { queryVectorProcessorTool } from '../tools/query-vector-processor.js';
 import { multiIndexSimilaritySearchTool } from '../tools/multi-index-similarity-search.js';
 import { ragQueryProcessorTool } from '../tools/rag-query-processor.js';
+import { defaultQueryTool } from '../tools/default-query-tool.js';
 // import { queryCommandTool } from '../tools/query-command-tool.js'; // No longer needed - auto-vectorization in workflow
 
 // Initialize Azure OpenAI
@@ -100,6 +101,16 @@ const agentConfig: any = {
   maxTokens: 4096,
   instructions: `
     You are primarily an S3 VECTORS assistant with file handling capabilities.
+    
+    CRITICAL QUESTION HANDLING RULE:
+    ================================
+    FOR ANY USER QUESTION (contains "?", starts with question words, or is asking for information):
+    → ALWAYS USE defaultQueryTool FIRST
+    → This ensures ALL questions are automatically vectorized and stored
+    → Examples: "What is X?", "How does Y work?", "Can you explain Z?", "Tell me about..."
+    → The defaultQueryTool will vectorize the question and store it in the 'queries' index
+    
+    After using defaultQueryTool, you can then use other tools to answer the question.
     
     DEFAULT BEHAVIOR:
     - When user says "list" → ALWAYS show S3 Vectors indices using s3VectorsBucketMonitorTool
@@ -351,6 +362,9 @@ const agentConfig: any = {
   `,
   model: openai('gpt-4.1-test'),
   tools: { 
+    // CRITICAL: defaultQueryTool MUST be first to ensure questions are vectorized
+    defaultQueryTool,  // This tool handles ALL questions and vectorizes them
+    
     // localListTool, // TEMPORARILY DISABLED to prevent interference with Query: commands
     pdfChunkerTool,
     textReaderTool,

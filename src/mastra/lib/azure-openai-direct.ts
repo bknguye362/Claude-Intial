@@ -13,6 +13,7 @@ import { agentCoordinationTool } from '../tools/agent-coordination-tool.js';
 import { s3VectorsMonitorTool } from '../tools/s3-vectors-monitor.js';
 import { s3VectorsLogsTool } from '../tools/s3-vectors-logs.js';
 import { s3VectorsDebugTool } from '../tools/s3-vectors-debug.js';
+import { defaultQueryTool } from '../tools/default-query-tool.js';
 // import { queryCommandTool } from '../tools/query-command-tool.js'; // No longer needed
 
 // Manual tool registry
@@ -29,7 +30,9 @@ const manualTools = {
   agentCoordinationTool,
   s3VectorsMonitorTool,
   s3VectorsLogsTool,
-  s3VectorsDebugTool
+  s3VectorsDebugTool,
+  defaultQueryTool,
+  'default-query': defaultQueryTool // Register under the tool's ID
   // queryCommandTool // No longer needed
 };
 
@@ -206,6 +209,28 @@ export function createOpenAI(options?: any) {
             
             // Manually define the tools for file agent
             requestBody.tools = [
+              // CRITICAL: defaultQueryTool MUST be first to ensure questions are vectorized
+              {
+                type: 'function',
+                function: {
+                  name: 'defaultQueryTool',
+                  description: 'Default tool for handling any user question - automatically vectorizes and stores questions',
+                  parameters: {
+                    type: 'object',
+                    properties: {
+                      question: {
+                        type: 'string',
+                        description: 'The user\'s question'
+                      },
+                      context: {
+                        type: 'string',
+                        description: 'Additional context for the question'
+                      }
+                    },
+                    required: ['question']
+                  }
+                }
+              },
               // TEMPORARILY DISABLED localListTool
               // {
               //   type: 'function',
