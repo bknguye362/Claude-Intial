@@ -391,83 +391,77 @@ if (process.env.NODE_ENV !== 'production') {
 // Create the base agent
 const baseFileAgent = new Agent(agentConfig);
 
-// Wrap the agent to add auto-vectorization
-export const fileAgent = {
-  ...baseFileAgent,
+// Store the original stream method
+const originalStream = baseFileAgent.stream.bind(baseFileAgent);
+
+// Override the stream method to add auto-vectorization
+(baseFileAgent as any).stream = async function(messages: any[], options?: any) {
+  console.log('[File Agent] ========= STREAM METHOD INTERCEPTED =========');
+  console.log('[File Agent] Messages received:', messages.length);
   
-  // Override the stream method to add auto-vectorization
-  async stream(messages: any[]) {
-    console.log('[File Agent] ========= STREAM METHOD INTERCEPTED =========');
-    console.log('[File Agent] Messages received:', messages.length);
+  // Check the last message for questions
+  if (messages.length > 0) {
+    const lastMessage = messages[messages.length - 1];
+    const content = lastMessage.content || '';
     
-    // Check the last message for questions
-    if (messages.length > 0) {
-      const lastMessage = messages[messages.length - 1];
-      const content = lastMessage.content || '';
+    console.log('[File Agent] Last message content:', content.substring(0, 200));
+    console.log('[File Agent] Checking if message is a question...');
+    
+    if (isQuestion(content)) {
+      console.log(`[File Agent] AUTO-DETECTED QUESTION: "${content}"`);
+      console.log('[File Agent] Auto-vectorizing question before processing...');
       
-      console.log('[File Agent] Last message content:', content.substring(0, 200));
-      console.log('[File Agent] Checking if message is a question...');
-      
-      if (isQuestion(content)) {
-        console.log(`[File Agent] AUTO-DETECTED QUESTION: "${content}"`);
-        console.log('[File Agent] Auto-vectorizing question before processing...');
+      try {
+        // Generate embedding for the question
+        const embedding = await generateEmbedding(content);
+        console.log(`[File Agent] Generated embedding with length: ${embedding.length}`);
         
-        try {
-          // Generate embedding for the question
-          const embedding = await generateEmbedding(content);
-          console.log(`[File Agent] Generated embedding with length: ${embedding.length}`);
-          
-          const timestamp = Date.now();
-          
-          // Create vector
-          const vectors = [{
-            key: `question-auto-fileagent-${timestamp}`,
-            embedding: embedding,
-            metadata: {
-              question: content,
-              timestamp: new Date().toISOString(),
-              source: 'file-agent-auto',
-              type: 'user-question',
-              automatic: true,
-              agent: 'fileAgent'
-            }
-          }];
-          
-          // Upload to queries index
-          console.log('[File Agent] Uploading question vector to "queries" index...');
-          console.log('[File Agent] Vector details:', {
-            key: vectors[0].key,
-            embeddingLength: embedding.length,
-            metadataKeys: Object.keys(vectors[0].metadata)
-          });
-          
-          const uploadedCount = await uploadVectorsWithNewman('queries', vectors);
-          console.log(`[File Agent] Upload result: ${uploadedCount} vectors uploaded`);
-          
-          if (uploadedCount > 0) {
-            console.log('[File Agent] Successfully auto-vectorized question');
-          } else {
-            console.log('[File Agent] Failed to upload - uploadedCount is 0');
+        const timestamp = Date.now();
+        
+        // Create vector
+        const vectors = [{
+          key: `question-auto-fileagent-${timestamp}`,
+          embedding: embedding,
+          metadata: {
+            question: content,
+            timestamp: new Date().toISOString(),
+            source: 'file-agent-auto',
+            type: 'user-question',
+            automatic: true,
+            agent: 'fileAgent'
           }
-          
-        } catch (error) {
-          console.error('[File Agent] Error auto-vectorizing:', error);
-          // Continue with normal processing even if vectorization fails
+        }];
+        
+        // Upload to queries index
+        console.log('[File Agent] Uploading question vector to "queries" index...');
+        console.log('[File Agent] Vector details:', {
+          key: vectors[0].key,
+          embeddingLength: embedding.length,
+          metadataKeys: Object.keys(vectors[0].metadata)
+        });
+        
+        const uploadedCount = await uploadVectorsWithNewman('queries', vectors);
+        console.log(`[File Agent] Upload result: ${uploadedCount} vectors uploaded`);
+        
+        if (uploadedCount > 0) {
+          console.log('[File Agent] Successfully auto-vectorized question');
+        } else {
+          console.log('[File Agent] Failed to upload - uploadedCount is 0');
         }
-      } else {
-        console.log('[File Agent] Not a question, skipping auto-vectorization');
+        
+      } catch (error) {
+        console.error('[File Agent] Error auto-vectorizing:', error);
+        // Continue with normal processing even if vectorization fails
       }
+    } else {
+      console.log('[File Agent] Not a question, skipping auto-vectorization');
     }
-    
-    // Call the original stream method
-    console.log('[File Agent] Proceeding with normal agent processing...');
-    return baseFileAgent.stream(messages);
-  },
+  }
   
-  // Keep all other properties and methods
-  name: baseFileAgent.name,
-  instructions: baseFileAgent.instructions,
-  tools: baseFileAgent.tools,
-  model: baseFileAgent.model,
-  memory: baseFileAgent.memory
+  // Call the original stream method
+  console.log('[File Agent] Proceeding with normal agent processing...');
+  return originalStream(messages, options);
 };
+
+// Export the agent with the overridden stream method
+export const fileAgent = baseFileAgent;

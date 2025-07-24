@@ -77,7 +77,7 @@ async function handleRequest(body: any) {
     console.log(`[API Endpoint] OpenAI API Key present: ${process.env.OPENAI_API_KEY ? 'Yes' : 'No'}`);
     console.log(`[API Endpoint] Creating stream for agent: ${agentId}`);
     console.log(`[API Endpoint] Agent has tools:`, agent.tools ? Object.keys(agent.tools) : 'none');
-    console.log(`[API Endpoint] Agent toolChoice:`, agent.toolChoice || 'not set');
+    console.log(`[API Endpoint] Agent toolChoice:`, (agent as any).toolChoice || 'not set');
     console.log(`[API Endpoint] Agent getTools:`, typeof agent.getTools === 'function' ? 'available' : 'not available');
     
     let stream;
@@ -86,7 +86,7 @@ async function handleRequest(body: any) {
       // Pass the message as a string directly, not as an array
       // Also pass options to ensure tools are included
       const streamOptions = {
-        toolChoice: 'auto',
+        toolChoice: 'auto' as const,
         // Add any other options that might be needed
       };
       console.log(`[API Endpoint] Stream options:`, streamOptions);
