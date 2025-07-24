@@ -4,7 +4,7 @@ import { Memory } from '@mastra/memory';
 import { LibSQLStore } from '@mastra/libsql';
 import { pdfChunkerS3VectorsTool as pdfChunkerTool } from '../tools/pdf-chunker-s3vectors.js';
 import { textReaderTool } from '../tools/text-reader-tool.js';
-import { localListTool } from '../tools/local-list-tool.js';
+// import { localListTool } from '../tools/local-list-tool.js'; // TEMPORARILY DISABLED
 import { s3VectorsMonitorTool } from '../tools/s3-vectors-monitor.js';
 import { s3VectorsLogsTool } from '../tools/s3-vectors-logs.js';
 import { s3VectorsDebugTool } from '../tools/s3-vectors-debug.js';
@@ -296,7 +296,7 @@ const agentConfig: any = {
   `,
   model: openai('gpt-4.1-test'),
   tools: { 
-    localListTool,
+    // localListTool, // TEMPORARILY DISABLED to prevent interference with Query: commands
     pdfChunkerTool,
     textReaderTool,
     s3VectorsMonitorTool,
