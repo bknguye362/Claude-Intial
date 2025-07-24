@@ -85,6 +85,10 @@ export const agentCoordinationTool = createTool({
     error: z.string().optional(),
   }),
   execute: async ({ context }) => {
+    console.log(`[Agent Coordination] ========= TOOL EXECUTED =========`);
+    console.log(`[Agent Coordination] Task: "${context.task}"`);
+    console.log(`[Agent Coordination] Target Agent: ${context.agentId}`);
+    
     try {
       console.log(`[Agent Coordination] >>> ASSISTANT AGENT is delegating to ${context.agentId} with task: ${context.task}`);
       console.log(`[Agent Coordination] Full context object:`, JSON.stringify(context));
