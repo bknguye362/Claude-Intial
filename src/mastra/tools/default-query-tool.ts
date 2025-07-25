@@ -1,6 +1,10 @@
 import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
-import { uploadVectorsWithNewman, queryVectorsWithNewman, listIndicesWithNewman } from '../lib/newman-executor.js';
+import { uploadVectorsWithNewman, queryVectorsWithNewman } from '../lib/newman-executor.js';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
 
 // Azure OpenAI configuration for embeddings
 const AZURE_OPENAI_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT || 'https://franklin-open-ai-test.openai.azure.com';
@@ -98,17 +102,18 @@ export const defaultQueryTool = createTool({
         console.log('[Default Query Tool] Searching for similar content across indexes...');
         
         try {
-          // First, list all available indices using Newman
-          console.log('[Default Query Tool] Listing all indices using Newman...');
-          const indicesToSearch = await listIndicesWithNewman();
+          // For now, use a predefined list of common indices since listing is failing
+          // TODO: Fix listing functionality
+          console.log('[Default Query Tool] Using predefined indices list...');
           
-          if (!indicesToSearch || indicesToSearch.length === 0) {
-            console.log('[Default Query Tool] No indices found or failed to list indices');
-            throw new Error('Failed to list indices');
-          }
+          const indicesToSearch = [
+            'chatbot-embeddings',
+            'queries',
+            // Add any file-* indices you know exist
+            'file-1984-pdf-1737821674605'  // Example - replace with actual indices
+          ];
           
-          console.log(`[Default Query Tool] Found ${indicesToSearch.length} total indices:`, indicesToSearch);
-          console.log(`[Default Query Tool] Will search ALL ${indicesToSearch.length} indices`);
+          console.log(`[Default Query Tool] Will search ${indicesToSearch.length} known indices:`, indicesToSearch);
           
           const similarResults = [];
           
