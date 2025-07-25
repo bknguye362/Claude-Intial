@@ -587,8 +587,30 @@ export function createOpenAI(options?: any) {
                     }
                     
                     console.log(`[Azure Direct] About to execute tool: ${toolName}`);
+                    
+                    // Special logging for defaultQueryTool
+                    if (toolName === 'defaultQueryTool' || toolName === 'default-query') {
+                      console.log('================================================================================');
+                      console.log('🎯🎯🎯 DEFAULT QUERY TOOL BEING EXECUTED 🎯🎯🎯');
+                      console.log(`[Azure Direct] Question being processed: ${args.question}`);
+                      console.log('================================================================================');
+                    }
+                    
                     const result = await tool.execute({ context: args });
                     console.log(`[Azure Direct] Tool ${toolName} execution completed`);
+                    
+                    // Special logging for defaultQueryTool results
+                    if (toolName === 'defaultQueryTool' || toolName === 'default-query') {
+                      console.log('================================================================================');
+                      console.log('🎯🎯🎯 DEFAULT QUERY TOOL RESULTS 🎯🎯🎯');
+                      console.log(`[Azure Direct] Success: ${result.success}`);
+                      console.log(`[Azure Direct] Similar chunks found: ${result.totalSimilarChunks || 0}`);
+                      if (result.similarChunks && result.similarChunks.length > 0) {
+                        console.log(`[Azure Direct] First chunk preview:`, result.similarChunks[0].content?.substring(0, 100));
+                      }
+                      console.log('================================================================================');
+                    }
+                    
                     console.log(`[Azure Direct] Tool result:`, JSON.stringify(result).substring(0, 200));
                     
                     // Add tool result message
