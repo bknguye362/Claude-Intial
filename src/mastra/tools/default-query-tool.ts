@@ -1,12 +1,6 @@
 import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
 import { uploadVectorsWithNewman, queryVectorsWithNewman } from '../lib/newman-executor.js';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-import { existsSync } from 'fs';
-import { readFile, unlink } from 'fs/promises';
-
-const execAsync = promisify(exec);
 
 // Azure OpenAI configuration for embeddings
 const AZURE_OPENAI_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT || 'https://franklin-open-ai-test.openai.azure.com';
@@ -109,38 +103,21 @@ export const defaultQueryTool = createTool({
           
           let indicesToSearch = ['queries']; // Always include queries
           
-          // Try using the s3VectorsBucketMonitorTool approach
+          // Use the listIndicesWithNewman function
           try {
-            const bucketName = process.env.S3_VECTORS_BUCKET || 'chatbotvectors362';
-            const region = process.env.S3_VECTORS_REGION || 'us-east-2';
+            console.log('[Default Query Tool] Calling listIndicesWithNewman...');
+            const { listIndicesWithNewman } = await import('../lib/newman-executor.js');
+            const allIndices = await listIndicesWithNewman();
             
-            // Use npx to ensure newman is found
-            const listCommand = `npx newman run "./postman-s3-vectors.json" --env-var "bucketName=${bucketName}" --env-var "region=${region}" --env-var "awsAccessKeyId=${process.env.AWS_ACCESS_KEY_ID}" --env-var "awsSecretAccessKey=${process.env.AWS_SECRET_ACCESS_KEY}" --folder "List All Indexes" --reporters cli,json --reporter-json-export "./newman-list-temp.json"`;
-            
-            console.log('[Default Query Tool] Running list command via newman...');
-            const { stdout, stderr } = await execAsync(listCommand);
-            
-            if (existsSync('./newman-list-temp.json')) {
-              const output = JSON.parse(await readFile('./newman-list-temp.json', 'utf-8'));
-              
-              // Find the List All Indexes execution
-              const listExecution = output.run?.executions?.find((exec: any) => 
-                exec.item?.name?.includes('List All Indexes')
-              );
-              
-              if (listExecution?.response?.stream) {
-                const response = JSON.parse(listExecution.response.stream.toString());
-                if (response.indexes && Array.isArray(response.indexes)) {
-                  const allIndices = response.indexes.map((idx: any) => idx.indexName);
-                  console.log(`[Default Query Tool] Found ${allIndices.length} indices:`, allIndices);
-                  indicesToSearch = allIndices; // Use ALL indices
-                }
-              }
-              
-              await unlink('./newman-list-temp.json');
+            if (allIndices && allIndices.length > 0) {
+              console.log(`[Default Query Tool] ✅ Successfully listed ${allIndices.length} indices:`, allIndices);
+              indicesToSearch = allIndices; // Use ALL indices
+            } else {
+              console.log('[Default Query Tool] ⚠️ No indices returned from listIndicesWithNewman');
             }
           } catch (listError) {
             console.log('[Default Query Tool] Failed to list indices dynamically:', listError);
+            console.log('[Default Query Tool] Error details:', listError instanceof Error ? listError.message : 'Unknown error');
             console.log('[Default Query Tool] Falling back to queries index only');
           }
           

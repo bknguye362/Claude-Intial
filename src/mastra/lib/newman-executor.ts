@@ -324,23 +324,76 @@ export async function listIndicesWithNewman(): Promise<string[]> {
     
     // Parse the output
     if (existsSync(outputFile)) {
-      const output = JSON.parse(await fs.readFile(outputFile, 'utf-8'));
+      console.log('[Newman List] Reading output file...');
+      const outputContent = await fs.readFile(outputFile, 'utf-8');
+      console.log('[Newman List] Output file size:', outputContent.length, 'bytes');
+      
+      const output = JSON.parse(outputContent);
+      console.log('[Newman List] Newman run stats:', {
+        totalRequests: output.run?.stats?.requests?.total,
+        failedRequests: output.run?.stats?.requests?.failed,
+        totalAssertions: output.run?.stats?.assertions?.total,
+        failedAssertions: output.run?.stats?.assertions?.failed
+      });
+      
+      console.log('[Newman List] Total executions:', output.run?.executions?.length || 0);
       
       const listExecution = output.run?.executions?.find((exec: any) => 
         exec.item?.name?.includes('List All Indexes')
       );
       
-      if (listExecution?.response?.stream) {
-        const response = JSON.parse(listExecution.response.stream.toString());
+      console.log('[Newman List] Found List All Indexes execution:', !!listExecution);
+      
+      if (listExecution) {
+        console.log('[Newman List] Response status:', listExecution.response?.code);
+        console.log('[Newman List] Response status text:', listExecution.response?.status);
         
-        if (response.indexes && Array.isArray(response.indexes)) {
-          return response.indexes.map((idx: any) => idx.indexName);
+        if (listExecution.response?.stream) {
+          const responseBody = listExecution.response.stream.toString();
+          console.log('[Newman List] Response body length:', responseBody.length);
+          console.log('[Newman List] Response body preview:', responseBody.substring(0, 200));
+          
+          try {
+            const response = JSON.parse(responseBody);
+            console.log('[Newman List] Parsed response keys:', Object.keys(response));
+            
+            if (response.indexes && Array.isArray(response.indexes)) {
+              console.log('[Newman List] ✅ Found', response.indexes.length, 'indices');
+              const indexNames = response.indexes.map((idx: any) => idx.indexName);
+              console.log('[Newman List] Index names:', indexNames);
+              
+              // Log details of first few indices
+              response.indexes.slice(0, 3).forEach((idx: any, i: number) => {
+                console.log(`[Newman List] Index ${i + 1}:`, JSON.stringify(idx, null, 2));
+              });
+              
+              await fs.unlink(outputFile);
+              return indexNames;
+            } else {
+              console.log('[Newman List] ⚠️ No indexes array in response');
+              console.log('[Newman List] Full response:', JSON.stringify(response, null, 2));
+            }
+          } catch (parseError) {
+            console.error('[Newman List] Error parsing response body:', parseError);
+            console.log('[Newman List] Raw response body:', responseBody);
+          }
+        } else {
+          console.log('[Newman List] ⚠️ No response stream found');
+          console.log('[Newman List] Response object:', JSON.stringify(listExecution.response, null, 2));
         }
+      } else {
+        console.log('[Newman List] ⚠️ List All Indexes execution not found');
+        console.log('[Newman List] Available executions:', 
+          output.run?.executions?.map((e: any) => e.item?.name) || []
+        );
       }
       
       await fs.unlink(outputFile);
+    } else {
+      console.log('[Newman List] ⚠️ Output file does not exist');
     }
     
+    console.log('[Newman List] Returning empty array (no indices found)');
     return [];
     
   } catch (error) {
