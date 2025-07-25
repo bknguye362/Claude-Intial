@@ -98,16 +98,26 @@ export const defaultQueryTool = createTool({
         console.log('[Default Query Tool] Successfully vectorized and stored question');
         
         // Now search for similar vectors across relevant indexes
+        console.log('[Default Query Tool] ========= STARTING SIMILARITY SEARCH =========');
         console.log('[Default Query Tool] Searching for similar content across indexes...');
         
         try {
           const bucketName = process.env.S3_VECTORS_BUCKET || 'chatbotvectors362';
           const region = process.env.S3_VECTORS_REGION || 'us-east-2';
           
+          console.log(`[Default Query Tool] Using bucket: ${bucketName}, region: ${region}`);
+          
           // First, list all available indices
           console.log('[Default Query Tool] Listing all indices...');
           const listCommand = `aws s3vectors list-indexes --vector-bucket-name ${bucketName} --region ${region}`;
-          const { stdout: listOutput } = await execAsync(listCommand);
+          console.log(`[Default Query Tool] List command: ${listCommand}`);
+          
+          const { stdout: listOutput, stderr: listError } = await execAsync(listCommand);
+          
+          if (listError && !listError.includes('WARNING')) {
+            console.log(`[Default Query Tool] List error:`, listError);
+          }
+          
           const listResult = JSON.parse(listOutput);
           
           if (!listResult.indexes) {
@@ -133,7 +143,7 @@ export const defaultQueryTool = createTool({
               // Build query command
               const queryPayload = {
                 queryVector: {
-                  float32: embedding
+                  vector: embedding
                 },
                 k: 5
               };
@@ -141,7 +151,18 @@ export const defaultQueryTool = createTool({
               const queryCommand = `aws s3vectors query-vectors --vector-bucket-name ${bucketName} --index-name ${indexName} --query-request '${JSON.stringify(queryPayload)}' --region ${region}`;
               
               console.log(`[Default Query Tool] Executing query command...`);
-              const { stdout: queryOutput } = await execAsync(queryCommand);
+              console.log(`[Default Query Tool] Query payload preview:`, {
+                indexName,
+                vectorLength: embedding.length,
+                k: queryPayload.k
+              });
+              
+              const { stdout: queryOutput, stderr: queryError } = await execAsync(queryCommand);
+              
+              if (queryError && !queryError.includes('WARNING')) {
+                console.log(`[Default Query Tool] Query error output:`, queryError);
+              }
+              
               const queryResult = JSON.parse(queryOutput);
               
               if (queryResult.vectors && queryResult.vectors.length > 0) {
