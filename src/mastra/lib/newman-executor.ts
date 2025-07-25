@@ -394,6 +394,14 @@ export async function listIndicesWithNewman(): Promise<string[]> {
     }
     
     console.log('[Newman List] Returning empty array (no indices found)');
+    
+    // Log environment variable status for debugging
+    console.log('[Newman List] Environment check:');
+    console.log('[Newman List] - AWS_ACCESS_KEY_ID:', process.env.AWS_ACCESS_KEY_ID ? `Set (${process.env.AWS_ACCESS_KEY_ID.substring(0, 8)}...)` : 'NOT SET');
+    console.log('[Newman List] - AWS_SECRET_ACCESS_KEY:', process.env.AWS_SECRET_ACCESS_KEY ? 'Set' : 'NOT SET');
+    console.log('[Newman List] - S3_VECTORS_BUCKET:', process.env.S3_VECTORS_BUCKET || 'chatbotvectors362');
+    console.log('[Newman List] - S3_VECTORS_REGION:', process.env.S3_VECTORS_REGION || 'us-east-2');
+    
     return [];
     
   } catch (error) {

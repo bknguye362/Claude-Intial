@@ -114,10 +114,24 @@ export const defaultQueryTool = createTool({
               indicesToSearch = allIndices; // Use ALL indices
             } else {
               console.log('[Default Query Tool] ⚠️ No indices returned from listIndicesWithNewman');
+              console.log('[Default Query Tool] Newman might have failed - check AWS credentials');
+              
+              // Try hardcoded indices as a temporary workaround
+              const hardcodedIndices = [
+                'queries',
+                'chatbot-embeddings', 
+                'customer_testimonials',
+                'product_info',
+                'company_info',
+                'support_docs'
+              ];
+              console.log('[Default Query Tool] Trying hardcoded indices:', hardcodedIndices);
+              indicesToSearch = hardcodedIndices;
             }
           } catch (listError) {
             console.log('[Default Query Tool] Failed to list indices dynamically:', listError);
             console.log('[Default Query Tool] Error details:', listError instanceof Error ? listError.message : 'Unknown error');
+            console.log('[Default Query Tool] Error stack:', listError instanceof Error ? listError.stack : 'No stack');
             console.log('[Default Query Tool] Falling back to queries index only');
           }
           
@@ -195,7 +209,9 @@ export const defaultQueryTool = createTool({
               indicesSearched: indicesToSearch,
               totalIndicesSearched: indicesToSearch.length,
               totalResultsBeforeFilter: similarResults.length,
-              listingMethod: indicesToSearch.length > 1 ? 'listIndicesWithNewman' : 'fallback'
+              listingMethod: indicesToSearch.length > 1 ? 'listIndicesWithNewman' : 'fallback',
+              awsKeySet: !!process.env.AWS_ACCESS_KEY_ID,
+              bucketName: process.env.S3_VECTORS_BUCKET || 'chatbotvectors362'
             }
           };
           
