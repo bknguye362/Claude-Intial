@@ -104,35 +104,74 @@ export const defaultQueryTool = createTool({
           let indicesToSearch = ['queries']; // Always include queries
           
           // Use the listIndicesWithNewman function
+          let allIndices: string[] = [];
           try {
             console.log('[Default Query Tool] Calling listIndicesWithNewman...');
             const { listIndicesWithNewman } = await import('../lib/newman-executor.js');
-            const allIndices = await listIndicesWithNewman();
+            allIndices = await listIndicesWithNewman();
             
             if (allIndices && allIndices.length > 0) {
               console.log(`[Default Query Tool] ✅ Successfully listed ${allIndices.length} indices:`, allIndices);
               indicesToSearch = allIndices; // Use ALL indices
             } else {
               console.log('[Default Query Tool] ⚠️ No indices returned from listIndicesWithNewman');
-              console.log('[Default Query Tool] Newman might have failed - check AWS credentials');
-              
-              // Try hardcoded indices as a temporary workaround
-              const hardcodedIndices = [
-                'queries',
-                'chatbot-embeddings', 
-                'customer_testimonials',
-                'product_info',
-                'company_info',
-                'support_docs'
-              ];
-              console.log('[Default Query Tool] Trying hardcoded indices:', hardcodedIndices);
-              indicesToSearch = hardcodedIndices;
             }
           } catch (listError) {
-            console.log('[Default Query Tool] Failed to list indices dynamically:', listError);
-            console.log('[Default Query Tool] Error details:', listError instanceof Error ? listError.message : 'Unknown error');
-            console.log('[Default Query Tool] Error stack:', listError instanceof Error ? listError.stack : 'No stack');
-            console.log('[Default Query Tool] Falling back to queries index only');
+            console.log('[Default Query Tool] Newman listing failed:', listError instanceof Error ? listError.message : 'Unknown error');
+          }
+          
+          // If Newman failed, try using s3VectorsListIndicesTool
+          if (allIndices.length === 0) {
+            try {
+              console.log('[Default Query Tool] Trying s3VectorsListIndicesTool...');
+              const { s3VectorsListIndicesTool } = await import('./s3-vectors-flexible-query.js');
+              const listResult = await s3VectorsListIndicesTool.execute({
+                runtimeContext: {},
+                context: { bucketName: process.env.S3_VECTORS_BUCKET || 'chatbotvectors362' }
+              } as any);
+              
+              if (listResult.success && listResult.indices) {
+                allIndices = listResult.indices.map((idx: any) => idx.indexName);
+                console.log(`[Default Query Tool] ✅ List tool found ${allIndices.length} indices:`, allIndices);
+                indicesToSearch = allIndices;
+              } else {
+                console.log('[Default Query Tool] List tool failed:', listResult.error || 'Unknown error');
+              }
+            } catch (listError) {
+              console.log('[Default Query Tool] s3VectorsListIndicesTool failed:', listError instanceof Error ? listError.message : 'Unknown error');
+              
+              // Try s3VectorsBucketMonitorTool as last resort
+              try {
+                console.log('[Default Query Tool] Trying s3VectorsBucketMonitorTool as last resort...');
+                const { s3VectorsBucketMonitorTool } = await import('./s3-vectors-bucket-monitor.js');
+                const monitorResult = await s3VectorsBucketMonitorTool.execute({
+                  runtimeContext: {},
+                  context: { action: 'list-indices' }
+                } as any);
+                
+                if (monitorResult.success && monitorResult.indices) {
+                  allIndices = monitorResult.indices.map((idx: any) => idx.indexName);
+                  console.log(`[Default Query Tool] ✅ Monitor tool found ${allIndices.length} indices:`, allIndices);
+                  indicesToSearch = allIndices;
+                }
+              } catch (monitorError) {
+                console.log('[Default Query Tool] Monitor tool also failed:', monitorError instanceof Error ? monitorError.message : 'Unknown error');
+              }
+            }
+          }
+          
+          // If both methods failed, use hardcoded indices
+          if (indicesToSearch.length === 1) {
+            const hardcodedIndices = [
+              'queries',
+              'chatbot-embeddings', 
+              'customer_testimonials',
+              'product_info',
+              'company_info',
+              'support_docs'
+            ];
+            console.log('[Default Query Tool] Both listing methods failed, using hardcoded indices:', hardcodedIndices);
+            indicesToSearch = hardcodedIndices;
           }
           
           console.log(`[Default Query Tool] Will search ${indicesToSearch.length} indices:`, indicesToSearch);
