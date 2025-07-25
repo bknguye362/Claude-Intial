@@ -117,12 +117,10 @@ export const defaultQueryTool = createTool({
           
           console.log(`[Default Query Tool] Found ${listResult.indexes.length} total indices`);
           
-          // Filter indices to search (file-* patterns and chatbot-embeddings)
-          const indicesToSearch = listResult.indexes
-            .filter((idx: any) => idx.indexName.startsWith('file-') || idx.indexName === 'chatbot-embeddings')
-            .map((idx: any) => idx.indexName);
+          // Search ALL indices
+          const indicesToSearch = listResult.indexes.map((idx: any) => idx.indexName);
           
-          console.log(`[Default Query Tool] Will search ${indicesToSearch.length} indices:`, indicesToSearch);
+          console.log(`[Default Query Tool] Will search ALL ${indicesToSearch.length} indices:`, indicesToSearch);
           
           const similarResults = [];
           
