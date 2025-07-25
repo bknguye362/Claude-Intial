@@ -102,20 +102,30 @@ export const defaultQueryTool = createTool({
           const similarResults = [];
           
           for (const indexPattern of searchIndexes) {
-            console.log(`[Default Query Tool] Searching in index pattern: ${indexPattern}`);
+            console.log(`[Default Query Tool] 🔍 SEARCHING in index pattern: ${indexPattern}`);
+            console.log(`[Default Query Tool] Using embedding with length: ${embedding.length}`);
             
             try {
               const results = await queryVectorsWithNewman(indexPattern, embedding, 5);
               
               if (results && results.length > 0) {
-                console.log(`[Default Query Tool] Found ${results.length} similar vectors in ${indexPattern}`);
+                console.log(`[Default Query Tool] ✅ Found ${results.length} similar vectors in ${indexPattern}`);
+                console.log(`[Default Query Tool] First result preview:`, {
+                  key: results[0].key,
+                  score: results[0].score,
+                  hasMetadata: !!results[0].metadata,
+                  contentPreview: results[0].metadata?.content?.substring(0, 100) || 'No content'
+                });
+                
                 similarResults.push(...results.map(r => ({
                   ...r,
                   index: indexPattern
                 })));
+              } else {
+                console.log(`[Default Query Tool] ❌ No results found in ${indexPattern}`);
               }
             } catch (searchError) {
-              console.log(`[Default Query Tool] No results or error searching ${indexPattern}:`, searchError);
+              console.log(`[Default Query Tool] ⚠️ Error searching ${indexPattern}:`, searchError);
             }
           }
           
@@ -125,9 +135,17 @@ export const defaultQueryTool = createTool({
           // Take top 10 results
           const topResults = similarResults.slice(0, 10);
           
-          console.log(`[Default Query Tool] Found ${topResults.length} relevant chunks total`);
+          console.log(`[Default Query Tool] 📊 FINAL RESULTS: Found ${topResults.length} relevant chunks total`);
           
-          return {
+          // Log summary of results
+          if (topResults.length > 0) {
+            console.log('[Default Query Tool] Top 3 results summary:');
+            topResults.slice(0, 3).forEach((r, i) => {
+              console.log(`[Default Query Tool] ${i + 1}. Score: ${r.score}, Index: ${r.index}, Content preview: ${(r.metadata?.content || '').substring(0, 50)}...`);
+            });
+          }
+          
+          const result = {
             success: true,
             message: 'Question vectorized, stored, and similar content found',
             vectorKey: vectors[0].key,
@@ -144,6 +162,11 @@ export const defaultQueryTool = createTool({
             })),
             totalSimilarChunks: topResults.length
           };
+          
+          console.log('[Default Query Tool] 🎯 RETURNING RESULT WITH CHUNKS TO AGENT');
+          console.log(`[Default Query Tool] Result contains ${result.similarChunks.length} chunks for the LLM to use`);
+          
+          return result;
         } catch (searchError) {
           console.error('[Default Query Tool] Error searching for similar content:', searchError);
           

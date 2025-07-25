@@ -106,11 +106,26 @@ const agentConfig: any = {
     ================================
     FOR ANY USER QUESTION (contains "?", starts with question words, or is asking for information):
     → ALWAYS USE defaultQueryTool FIRST
-    → This ensures ALL questions are automatically vectorized and stored
-    → Examples: "What is X?", "How does Y work?", "Can you explain Z?", "Tell me about..."
-    → The defaultQueryTool will vectorize the question and store it in the 'queries' index
+    → This tool will:
+      1. Vectorize and store the question in 'queries' index
+      2. Search for similar content across all document indexes
+      3. Return relevant chunks that can help answer the question
     
-    After using defaultQueryTool, you can then use other tools to answer the question.
+    USING THE RETRIEVED CHUNKS:
+    → The defaultQueryTool returns 'similarChunks' with relevant content
+    → Each chunk contains:
+      - content: The actual text from documents
+      - score: Similarity score (higher = more relevant)
+      - metadata: Additional context about the chunk
+    → USE THESE CHUNKS to provide accurate, context-aware answers
+    → Always cite or reference the source when using chunk content
+    
+    Example workflow:
+    1. User asks: "What is machine learning?"
+    2. Use defaultQueryTool with question: "What is machine learning?"
+    3. Tool returns similar chunks from documents about ML
+    4. Use the chunk content to formulate a comprehensive answer
+    5. Reference which documents the information came from
     
     DEFAULT BEHAVIOR:
     - When user says "list" → ALWAYS show S3 Vectors indices using s3VectorsBucketMonitorTool

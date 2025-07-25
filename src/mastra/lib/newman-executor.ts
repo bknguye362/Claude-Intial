@@ -297,6 +297,12 @@ export async function queryVectorsWithNewman(
   queryVector: number[],
   topK: number = 10
 ): Promise<any[]> {
+  console.log('[Newman Query] ========= QUERY VECTORS FUNCTION CALLED =========');
+  console.log(`[Newman Query] Index: ${indexName}`);
+  console.log(`[Newman Query] Query vector length: ${queryVector.length}`);
+  console.log(`[Newman Query] Top K: ${topK}`);
+  console.log(`[Newman Query] First 5 vector values: [${queryVector.slice(0, 5).join(', ')}...]`);
+  
   const collectionFile = './postman/s3-vectors-collection.json';
   const envFile = './postman/s3-vectors-env-temp.json';
   const outputFile = './postman/newman-query-output.json';
@@ -321,10 +327,19 @@ export async function queryVectorsWithNewman(
     const command = `npx newman run "${collectionFile}" --environment "${envFile}" --folder "Query Vectors" --reporters cli,json --reporter-json-export "${outputFile}"`;
     
     console.log('[Newman Query] Executing query command...');
+    console.log(`[Newman Query] Command: ${command}`);
+    
     const { stdout, stderr } = await execAsync(command);
+    
+    console.log('[Newman Query] Command executed successfully');
     
     if (stderr && !stderr.includes('Newman v')) {
       console.error('[Newman Query] Error output:', stderr);
+    }
+    
+    // Log part of stdout for debugging
+    if (stdout) {
+      console.log('[Newman Query] Newman output preview:', stdout.substring(0, 500));
     }
     
     // Parse the output to get results
@@ -342,8 +357,12 @@ export async function queryVectorsWithNewman(
         const response = JSON.parse(responseBody);
         
         if (response.vectors && Array.isArray(response.vectors)) {
-          console.log(`[Newman Query] Found ${response.vectors.length} similar vectors`);
+          console.log(`[Newman Query] ✅ SUCCESS: Found ${response.vectors.length} similar vectors`);
+          console.log('[Newman Query] First result:', JSON.stringify(response.vectors[0], null, 2));
           return response.vectors;
+        } else {
+          console.log('[Newman Query] ⚠️ No vectors found in response');
+          console.log('[Newman Query] Response structure:', Object.keys(response));
         }
       }
       
