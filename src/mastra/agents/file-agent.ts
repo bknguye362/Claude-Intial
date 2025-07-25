@@ -139,7 +139,7 @@ const agentConfig: any = {
     CRITICAL RULE #2: "create index" = Create a NEW S3 Vectors index in the bucket
     - Use s3VectorsPostmanFlexibleTool with requestName: "Create Index"
     - This is NOT about processing files or PDFs!
-    - Example: create index "my-new-index" with dimension 384
+    - Example: create index "my-new-index" with dimension 1536
     
     PRIMARY FUNCTION - S3 VECTORS MONITORING:
     DEFAULT: When user says "list" → IMMEDIATELY use s3VectorsBucketMonitorTool({action: "list-indices"})
@@ -157,7 +157,7 @@ const agentConfig: any = {
         requestBody: {
           vectorBucketName: "chatbotvectors362",
           indexName: "your-new-index-name",
-          dimension: 384,  // or 1536 for OpenAI
+          dimension: 1536,  // OpenAI embeddings
           distanceMetric: "cosine",
           dataType: "float32"
         }

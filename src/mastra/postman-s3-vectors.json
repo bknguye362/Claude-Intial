@@ -208,7 +208,7 @@
         ],
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"vectorBucketName\": \"{{BUCKET_NAME}}\",\n  \"indexName\": \"{{INDEX_NAME}}\",\n  \"dimension\": 384,\n  \"distanceMetric\": \"cosine\",\n  \"dataType\": \"float32\",\n  \"nonFilterableMetadataKeys\": [\"text\", \"content\"]\n}"
+          "raw": "{\n  \"vectorBucketName\": \"{{BUCKET_NAME}}\",\n  \"indexName\": \"{{INDEX_NAME}}\",\n  \"dimension\": 1536,\n  \"distanceMetric\": \"cosine\",\n  \"dataType\": \"float32\",\n  \"nonFilterableMetadataKeys\": [\"text\", \"content\"]\n}"
         },
         "url": {
           "raw": "https://s3vectors.{{AWS_REGION}}.api.aws/CreateIndex",

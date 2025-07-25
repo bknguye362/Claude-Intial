@@ -13,8 +13,8 @@ async function generateEmbedding(text: string): Promise<number[]> {
   if (!AZURE_OPENAI_API_KEY) {
     console.log('[Assistant Workflow] No API key for embeddings, using mock embeddings...');
     const hash = text.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-    // Note: queries index has dimension 384, not 1536
-    return Array(384).fill(0).map((_, i) => Math.sin(hash + i) * 0.5 + 0.5);
+    // Note: queries index has dimension 1536
+    return Array(1536).fill(0).map((_, i) => Math.sin(hash + i) * 0.5 + 0.5);
   }
 
   try {

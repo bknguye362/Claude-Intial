@@ -111,7 +111,7 @@ export const s3VectorsPostmanQueryTool = createTool({
       if (!queryVector && context.query) {
         // For simplicity, use mock embedding
         console.log('[S3 Vectors Postman Query] Using mock embedding for query');
-        queryVector = Array(384).fill(0).map(() => Math.random() * 0.1);
+        queryVector = Array(1536).fill(0).map(() => Math.random() * 0.1);
       }
       
       if (!queryVector) {
@@ -297,7 +297,7 @@ export const s3VectorsPostmanUploadTool = createTool({
     key: z.string().describe('The vector key (unique identifier)'),
     text: z.string().describe('The text content to embed and store'),
     metadata: z.record(z.any()).describe('The metadata values to associate with this vector key'),
-    embedding: z.array(z.number()).optional().describe('Pre-computed embedding (384 dimensions)'),
+    embedding: z.array(z.number()).optional().describe('Pre-computed embedding (1536 dimensions)'),
   }),
   outputSchema: z.object({
     success: z.boolean(),
@@ -324,7 +324,7 @@ export const s3VectorsPostmanUploadTool = createTool({
       let embedding = context.embedding;
       if (!embedding) {
         console.log('[S3 Vectors Postman Upload] Using mock embedding');
-        embedding = Array(384).fill(0).map(() => Math.random());
+        embedding = Array(1536).fill(0).map(() => Math.random());
       }
       
       // Create environment
@@ -426,7 +426,7 @@ export const s3VectorsPostmanCreateIndexTool = createTool({
   description: 'Create a new S3 Vectors index using Postman/Newman',
   inputSchema: z.object({
     indexName: z.string().describe('Name for the new index'),
-    dimension: z.number().default(1536).describe('Vector dimension (384 for sentence-transformers, 1536 for OpenAI)'),
+    dimension: z.number().default(1536).describe('Vector dimension (1536 for OpenAI embeddings)'),
     distanceMetric: z.enum(['cosine', 'euclidean', 'dotProduct']).default('cosine').describe('Distance metric for similarity'),
     dataType: z.enum(['float32', 'float16']).default('float32').describe('Data type for vectors'),
   }),
