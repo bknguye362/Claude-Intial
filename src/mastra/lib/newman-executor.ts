@@ -293,9 +293,14 @@ export async function uploadVectorsWithNewman(
 
 // List indices using Newman and Postman collection
 export async function listIndicesWithNewman(): Promise<string[]> {
-  const collectionFile = './postman/s3-vectors-collection.json';
-  const envFile = './postman/s3-vectors-env-temp-list.json';
-  const outputFile = './postman/newman-list-output.json';
+  console.log('[Newman List] Starting listIndicesWithNewman...');
+  
+  const collectionFile = './postman-s3-vectors.json';
+  const envFile = './postman-s3-vectors-env-temp-list.json';
+  const outputFile = './newman-list-output.json';
+  
+  console.log('[Newman List] Collection file:', collectionFile);
+  console.log('[Newman List] Collection exists?', existsSync(collectionFile));
   
   try {
     // Create environment file
@@ -313,10 +318,18 @@ export async function listIndicesWithNewman(): Promise<string[]> {
     // Run Newman with the List Indices request
     const command = `npx newman run "${collectionFile}" --environment "${envFile}" --folder "List Indices" --reporters cli,json --reporter-json-export "${outputFile}"`;
     
+    console.log('[Newman List] Running command:', command);
+    
     const { stdout, stderr } = await execAsync(command);
     
-    if (stderr && !stderr.includes('Newman v')) {
-      console.error('[Newman List] Error:', stderr);
+    console.log('[Newman List] Command completed');
+    
+    if (stderr) {
+      console.log('[Newman List] Stderr output:', stderr);
+    }
+    
+    if (stdout) {
+      console.log('[Newman List] Stdout preview:', stdout.substring(0, 500));
     }
     
     // Parse the output
@@ -365,9 +378,9 @@ export async function queryVectorsWithNewman(
   console.log(`[Newman Query] Top K: ${topK}`);
   console.log(`[Newman Query] First 5 vector values: [${queryVector.slice(0, 5).join(', ')}...]`);
   
-  const collectionFile = './postman/s3-vectors-collection.json';
-  const envFile = './postman/s3-vectors-env-temp.json';
-  const outputFile = './postman/newman-query-output.json';
+  const collectionFile = './postman-s3-vectors.json';
+  const envFile = './postman-s3-vectors-env-temp.json';
+  const outputFile = './newman-query-output.json';
   
   try {
     // Create environment file with query parameters
