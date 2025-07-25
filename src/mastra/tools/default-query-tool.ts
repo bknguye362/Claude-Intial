@@ -1,6 +1,12 @@
 import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
 import { uploadVectorsWithNewman, queryVectorsWithNewman } from '../lib/newman-executor.js';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+import { existsSync } from 'fs';
+import { readFile, unlink } from 'fs/promises';
+
+const execAsync = promisify(exec);
 
 // Azure OpenAI configuration for embeddings
 const AZURE_OPENAI_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT || 'https://franklin-open-ai-test.openai.azure.com';
@@ -98,18 +104,47 @@ export const defaultQueryTool = createTool({
         console.log('[Default Query Tool] Searching for similar content across indexes...');
         
         try {
-          // For now, use a predefined list of common indices since listing is failing
-          // TODO: Fix listing functionality
-          console.log('[Default Query Tool] Using predefined indices list...');
+          // Try to get ALL indices dynamically
+          console.log('[Default Query Tool] Attempting to list all indices dynamically...');
           
-          const indicesToSearch = [
-            'chatbot-embeddings',
-            'queries',
-            // Add any file-* indices you know exist
-            'file-1984-pdf-1737821674605'  // Example - replace with actual indices
-          ];
+          let indicesToSearch = ['queries']; // Always include queries
           
-          console.log(`[Default Query Tool] Will search ${indicesToSearch.length} known indices:`, indicesToSearch);
+          // Try using the s3VectorsBucketMonitorTool approach
+          try {
+            const bucketName = process.env.S3_VECTORS_BUCKET || 'chatbotvectors362';
+            const region = process.env.S3_VECTORS_REGION || 'us-east-2';
+            
+            // Use npx to ensure newman is found
+            const listCommand = `npx newman run "./postman-s3-vectors.json" --env-var "bucketName=${bucketName}" --env-var "region=${region}" --env-var "awsAccessKeyId=${process.env.AWS_ACCESS_KEY_ID}" --env-var "awsSecretAccessKey=${process.env.AWS_SECRET_ACCESS_KEY}" --folder "List All Indexes" --reporters cli,json --reporter-json-export "./newman-list-temp.json"`;
+            
+            console.log('[Default Query Tool] Running list command via newman...');
+            const { stdout, stderr } = await execAsync(listCommand);
+            
+            if (existsSync('./newman-list-temp.json')) {
+              const output = JSON.parse(await readFile('./newman-list-temp.json', 'utf-8'));
+              
+              // Find the List All Indexes execution
+              const listExecution = output.run?.executions?.find((exec: any) => 
+                exec.item?.name?.includes('List All Indexes')
+              );
+              
+              if (listExecution?.response?.stream) {
+                const response = JSON.parse(listExecution.response.stream.toString());
+                if (response.indexes && Array.isArray(response.indexes)) {
+                  const allIndices = response.indexes.map((idx: any) => idx.indexName);
+                  console.log(`[Default Query Tool] Found ${allIndices.length} indices:`, allIndices);
+                  indicesToSearch = allIndices; // Use ALL indices
+                }
+              }
+              
+              await unlink('./newman-list-temp.json');
+            }
+          } catch (listError) {
+            console.log('[Default Query Tool] Failed to list indices dynamically:', listError);
+            console.log('[Default Query Tool] Falling back to queries index only');
+          }
+          
+          console.log(`[Default Query Tool] Will search ${indicesToSearch.length} indices:`, indicesToSearch);
           
           const similarResults = [];
           
