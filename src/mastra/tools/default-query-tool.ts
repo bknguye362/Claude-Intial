@@ -1,10 +1,6 @@
 import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
-import { uploadVectorsWithNewman } from '../lib/newman-executor.js';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-
-const execAsync = promisify(exec);
+import { uploadVectorsWithNewman, queryVectorsWithNewman, listIndicesWithNewman } from '../lib/newman-executor.js';
 
 // Azure OpenAI configuration for embeddings
 const AZURE_OPENAI_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT || 'https://franklin-open-ai-test.openai.azure.com';
@@ -102,35 +98,17 @@ export const defaultQueryTool = createTool({
         console.log('[Default Query Tool] Searching for similar content across indexes...');
         
         try {
-          const bucketName = process.env.S3_VECTORS_BUCKET || 'chatbotvectors362';
-          const region = process.env.S3_VECTORS_REGION || 'us-east-2';
+          // First, list all available indices using Newman
+          console.log('[Default Query Tool] Listing all indices using Newman...');
+          const indicesToSearch = await listIndicesWithNewman();
           
-          console.log(`[Default Query Tool] Using bucket: ${bucketName}, region: ${region}`);
-          
-          // First, list all available indices
-          console.log('[Default Query Tool] Listing all indices...');
-          const listCommand = `aws s3vectors list-indexes --vector-bucket-name ${bucketName} --region ${region}`;
-          console.log(`[Default Query Tool] List command: ${listCommand}`);
-          
-          const { stdout: listOutput, stderr: listError } = await execAsync(listCommand);
-          
-          if (listError && !listError.includes('WARNING')) {
-            console.log(`[Default Query Tool] List error:`, listError);
-          }
-          
-          const listResult = JSON.parse(listOutput);
-          
-          if (!listResult.indexes) {
-            console.log('[Default Query Tool] Failed to list indices');
+          if (!indicesToSearch || indicesToSearch.length === 0) {
+            console.log('[Default Query Tool] No indices found or failed to list indices');
             throw new Error('Failed to list indices');
           }
           
-          console.log(`[Default Query Tool] Found ${listResult.indexes.length} total indices`);
-          
-          // Search ALL indices
-          const indicesToSearch = listResult.indexes.map((idx: any) => idx.indexName);
-          
-          console.log(`[Default Query Tool] Will search ALL ${indicesToSearch.length} indices:`, indicesToSearch);
+          console.log(`[Default Query Tool] Found ${indicesToSearch.length} total indices:`, indicesToSearch);
+          console.log(`[Default Query Tool] Will search ALL ${indicesToSearch.length} indices`);
           
           const similarResults = [];
           
@@ -140,41 +118,20 @@ export const defaultQueryTool = createTool({
             console.log(`[Default Query Tool] Using embedding with length: ${embedding.length}`);
             
             try {
-              // Build query command
-              const queryPayload = {
-                queryVector: {
-                  vector: embedding
-                },
-                k: 5
-              };
+              console.log(`[Default Query Tool] Calling queryVectorsWithNewman for ${indexName}...`);
               
-              const queryCommand = `aws s3vectors query-vectors --vector-bucket-name ${bucketName} --index-name ${indexName} --query-request '${JSON.stringify(queryPayload)}' --region ${region}`;
+              const queryResults = await queryVectorsWithNewman(indexName, embedding, 5);
               
-              console.log(`[Default Query Tool] Executing query command...`);
-              console.log(`[Default Query Tool] Query payload preview:`, {
-                indexName,
-                vectorLength: embedding.length,
-                k: queryPayload.k
-              });
-              
-              const { stdout: queryOutput, stderr: queryError } = await execAsync(queryCommand);
-              
-              if (queryError && !queryError.includes('WARNING')) {
-                console.log(`[Default Query Tool] Query error output:`, queryError);
-              }
-              
-              const queryResult = JSON.parse(queryOutput);
-              
-              if (queryResult.vectors && queryResult.vectors.length > 0) {
-                console.log(`[Default Query Tool] ✅ Found ${queryResult.vectors.length} similar vectors in ${indexName}`);
+              if (queryResults && queryResults.length > 0) {
+                console.log(`[Default Query Tool] ✅ Found ${queryResults.length} similar vectors in ${indexName}`);
                 console.log(`[Default Query Tool] First result preview:`, {
-                  key: queryResult.vectors[0].key,
-                  score: queryResult.vectors[0].score,
-                  hasMetadata: !!queryResult.vectors[0].metadata,
-                  contentPreview: queryResult.vectors[0].metadata?.content?.substring(0, 100) || 'No content'
+                  key: queryResults[0].key,
+                  score: queryResults[0].score,
+                  hasMetadata: !!queryResults[0].metadata,
+                  contentPreview: queryResults[0].metadata?.content?.substring(0, 100) || 'No content'
                 });
                 
-                similarResults.push(...queryResult.vectors.map((r: any) => ({
+                similarResults.push(...queryResults.map((r: any) => ({
                   key: r.key,
                   score: r.score,
                   metadata: r.metadata || {},

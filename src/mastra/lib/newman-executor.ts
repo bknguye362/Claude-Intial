@@ -291,6 +291,68 @@ export async function uploadVectorsWithNewman(
   }
 }
 
+// List indices using Newman and Postman collection
+export async function listIndicesWithNewman(): Promise<string[]> {
+  const collectionFile = './postman/s3-vectors-collection.json';
+  const envFile = './postman/s3-vectors-env-temp-list.json';
+  const outputFile = './postman/newman-list-output.json';
+  
+  try {
+    // Create environment file
+    const envData = {
+      values: [
+        { key: 'bucketName', value: process.env.S3_VECTORS_BUCKET || 'chatbotvectors362' },
+        { key: 'region', value: process.env.S3_VECTORS_REGION || 'us-east-2' },
+        { key: 'awsAccessKeyId', value: process.env.AWS_ACCESS_KEY_ID || '' },
+        { key: 'awsSecretAccessKey', value: process.env.AWS_SECRET_ACCESS_KEY || '' }
+      ]
+    };
+    
+    await fs.writeFile(envFile, JSON.stringify(envData, null, 2));
+    
+    // Run Newman with the List Indices request
+    const command = `npx newman run "${collectionFile}" --environment "${envFile}" --folder "List Indices" --reporters cli,json --reporter-json-export "${outputFile}"`;
+    
+    const { stdout, stderr } = await execAsync(command);
+    
+    if (stderr && !stderr.includes('Newman v')) {
+      console.error('[Newman List] Error:', stderr);
+    }
+    
+    // Parse the output
+    if (existsSync(outputFile)) {
+      const output = JSON.parse(await fs.readFile(outputFile, 'utf-8'));
+      
+      const listExecution = output.run?.executions?.find((exec: any) => 
+        exec.item?.name?.includes('List') && exec.item?.name?.includes('Indices')
+      );
+      
+      if (listExecution?.response?.stream) {
+        const response = JSON.parse(listExecution.response.stream.toString());
+        
+        if (response.indexes && Array.isArray(response.indexes)) {
+          return response.indexes.map((idx: any) => idx.indexName);
+        }
+      }
+      
+      await fs.unlink(outputFile);
+    }
+    
+    return [];
+    
+  } catch (error) {
+    console.error('[Newman List] Error listing indices:', error);
+    return [];
+  } finally {
+    try {
+      if (existsSync(envFile)) await fs.unlink(envFile);
+      if (existsSync(outputFile)) await fs.unlink(outputFile);
+    } catch (cleanupError) {
+      console.error('[Newman List] Cleanup error:', cleanupError);
+    }
+  }
+}
+
 // Query vectors using Newman and Postman collection
 export async function queryVectorsWithNewman(
   indexName: string,
