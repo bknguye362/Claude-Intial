@@ -608,6 +608,9 @@ export function createOpenAI(options?: any) {
                       if (result.similarChunks && result.similarChunks.length > 0) {
                         console.log(`[Azure Direct] First chunk preview:`, result.similarChunks[0].content?.substring(0, 100));
                       }
+                      if (result.searchError) {
+                        console.log(`[Azure Direct] ⚠️ Search error: ${result.searchError}`);
+                      }
                       console.log('================================================================================');
                     }
                     

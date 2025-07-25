@@ -228,6 +228,11 @@ export const defaultQueryTool = createTool({
           return result;
         } catch (searchError) {
           console.error('[Default Query Tool] Error searching for similar content:', searchError);
+          console.error('[Default Query Tool] Search error details:', {
+            errorMessage: searchError instanceof Error ? searchError.message : 'Unknown error',
+            errorStack: searchError instanceof Error ? searchError.stack : 'No stack trace',
+            errorType: searchError?.constructor?.name
+          });
           
           // Still return success for vectorization even if search fails
           return {
@@ -238,7 +243,8 @@ export const defaultQueryTool = createTool({
             timestamp: new Date().toISOString(),
             questionLength: context.question.length,
             embeddingDimension: embedding.length,
-            searchError: searchError instanceof Error ? searchError.message : 'Unknown search error'
+            searchError: searchError instanceof Error ? searchError.message : 'Unknown search error',
+            searchErrorDetails: searchError instanceof Error ? searchError.stack : 'No details available'
           };
         }
       } else {
