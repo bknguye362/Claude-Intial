@@ -296,27 +296,17 @@ export async function listIndicesWithNewman(): Promise<string[]> {
   console.log('[Newman List] Starting listIndicesWithNewman...');
   
   const collectionFile = './postman-s3-vectors.json';
-  const envFile = './postman-s3-vectors-env-temp-list.json';
   const outputFile = './newman-list-output.json';
   
   console.log('[Newman List] Collection file:', collectionFile);
   console.log('[Newman List] Collection exists?', existsSync(collectionFile));
   
   try {
-    // Create environment file
-    const envData = {
-      values: [
-        { key: 'bucketName', value: process.env.S3_VECTORS_BUCKET || 'chatbotvectors362' },
-        { key: 'region', value: process.env.S3_VECTORS_REGION || 'us-east-2' },
-        { key: 'awsAccessKeyId', value: process.env.AWS_ACCESS_KEY_ID || '' },
-        { key: 'awsSecretAccessKey', value: process.env.AWS_SECRET_ACCESS_KEY || '' }
-      ]
-    };
+    const bucketName = process.env.S3_VECTORS_BUCKET || 'chatbotvectors362';
+    const region = process.env.S3_VECTORS_REGION || 'us-east-2';
     
-    await fs.writeFile(envFile, JSON.stringify(envData, null, 2));
-    
-    // Run Newman with the List Indices request
-    const command = `npx newman run "${collectionFile}" --environment "${envFile}" --folder "List Indices" --reporters cli,json --reporter-json-export "${outputFile}"`;
+    // Use --env-var instead of environment file (like defaultQueryTool does)
+    const command = `npx newman run "${collectionFile}" --env-var "BUCKET_NAME=${bucketName}" --env-var "AWS_REGION=${region}" --env-var "AWS_ACCESS_KEY_ID=${process.env.AWS_ACCESS_KEY_ID}" --env-var "AWS_SECRET_ACCESS_KEY=${process.env.AWS_SECRET_ACCESS_KEY}" --folder "List All Indexes" --reporters cli,json --reporter-json-export "${outputFile}"`;
     
     console.log('[Newman List] Running command:', command);
     
@@ -337,7 +327,7 @@ export async function listIndicesWithNewman(): Promise<string[]> {
       const output = JSON.parse(await fs.readFile(outputFile, 'utf-8'));
       
       const listExecution = output.run?.executions?.find((exec: any) => 
-        exec.item?.name?.includes('List') && exec.item?.name?.includes('Indices')
+        exec.item?.name?.includes('List All Indexes')
       );
       
       if (listExecution?.response?.stream) {
@@ -358,7 +348,6 @@ export async function listIndicesWithNewman(): Promise<string[]> {
     return [];
   } finally {
     try {
-      if (existsSync(envFile)) await fs.unlink(envFile);
       if (existsSync(outputFile)) await fs.unlink(outputFile);
     } catch (cleanupError) {
       console.error('[Newman List] Cleanup error:', cleanupError);
@@ -383,25 +372,69 @@ export async function queryVectorsWithNewman(
   const outputFile = './newman-query-output.json';
   
   try {
-    // Create environment file with query parameters
+    // Create environment file with query parameters matching Postman collection
     const envData = {
       values: [
-        { key: 'bucketName', value: process.env.S3_VECTORS_BUCKET || 'chatbotvectors362' },
-        { key: 'region', value: process.env.S3_VECTORS_REGION || 'us-east-2' },
-        { key: 'awsAccessKeyId', value: process.env.AWS_ACCESS_KEY_ID || '' },
-        { key: 'awsSecretAccessKey', value: process.env.AWS_SECRET_ACCESS_KEY || '' },
-        { key: 'currentIndexName', value: indexName },
-        { key: 'currentQueryVector', value: JSON.stringify(queryVector) },
-        { key: 'currentTopK', value: topK.toString() }
+        { key: 'BUCKET_NAME', value: process.env.S3_VECTORS_BUCKET || 'chatbotvectors362' },
+        { key: 'AWS_REGION', value: process.env.S3_VECTORS_REGION || 'us-east-2' },
+        { key: 'AWS_ACCESS_KEY_ID', value: process.env.AWS_ACCESS_KEY_ID || '' },
+        { key: 'AWS_SECRET_ACCESS_KEY', value: process.env.AWS_SECRET_ACCESS_KEY || '' },
+        { key: 'INDEX_NAME', value: indexName }
       ]
     };
     
     await fs.writeFile(envFile, JSON.stringify(envData, null, 2));
     
-    // Run Newman with specific request name
-    const command = `npx newman run "${collectionFile}" --environment "${envFile}" --folder "Query Vectors with Metadata" --reporters cli,json --reporter-json-export "${outputFile}"`;
+    // Create a custom request file with our actual query vector
+    const requestFile = './postman-query-request-temp.json';
+    const customRequest = {
+      collection: {
+        info: { name: "Query Request" },
+        auth: {
+          type: "awsv4",
+          awsv4: [
+            { key: "accessKey", value: "{{AWS_ACCESS_KEY_ID}}", type: "string" },
+            { key: "secretKey", value: "{{AWS_SECRET_ACCESS_KEY}}", type: "string" },
+            { key: "region", value: "{{AWS_REGION}}", type: "string" },
+            { key: "service", value: "s3vectors", type: "string" }
+          ]
+        },
+        item: [{
+          name: "Query Vectors",
+          request: {
+            method: "POST",
+            header: [{ key: "Content-Type", value: "application/json" }],
+            body: {
+              mode: "raw",
+              raw: JSON.stringify({
+                vectorBucketName: "{{BUCKET_NAME}}",
+                indexName: "{{INDEX_NAME}}",
+                queryVector: {
+                  float32: queryVector
+                },
+                topK: topK,
+                returnMetadata: true,
+                returnValues: true
+              })
+            },
+            url: {
+              raw: "https://s3vectors.{{AWS_REGION}}.api.aws/QueryVectors",
+              protocol: "https",
+              host: ["s3vectors", "{{AWS_REGION}}", "api", "aws"],
+              path: ["QueryVectors"]
+            }
+          }
+        }]
+      }
+    };
     
-    console.log('[Newman Query] Executing query command...');
+    await fs.writeFile(requestFile, JSON.stringify(customRequest, null, 2));
+    
+    // Run Newman with our custom request
+    const command = `npx newman run "${requestFile}" --environment "${envFile}" --reporters cli,json --reporter-json-export "${outputFile}"`;
+    
+    console.log('[Newman Query] Executing query command with custom request...');
+    console.log(`[Newman Query] Vector length in request: ${queryVector.length}`);
     console.log(`[Newman Query] Command: ${command}`);
     
     const { stdout, stderr } = await execAsync(command);
@@ -474,6 +507,7 @@ export async function queryVectorsWithNewman(
     try {
       if (existsSync(envFile)) await fs.unlink(envFile);
       if (existsSync(outputFile)) await fs.unlink(outputFile);
+      if (existsSync('./postman-query-request-temp.json')) await fs.unlink('./postman-query-request-temp.json');
     } catch (cleanupError) {
       console.error('[Newman Query] Cleanup error:', cleanupError);
     }
