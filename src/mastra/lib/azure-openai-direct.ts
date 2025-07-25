@@ -605,6 +605,12 @@ export function createOpenAI(options?: any) {
                       console.log('🎯🎯🎯 DEFAULT QUERY TOOL RESULTS 🎯🎯🎯');
                       console.log(`[Azure Direct] Success: ${result.success}`);
                       console.log(`[Azure Direct] Similar chunks found: ${result.totalSimilarChunks || 0}`);
+                      if (result.debug) {
+                        console.log(`[Azure Direct] DEBUG - Indices searched:`, result.debug.indicesSearched);
+                        console.log(`[Azure Direct] DEBUG - Total indices searched:`, result.debug.totalIndicesSearched);
+                        console.log(`[Azure Direct] DEBUG - Total results before filter:`, result.debug.totalResultsBeforeFilter);
+                        console.log(`[Azure Direct] DEBUG - Listing method:`, result.debug.listingMethod);
+                      }
                       if (result.similarChunks && result.similarChunks.length > 0) {
                         console.log(`[Azure Direct] First chunk preview:`, result.similarChunks[0].content?.substring(0, 100));
                       }

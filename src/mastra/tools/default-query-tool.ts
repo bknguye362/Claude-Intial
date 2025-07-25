@@ -189,7 +189,14 @@ export const defaultQueryTool = createTool({
               metadata: r.metadata,
               content: r.metadata?.content || r.metadata?.text || 'No content available'
             })),
-            totalSimilarChunks: topResults.length
+            totalSimilarChunks: topResults.length,
+            // Debug information
+            debug: {
+              indicesSearched: indicesToSearch,
+              totalIndicesSearched: indicesToSearch.length,
+              totalResultsBeforeFilter: similarResults.length,
+              listingMethod: indicesToSearch.length > 1 ? 'listIndicesWithNewman' : 'fallback'
+            }
           };
           
           console.log('[Default Query Tool] 🎯 RETURNING RESULT WITH CHUNKS TO AGENT');
