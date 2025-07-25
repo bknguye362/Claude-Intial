@@ -133,7 +133,7 @@ export const defaultQueryTool = createTool({
               // Build query command
               const queryPayload = {
                 queryVector: {
-                  vector: embedding
+                  float32: embedding
                 },
                 k: 5
               };
