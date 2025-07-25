@@ -1,10 +1,6 @@
 import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
 import { uploadVectorsWithNewman, queryVectorsWithNewman } from '../lib/newman-executor.js';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-
-const execAsync = promisify(exec);
 
 // Azure OpenAI configuration for embeddings
 const AZURE_OPENAI_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT || 'https://franklin-open-ai-test.openai.azure.com';
@@ -138,7 +134,7 @@ export const defaultQueryTool = createTool({
                 
                 similarResults.push(...queryResults.map((r: any) => ({
                   key: r.key,
-                  score: r.score,
+                  score: r.score || 0,
                   metadata: r.metadata || {},
                   index: indexName
                 })));

@@ -398,8 +398,8 @@ export async function queryVectorsWithNewman(
     
     await fs.writeFile(envFile, JSON.stringify(envData, null, 2));
     
-    // Run Newman with the Query Vectors request
-    const command = `npx newman run "${collectionFile}" --environment "${envFile}" --folder "Query Vectors" --reporters cli,json --reporter-json-export "${outputFile}"`;
+    // Run Newman with specific request name
+    const command = `npx newman run "${collectionFile}" --environment "${envFile}" --folder "Query Vectors with Metadata" --reporters cli,json --reporter-json-export "${outputFile}"`;
     
     console.log('[Newman Query] Executing query command...');
     console.log(`[Newman Query] Command: ${command}`);
@@ -423,21 +423,40 @@ export async function queryVectorsWithNewman(
       
       // Find the Query Vectors request execution
       const queryExecution = output.run?.executions?.find((exec: any) => 
-        exec.item?.name === 'Query Vectors' || 
-        exec.item?.name === 'Query Vectors with Filter'
+        exec.item?.name === 'Query Vectors with Metadata' || 
+        exec.item?.name === 'Query Vectors with Filter' ||
+        exec.item?.name?.toLowerCase().includes('query')
       );
+      
+      console.log('[Newman Query] Found execution:', !!queryExecution);
+      console.log('[Newman Query] Available requests:', output.run?.executions?.map((e: any) => e.item?.name));
       
       if (queryExecution?.response?.stream) {
         const responseBody = queryExecution.response.stream.toString();
-        const response = JSON.parse(responseBody);
+        console.log('[Newman Query] Response body preview:', responseBody.substring(0, 200));
         
-        if (response.vectors && Array.isArray(response.vectors)) {
-          console.log(`[Newman Query] ✅ SUCCESS: Found ${response.vectors.length} similar vectors`);
-          console.log('[Newman Query] First result:', JSON.stringify(response.vectors[0], null, 2));
-          return response.vectors;
-        } else {
-          console.log('[Newman Query] ⚠️ No vectors found in response');
-          console.log('[Newman Query] Response structure:', Object.keys(response));
+        try {
+          const response = JSON.parse(responseBody);
+          
+          if (response.vectors && Array.isArray(response.vectors)) {
+            console.log(`[Newman Query] ✅ SUCCESS: Found ${response.vectors.length} similar vectors`);
+            if (response.vectors.length > 0) {
+              console.log('[Newman Query] First result:', JSON.stringify(response.vectors[0], null, 2));
+            }
+            return response.vectors;
+          } else {
+            console.log('[Newman Query] ⚠️ No vectors found in response');
+            console.log('[Newman Query] Response structure:', Object.keys(response));
+            console.log('[Newman Query] Full response:', JSON.stringify(response, null, 2));
+          }
+        } catch (parseError) {
+          console.error('[Newman Query] Error parsing response:', parseError);
+          console.log('[Newman Query] Raw response:', responseBody);
+        }
+      } else {
+        console.log('[Newman Query] No response stream found');
+        if (queryExecution) {
+          console.log('[Newman Query] Execution details:', JSON.stringify(queryExecution, null, 2).substring(0, 500));
         }
       }
       
