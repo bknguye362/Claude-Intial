@@ -107,7 +107,7 @@ export const defaultQueryTool = createTool({
         console.log(`[Default Query Tool] --- Querying index: ${indexName} ---`);
         
         try {
-          const results = await queryVectorsWithNewman(indexName, embedding, 5);
+          const results = await queryVectorsWithNewman(indexName, embedding, 10);
           console.log(`[Default Query Tool]     Found ${results.length} results`);
           
           if (results.length > 0) {
