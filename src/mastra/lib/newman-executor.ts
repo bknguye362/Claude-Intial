@@ -4,10 +4,14 @@ import { writeFile, unlink, readFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const execAsync = promisify(exec);
 
-const POSTMAN_COLLECTION = './postman-s3-vectors.json';
+const POSTMAN_COLLECTION = path.join(__dirname, '../postman-s3-vectors.json');
 const BUCKET_NAME = process.env.S3_VECTORS_BUCKET || 'chatbotvectors362';
 const REGION = process.env.S3_VECTORS_REGION || 'us-east-2';
 
@@ -295,7 +299,7 @@ export async function uploadVectorsWithNewman(
 export async function listIndicesWithNewman(): Promise<string[]> {
   console.log('[Newman List] Starting listIndicesWithNewman...');
   
-  const collectionFile = './postman-s3-vectors.json';
+  const collectionFile = POSTMAN_COLLECTION;
   const outputFile = './newman-list-output.json';
   let envFile: string | null = null;
   
