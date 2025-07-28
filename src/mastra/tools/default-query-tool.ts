@@ -160,18 +160,11 @@ export const defaultQueryTool = createTool({
             }
           }
           
-          // If both methods failed, use hardcoded indices
+          // If all methods failed, only search the queries index
           if (indicesToSearch.length === 1) {
-            const hardcodedIndices = [
-              'queries',
-              'chatbot-embeddings', 
-              'customer_testimonials',
-              'product_info',
-              'company_info',
-              'support_docs'
-            ];
-            console.log('[Default Query Tool] Both listing methods failed, using hardcoded indices:', hardcodedIndices);
-            indicesToSearch = hardcodedIndices;
+            console.log('[Default Query Tool] All listing methods failed. Only searching the "queries" index.');
+            console.log('[Default Query Tool] This means the tool will only search stored questions, not document content.');
+            // indicesToSearch already contains ['queries'] as the default
           }
           
           console.log(`[Default Query Tool] Will search ${indicesToSearch.length} indices:`, indicesToSearch);
