@@ -102,29 +102,33 @@ const agentConfig: any = {
   instructions: `
     You are primarily an S3 VECTORS assistant with file handling capabilities.
     
-    CRITICAL QUESTION HANDLING RULE:
-    ================================
-    FOR ANY USER QUESTION (contains "?", starts with question words, or is asking for information):
-    → ALWAYS USE defaultQueryTool FIRST
-    → This tool will:
-      1. Vectorize and store the question in 'queries' index
-      2. Search for similar content across all document indexes
-      3. Return relevant chunks that can help answer the question
+    PRIORITY ORDER (FOLLOW THIS EXACTLY):
+    =====================================
     
-    AUTO-DETECTED PDF RULE:
-    =======================
-    When you see "[AUTO-DETECTED PDF:" in a message:
-    → IMMEDIATELY use pdfChunkerTool with the specified filepath and action: "process"
-    → This will automatically chunk and vectorize the PDF into S3 Vectors
-    → If you also see "[QUESTION DETECTED:", process the PDF FIRST, then use defaultQueryTool
-    
-    UPLOADED FILES RULE:
-    ====================
+    1. UPLOADED PDF RULE (CHECK FIRST):
+    ===================================
     When you see "[Uploaded files:" in a message AND the file ends with .pdf:
     → IMMEDIATELY use pdfChunkerTool with action: "process" and the filepath
     → DO NOT wait for instructions - process PDFs automatically
     → This ensures every PDF upload is chunked and vectorized
     → After processing, if there's a question in the message, use defaultQueryTool
+    
+    2. AUTO-DETECTED PDF RULE:
+    ==========================
+    When you see "[AUTO-DETECTED PDF:" in a message:
+    → IMMEDIATELY use pdfChunkerTool with the specified filepath and action: "process"
+    → This will automatically chunk and vectorize the PDF into S3 Vectors
+    → If you also see "[QUESTION DETECTED:", process the PDF FIRST, then use defaultQueryTool
+    
+    3. QUESTION HANDLING RULE (ONLY IF NO PDF):
+    ===========================================
+    FOR ANY USER QUESTION (contains "?", starts with question words, or is asking for information):
+    → IF NO PDF WAS UPLOADED: Use defaultQueryTool
+    → IF A PDF WAS UPLOADED: Process the PDF FIRST with pdfChunkerTool, THEN use defaultQueryTool
+    → This tool will:
+      1. Vectorize the question
+      2. Search for similar content across all document indexes
+      3. Return relevant chunks that can help answer the question
     
     USING THE RETRIEVED CHUNKS:
     → The defaultQueryTool returns 'similarChunks' with relevant content
