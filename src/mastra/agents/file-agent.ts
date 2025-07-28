@@ -423,67 +423,78 @@ const baseFileAgent = new Agent(agentConfig);
 // Store the original stream method
 const originalStream = baseFileAgent.stream.bind(baseFileAgent);
 
-// Override the stream method to add auto-vectorization
+// Override the stream method to add auto-vectorization and PDF processing
 (baseFileAgent as any).stream = async function(messages: any[], options?: any) {
   console.log('[File Agent] ========= STREAM METHOD INTERCEPTED =========');
   console.log('[File Agent] Messages received:', messages.length);
   
-  // Check the last message for questions
+  // Check the last message for files and questions
   if (messages.length > 0) {
     const lastMessage = messages[messages.length - 1];
     const content = lastMessage.content || '';
     
     console.log('[File Agent] Last message content:', content.substring(0, 200));
-    console.log('[File Agent] Checking if message is a question...');
     
-    if (isQuestion(content)) {
-      console.log(`[File Agent] AUTO-DETECTED QUESTION: "${content}"`);
-      console.log('[File Agent] Auto-vectorizing question before processing...');
+    // Check for uploaded PDF files
+    const uploadedFileMatch = content.match(/\[Uploaded files: ([^\]]+)\]/);
+    const fileTaskMatch = content.match(/\[FILE_AGENT_TASK\]\s*([^(]+)\s*\(([^)]+)\)/);
+    
+    let pdfPath: string | null = null;
+    let hasQuestion = isQuestion(content);
+    
+    if (uploadedFileMatch || fileTaskMatch) {
+      console.log('[File Agent] Detected file upload in message');
       
-      try {
-        // Generate embedding for the question
-        const embedding = await generateEmbedding(content);
-        console.log(`[File Agent] Generated embedding with length: ${embedding.length}`);
-        
-        const timestamp = Date.now();
-        
-        // Create vector
-        const vectors = [{
-          key: `question-auto-fileagent-${timestamp}`,
-          embedding: embedding,
-          metadata: {
-            question: content,
-            timestamp: new Date().toISOString(),
-            source: 'file-agent-auto',
-            type: 'user-question',
-            automatic: true,
-            agent: 'fileAgent'
-          }
-        }];
-        
-        // Upload to queries index
-        console.log('[File Agent] Uploading question vector to "queries" index...');
-        console.log('[File Agent] Vector details:', {
-          key: vectors[0].key,
-          embeddingLength: embedding.length,
-          metadataKeys: Object.keys(vectors[0].metadata)
-        });
-        
-        const uploadedCount = await uploadVectorsWithNewman('queries', vectors);
-        console.log(`[File Agent] Upload result: ${uploadedCount} vectors uploaded`);
-        
-        if (uploadedCount > 0) {
-          console.log('[File Agent] Successfully auto-vectorized question');
-        } else {
-          console.log('[File Agent] Failed to upload - uploadedCount is 0');
+      // Extract file path
+      if (fileTaskMatch) {
+        pdfPath = fileTaskMatch[2];
+      } else if (uploadedFileMatch) {
+        const fileInfo = uploadedFileMatch[1];
+        const pathMatch = fileInfo.match(/\(([^)]+)\)/);
+        if (pathMatch) {
+          pdfPath = pathMatch[1];
         }
-        
-      } catch (error) {
-        console.error('[File Agent] Error auto-vectorizing:', error);
-        // Continue with normal processing even if vectorization fails
       }
-    } else {
-      console.log('[File Agent] Not a question, skipping auto-vectorization');
+      
+      if (pdfPath && pdfPath.toLowerCase().endsWith('.pdf')) {
+        console.log(`[File Agent] AUTO-DETECTED PDF: ${pdfPath}`);
+        console.log('[File Agent] Auto-processing PDF with chunking and vectorization...');
+        
+        try {
+          // Use pdfChunkerTool to process the PDF
+          const result = await pdfChunkerTool.execute({
+            context: {
+              action: 'process',
+              filepath: pdfPath
+            }
+          });
+          
+          console.log('[File Agent] PDF processing result:', result);
+          
+          if (result.success && result.fileIndexName) {
+            console.log(`[File Agent] ✅ PDF successfully chunked and vectorized`);
+            console.log(`[File Agent] Created index: ${result.fileIndexName}`);
+            console.log(`[File Agent] Total chunks: ${result.totalChunks || 'unknown'}`);
+            
+            // If there's also a question, we'll handle it after the PDF is processed
+            if (hasQuestion) {
+              console.log('[File Agent] User also asked a question - will use defaultQueryTool after processing');
+            }
+          } else {
+            console.log('[File Agent] ⚠️ PDF processing failed:', result.error || 'Unknown error');
+          }
+        } catch (error) {
+          console.error('[File Agent] Error auto-processing PDF:', error);
+          // Continue with normal processing even if PDF processing fails
+        }
+      }
+    }
+    
+    // Now handle questions (using defaultQueryTool instead of manual vectorization)
+    if (hasQuestion) {
+      console.log(`[File Agent] AUTO-DETECTED QUESTION: "${content}"`);
+      console.log('[File Agent] Will let agent use defaultQueryTool for question processing');
+      // The agent will automatically use defaultQueryTool based on its instructions
     }
   }
   
