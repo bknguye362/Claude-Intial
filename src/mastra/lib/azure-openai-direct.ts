@@ -612,6 +612,9 @@ export function createOpenAI(options?: any) {
                         console.log(`[Azure Direct] DEBUG - Listing method:`, result.debug.listingMethod);
                         console.log(`[Azure Direct] DEBUG - AWS key set:`, result.debug.awsKeySet);
                         console.log(`[Azure Direct] DEBUG - Bucket name:`, result.debug.bucketName);
+                        if (result.debug.listingErrors && result.debug.listingErrors.length > 0) {
+                          console.log(`[Azure Direct] DEBUG - Listing errors:`, result.debug.listingErrors.join(','));
+                        }
                       }
                       if (result.similarChunks && result.similarChunks.length > 0) {
                         console.log(`[Azure Direct] First chunk preview:`, result.similarChunks[0].content?.substring(0, 100));

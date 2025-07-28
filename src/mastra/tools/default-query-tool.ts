@@ -105,8 +105,19 @@ export const defaultQueryTool = createTool({
           
           // Use the listIndicesWithNewman function
           let allIndices: string[] = [];
+          const listingErrors: string[] = [];
           try {
             console.log('[Default Query Tool] Calling listIndicesWithNewman...');
+            console.log('[Default Query Tool] AWS credentials check:');
+            console.log('[Default Query Tool] - AWS_ACCESS_KEY_ID:', process.env.AWS_ACCESS_KEY_ID ? 'SET' : 'NOT SET');
+            console.log('[Default Query Tool] - AWS_SECRET_ACCESS_KEY:', process.env.AWS_SECRET_ACCESS_KEY ? 'SET' : 'NOT SET');
+            
+            if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) {
+              const credError = 'AWS credentials not found in environment';
+              console.log('[Default Query Tool] ⚠️', credError);
+              listingErrors.push(credError);
+            }
+            
             const { listIndicesWithNewman } = await import('../lib/newman-executor.js');
             allIndices = await listIndicesWithNewman();
             
@@ -114,10 +125,14 @@ export const defaultQueryTool = createTool({
               console.log(`[Default Query Tool] ✅ Successfully listed ${allIndices.length} indices:`, allIndices);
               indicesToSearch = allIndices; // Use ALL indices
             } else {
-              console.log('[Default Query Tool] ⚠️ No indices returned from listIndicesWithNewman');
+              const noIndicesError = 'No indices returned from listIndicesWithNewman';
+              console.log('[Default Query Tool] ⚠️', noIndicesError);
+              listingErrors.push(noIndicesError);
             }
           } catch (listError) {
-            console.log('[Default Query Tool] Newman listing failed:', listError instanceof Error ? listError.message : 'Unknown error');
+            const errorMsg = listError instanceof Error ? listError.message : 'Unknown error';
+            console.log('[Default Query Tool] Newman listing failed:', errorMsg);
+            listingErrors.push(`Newman error: ${errorMsg}`);
           }
           
           // If Newman failed, try using s3VectorsListIndicesTool
@@ -135,10 +150,14 @@ export const defaultQueryTool = createTool({
                 console.log(`[Default Query Tool] ✅ List tool found ${allIndices.length} indices:`, allIndices);
                 indicesToSearch = allIndices;
               } else {
-                console.log('[Default Query Tool] List tool failed:', listResult.error || 'Unknown error');
+                const toolError = `List tool failed: ${listResult.error || 'Unknown error'}`;
+                console.log('[Default Query Tool]', toolError);
+                listingErrors.push(toolError);
               }
             } catch (listError) {
-              console.log('[Default Query Tool] s3VectorsListIndicesTool failed:', listError instanceof Error ? listError.message : 'Unknown error');
+              const errorMsg = listError instanceof Error ? listError.message : 'Unknown error';
+              console.log('[Default Query Tool] s3VectorsListIndicesTool failed:', errorMsg);
+              listingErrors.push(`s3VectorsListIndicesTool error: ${errorMsg}`);
               
               // Try s3VectorsBucketMonitorTool as last resort
               try {
@@ -155,7 +174,9 @@ export const defaultQueryTool = createTool({
                   indicesToSearch = allIndices;
                 }
               } catch (monitorError) {
-                console.log('[Default Query Tool] Monitor tool also failed:', monitorError instanceof Error ? monitorError.message : 'Unknown error');
+                const errorMsg = monitorError instanceof Error ? monitorError.message : 'Unknown error';
+                console.log('[Default Query Tool] Monitor tool also failed:', errorMsg);
+                listingErrors.push(`Monitor tool error: ${errorMsg}`);
               }
             }
           }
@@ -243,7 +264,8 @@ export const defaultQueryTool = createTool({
               totalResultsBeforeFilter: similarResults.length,
               listingMethod: indicesToSearch.length > 1 ? 'listIndicesWithNewman' : 'fallback',
               awsKeySet: !!process.env.AWS_ACCESS_KEY_ID,
-              bucketName: process.env.S3_VECTORS_BUCKET || 'chatbotvectors362'
+              bucketName: process.env.S3_VECTORS_BUCKET || 'chatbotvectors362',
+              listingErrors: listingErrors
             }
           };
           
