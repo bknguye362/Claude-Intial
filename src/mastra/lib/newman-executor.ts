@@ -309,8 +309,8 @@ export async function listIndicesWithNewman(): Promise<string[]> {
     // Create environment file (same approach as uploadVectorsWithNewman)
     const envData = {
       values: [
-        { key: 'AWS_ACCESS_KEY_ID', value: process.env.AWS_ACCESS_KEY_ID },
-        { key: 'AWS_SECRET_ACCESS_KEY', value: process.env.AWS_SECRET_ACCESS_KEY },
+        { key: 'AWS_ACCESS_KEY_ID', value: process.env.AWS_ACCESS_KEY_ID || '' },
+        { key: 'AWS_SECRET_ACCESS_KEY', value: process.env.AWS_SECRET_ACCESS_KEY || '' },
         { key: 'AWS_REGION', value: region },
         { key: 'BUCKET_NAME', value: bucketName }
       ]
@@ -319,11 +319,17 @@ export async function listIndicesWithNewman(): Promise<string[]> {
     envFile = `/tmp/newman-list-env-${Date.now()}.json`;
     await fs.writeFile(envFile, JSON.stringify(envData));
     console.log('[Newman List] Created environment file:', envFile);
+    console.log('[Newman List] Environment data:', JSON.stringify(envData, null, 2));
+    
+    // Log credential status
+    console.log('[Newman List] Credential check:');
+    console.log('[Newman List] - AWS_ACCESS_KEY_ID:', process.env.AWS_ACCESS_KEY_ID ? `${process.env.AWS_ACCESS_KEY_ID.substring(0, 10)}...` : 'NOT SET');
+    console.log('[Newman List] - AWS_SECRET_ACCESS_KEY:', process.env.AWS_SECRET_ACCESS_KEY ? 'SET' : 'NOT SET');
     
     // Use environment file instead of --env-var
     const command = `npx newman run "${collectionFile}" --environment "${envFile}" --folder "List All Indexes" --reporters cli,json --reporter-json-export "${outputFile}"`;
     
-    console.log('[Newman List] Running command:', command);
+    console.log('[Newman List] Running command with environment file...');
     
     const { stdout, stderr } = await execAsync(command);
     
