@@ -6,7 +6,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "mastra dev",
-    "build": "tsc -p src/mastra/tsconfig.json && cp -r src/mastra/public src/mastra/dist/",
+    "build": "tsc -p src/mastra/tsconfig.json && cp -r src/mastra/public src/mastra/dist/ && cp src/mastra/postman-s3-vectors.json src/mastra/dist/",
     "start": "node src/mastra/dist/server.js",
     "heroku-postbuild": "npm run build"
   },
