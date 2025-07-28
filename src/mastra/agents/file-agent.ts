@@ -20,6 +20,7 @@ import { multiIndexSimilaritySearchTool } from '../tools/multi-index-similarity-
 import { ragQueryProcessorTool } from '../tools/rag-query-processor.js';
 import { defaultQueryTool } from '../tools/default-query-tool.js';
 // import { queryCommandTool } from '../tools/query-command-tool.js'; // No longer needed - auto-vectorization in workflow
+import { ContextBuilder } from '../lib/context-builder.js';
 
 // Initialize Azure OpenAI
 const openai = createOpenAI();
@@ -111,14 +112,28 @@ const agentConfig: any = {
       2. Search for similar content across all document indexes
       3. Return relevant chunks that can help answer the question
     
-    USING THE RETRIEVED CHUNKS:
-    → The defaultQueryTool returns 'similarChunks' with relevant content
-    → Each chunk contains:
-      - content: The actual text from documents
-      - score: Similarity score (higher = more relevant)
-      - metadata: Additional context about the chunk
-    → USE THESE CHUNKS to provide accurate, context-aware answers
-    → Always cite or reference the source when using chunk content
+    USING THE RETRIEVED CHUNKS WITH ENHANCED CONTEXT:
+    → The defaultQueryTool returns enhanced contextual information:
+      - similarChunks: Array of relevant chunks with content and metadata
+      - documentContext: Summary of which documents and pages are relevant
+      - Each chunk includes a 'context' object with:
+        * documentId: The source document
+        * pageStart/pageEnd: Specific page numbers
+        * pageReference: Formatted page citation (e.g., "page 42" or "pages 15-18")
+        * citation: Full citation format (e.g., "economics.pdf (pages 15-18)")
+        * chunkIndex: Position within the document
+    
+    CITATION REQUIREMENTS:
+    → ALWAYS include page references when using chunk content
+    → Format citations as: [Document Name, pages X-Y]
+    → When multiple chunks from same pages, group them
+    → Example: "According to the textbook [Economics 101, pages 23-24], supply and demand..."
+    
+    CONTEXTUAL ANSWERING:
+    → Use the documentContext.summary to understand which documents are most relevant
+    → Present information in order of relevance (highest scores first)
+    → Group information from the same document/pages together
+    → Mention if information spans multiple pages or documents
     
     Example workflow:
     1. User asks: "What is machine learning?"

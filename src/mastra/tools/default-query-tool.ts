@@ -128,7 +128,7 @@ export const defaultQueryTool = createTool({
         }
       }
       
-      // Step 5: Sort all results by score and show top 10 (exactly like the test file)
+      // Step 5: Sort all results by score and show top 10 with enhanced context
       console.log('\n[Default Query Tool] 5. TOP 10 RESULTS ACROSS ALL INDICES:');
       console.log('[Default Query Tool] =====================================');
       
@@ -136,29 +136,89 @@ export const defaultQueryTool = createTool({
       allResults.sort((a, b) => (b.score || 0) - (a.score || 0));
       const top10 = allResults.slice(0, 10);
       
+      // Group results by document for better contextualization
+      const resultsByDocument = new Map<string, any[]>();
+      
       top10.forEach((result, i) => {
+        const docId = result.metadata?.documentId || result.metadata?.filename || result.index;
+        if (!resultsByDocument.has(docId)) {
+          resultsByDocument.set(docId, []);
+        }
+        resultsByDocument.get(docId)!.push(result);
+        
         console.log(`[Default Query Tool] ${i + 1}. [${result.index}] Score: ${result.score || 'N/A'}`);
         console.log(`[Default Query Tool]    Key: ${result.key}`);
+        if (result.metadata?.pageStart) {
+          console.log(`[Default Query Tool]    Pages: ${result.metadata.pageStart}-${result.metadata.pageEnd || result.metadata.pageStart}`);
+          console.log(`[Default Query Tool]    Chunk: ${result.metadata.chunkIndex + 1}/${result.metadata.totalChunks || '?'}`);
+        }
         console.log(`[Default Query Tool]    Content: ${(result.metadata?.content || 'No content').substring(0, 200)}...`);
       });
       
       console.log(`[Default Query Tool] Total results found across all indices: ${allResults.length}`);
+      console.log(`[Default Query Tool] Results from ${resultsByDocument.size} different documents`);
       
-      // Return the results
-      const result = {
-        success: true,
-        message: 'Question vectorized and similar content found (without storing)',
-        timestamp: new Date().toISOString(),
-        questionLength: context.question.length,
-        embeddingDimension: embedding.length,
-        similarChunks: top10.map(r => ({
+      // Build contextualized response with page references
+      const contextualizedChunks = top10.map(r => {
+        const chunk = {
           key: r.key,
           score: r.score,
           index: r.index,
           metadata: r.metadata,
-          content: r.metadata?.content || r.metadata?.text || 'No content available'
-        })),
+          content: r.metadata?.content || r.metadata?.text || 'No content available',
+          // Enhanced contextual information
+          context: {
+            documentId: r.metadata?.documentId || r.metadata?.filename || 'Unknown',
+            pageStart: r.metadata?.pageStart,
+            pageEnd: r.metadata?.pageEnd,
+            chunkIndex: r.metadata?.chunkIndex,
+            totalChunks: r.metadata?.totalChunks,
+            timestamp: r.metadata?.timestamp
+          }
+        };
+        
+        // Add page reference string for easy citation
+        if (r.metadata?.pageStart) {
+          const pageRef = r.metadata.pageEnd && r.metadata.pageEnd !== r.metadata.pageStart 
+            ? `pages ${r.metadata.pageStart}-${r.metadata.pageEnd}`
+            : `page ${r.metadata.pageStart}`;
+          chunk.context.pageReference = pageRef;
+          chunk.context.citation = `${chunk.context.documentId} (${pageRef})`;
+        }
+        
+        return chunk;
+      });
+      
+      // Create document summary for better context understanding
+      const documentSummary = Array.from(resultsByDocument.entries()).map(([docId, docResults]) => {
+        const pageNumbers = new Set<number>();
+        docResults.forEach(r => {
+          if (r.metadata?.pageStart) pageNumbers.add(r.metadata.pageStart);
+          if (r.metadata?.pageEnd) pageNumbers.add(r.metadata.pageEnd);
+        });
+        
+        return {
+          documentId: docId,
+          relevantChunks: docResults.length,
+          relevantPages: Array.from(pageNumbers).sort((a, b) => a - b),
+          averageScore: docResults.reduce((sum, r) => sum + (r.score || 0), 0) / docResults.length
+        };
+      });
+      
+      // Return the enhanced results
+      const result = {
+        success: true,
+        message: 'Question vectorized and similar content found with enhanced context',
+        timestamp: new Date().toISOString(),
+        questionLength: context.question.length,
+        embeddingDimension: embedding.length,
+        similarChunks: contextualizedChunks,
         totalSimilarChunks: top10.length,
+        // Document-level context summary
+        documentContext: {
+          documentsFound: documentSummary.length,
+          summary: documentSummary
+        },
         // Debug information
         debug: {
           indicesSearched: indices.join(','),
