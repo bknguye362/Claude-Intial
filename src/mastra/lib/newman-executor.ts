@@ -349,7 +349,24 @@ export async function listIndicesWithNewman(): Promise<string[]> {
         console.log('[Newman List] Response status text:', listExecution.response?.status);
         
         if (listExecution.response?.stream) {
-          const responseBody = listExecution.response.stream.toString();
+          // Handle different types of stream data
+          let responseBody: string;
+          if (Buffer.isBuffer(listExecution.response.stream)) {
+            responseBody = listExecution.response.stream.toString();
+          } else if (typeof listExecution.response.stream === 'object') {
+            // Check if it's a buffer-like object with type and data
+            if (listExecution.response.stream.type === 'Buffer' && Array.isArray(listExecution.response.stream.data)) {
+              console.log('[Newman List] Stream is a Buffer object, converting from data array...');
+              const buffer = Buffer.from(listExecution.response.stream.data);
+              responseBody = buffer.toString();
+            } else {
+              console.log('[Newman List] Stream is already an object:', listExecution.response.stream);
+              responseBody = JSON.stringify(listExecution.response.stream);
+            }
+          } else {
+            responseBody = String(listExecution.response.stream);
+          }
+          
           console.log('[Newman List] Response body length:', responseBody.length);
           console.log('[Newman List] Response body preview:', responseBody.substring(0, 200));
           
@@ -526,7 +543,24 @@ export async function queryVectorsWithNewman(
       console.log('[Newman Query] Available requests:', output.run?.executions?.map((e: any) => e.item?.name));
       
       if (queryExecution?.response?.stream) {
-        const responseBody = queryExecution.response.stream.toString();
+        // Handle different types of stream data (same as listIndices)
+        let responseBody: string;
+        if (Buffer.isBuffer(queryExecution.response.stream)) {
+          responseBody = queryExecution.response.stream.toString();
+        } else if (typeof queryExecution.response.stream === 'object') {
+          // Check if it's a buffer-like object with type and data
+          if (queryExecution.response.stream.type === 'Buffer' && Array.isArray(queryExecution.response.stream.data)) {
+            console.log('[Newman Query] Stream is a Buffer object, converting from data array...');
+            const buffer = Buffer.from(queryExecution.response.stream.data);
+            responseBody = buffer.toString();
+          } else {
+            console.log('[Newman Query] Stream is already an object:', queryExecution.response.stream);
+            responseBody = JSON.stringify(queryExecution.response.stream);
+          }
+        } else {
+          responseBody = String(queryExecution.response.stream);
+        }
+        
         console.log('[Newman Query] Response body preview:', responseBody.substring(0, 200));
         
         try {
