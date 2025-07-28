@@ -70,37 +70,9 @@ export const defaultQueryTool = createTool({
       console.log(`[Default Query Tool]    Embedding generated, length: ${embedding.length}`);
       console.log(`[Default Query Tool]    First 5 values: [${embedding.slice(0, 5).map(v => v.toFixed(4)).join(', ')}...]`);
       
-      const timestamp = Date.now();
-      
-      // Step 2: Create and upload vector to queries index
-      const vectors = [{
-        key: `question-default-tool-${timestamp}`,
-        embedding: embedding,
-        metadata: {
-          question: context.question,
-          context: context.context || '',
-          timestamp: new Date().toISOString(),
-          source: 'default-query-tool',
-          type: 'user-question',
-          automatic: true,
-          tool: 'defaultQueryTool'
-        }
-      }];
-      
-      console.log('[Default Query Tool] 2. Uploading question vector to "queries" index...');
-      const uploadedCount = await uploadVectorsWithNewman('queries', vectors);
-      console.log(`[Default Query Tool]    Upload result: ${uploadedCount} vectors uploaded`);
-      
-      if (uploadedCount === 0) {
-        console.log('[Default Query Tool] ❌ Failed to upload vector');
-        return {
-          success: false,
-          message: 'Failed to upload question vector',
-          error: 'Upload returned 0 vectors'
-        };
-      }
-      
-      console.log('[Default Query Tool] ✅ Successfully vectorized and stored question');
+      // Step 2: Skip uploading - we'll query directly with the embedding
+      console.log('[Default Query Tool] 2. Skipping vector storage - will query directly');
+      console.log('[Default Query Tool] ✅ Question vectorized, ready to search');
       
       // Step 3: List all indices (exactly like the test file)
       console.log('\n[Default Query Tool] 3. Listing all indices...');
@@ -175,9 +147,7 @@ export const defaultQueryTool = createTool({
       // Return the results
       const result = {
         success: true,
-        message: 'Question vectorized, stored, and similar content found',
-        vectorKey: vectors[0].key,
-        index: 'queries',
+        message: 'Question vectorized and similar content found (without storing)',
         timestamp: new Date().toISOString(),
         questionLength: context.question.length,
         embeddingDimension: embedding.length,
