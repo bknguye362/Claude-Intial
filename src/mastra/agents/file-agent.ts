@@ -109,9 +109,10 @@ const agentConfig: any = {
     ===================================
     When you see "[Uploaded files:" in a message AND the file ends with .pdf:
     → IMMEDIATELY use pdfChunkerTool with action: "process" and the filepath
-    → DO NOT wait for instructions - process PDFs automatically
-    → This ensures every PDF upload is chunked and vectorized
-    → After processing, if there's a question in the message, use defaultQueryTool
+    → ALWAYS use action: "process" first - never "summarize" or "query"
+    → This creates a file-specific index in S3 Vectors (file-[name]-[date])
+    → After processing is complete, handle ANY user request using defaultQueryTool
+    → The defaultQueryTool will search the newly created index to answer questions
     
     2. AUTO-DETECTED PDF RULE:
     ==========================

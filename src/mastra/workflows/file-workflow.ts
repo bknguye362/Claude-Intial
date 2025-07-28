@@ -133,10 +133,11 @@ const generateFileResponse = createStep({
     // Build context based on what was detected
     if (inputData.hasPdf && inputData.pdfPath) {
       context = `A PDF file has been uploaded: ${inputData.fileName} at ${inputData.pdfPath}. `;
-      context += `You MUST use pdfChunkerTool with action: "process" and filepath: "${inputData.pdfPath}" to chunk and vectorize this PDF. `;
+      context += `You MUST FIRST use pdfChunkerTool with action: "process" and filepath: "${inputData.pdfPath}" to chunk and vectorize this PDF into S3 Vectors. `;
+      context += `This will create a file-specific index (file-${inputData.fileName?.replace(/\.pdf$/i, '')}-YYYY-MM-DD). `;
       
-      if (inputData.hasQuestion) {
-        context += `After processing the PDF, use defaultQueryTool to answer the user's question: "${inputData.actualUserMessage}". `;
+      if (inputData.hasQuestion || inputData.actualUserMessage) {
+        context += `AFTER processing is complete, use defaultQueryTool with question: "${inputData.actualUserMessage || 'Summarize this document'}" to search the newly created index and answer the user. `;
       }
     } else if (inputData.hasQuestion) {
       context = `The user has asked a question. Use defaultQueryTool to find relevant information and answer: "${inputData.actualUserMessage}". `;
