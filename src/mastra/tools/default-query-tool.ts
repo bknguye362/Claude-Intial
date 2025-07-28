@@ -103,89 +103,32 @@ export const defaultQueryTool = createTool({
           
           let indicesToSearch = ['queries']; // Always include queries
           
-          // Use the listIndicesWithNewman function
+          // Use the listIndicesWithNewman function (simplified like the test)
           let allIndices: string[] = [];
           const listingErrors: string[] = [];
+          
           try {
-            console.log('[Default Query Tool] Calling listIndicesWithNewman...');
-            console.log('[Default Query Tool] AWS credentials check:');
-            console.log('[Default Query Tool] - AWS_ACCESS_KEY_ID:', process.env.AWS_ACCESS_KEY_ID ? 'SET' : 'NOT SET');
-            console.log('[Default Query Tool] - AWS_SECRET_ACCESS_KEY:', process.env.AWS_SECRET_ACCESS_KEY ? 'SET' : 'NOT SET');
-            
-            if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) {
-              const credError = 'AWS credentials not found in environment';
-              console.log('[Default Query Tool] ⚠️', credError);
-              listingErrors.push(credError);
-            }
-            
+            console.log('[Default Query Tool] Listing all indices...');
             const { listIndicesWithNewman } = await import('../lib/newman-executor.js');
             allIndices = await listIndicesWithNewman();
             
             if (allIndices && allIndices.length > 0) {
-              console.log(`[Default Query Tool] ✅ Successfully listed ${allIndices.length} indices:`, allIndices);
+              console.log(`[Default Query Tool] ✅ Found ${allIndices.length} indices:`, allIndices);
               indicesToSearch = allIndices; // Use ALL indices
             } else {
-              const noIndicesError = 'No indices returned from listIndicesWithNewman';
-              console.log('[Default Query Tool] ⚠️', noIndicesError);
-              listingErrors.push(noIndicesError);
+              console.log('[Default Query Tool] ⚠️ No indices returned from listing');
+              listingErrors.push('No indices returned - check AWS credentials on server');
             }
           } catch (listError) {
             const errorMsg = listError instanceof Error ? listError.message : 'Unknown error';
-            console.log('[Default Query Tool] Newman listing failed:', errorMsg);
-            listingErrors.push(`Newman error: ${errorMsg}`);
+            console.log('[Default Query Tool] Listing failed:', errorMsg);
+            listingErrors.push(`Listing error: ${errorMsg}`);
           }
           
-          // If Newman failed, try using s3VectorsListIndicesTool
-          if (allIndices.length === 0) {
-            try {
-              console.log('[Default Query Tool] Trying s3VectorsListIndicesTool...');
-              const { s3VectorsListIndicesTool } = await import('./s3-vectors-flexible-query.js');
-              const listResult = await s3VectorsListIndicesTool.execute({
-                runtimeContext: {},
-                context: { bucketName: process.env.S3_VECTORS_BUCKET || 'chatbotvectors362' }
-              } as any);
-              
-              if (listResult.success && listResult.indices) {
-                allIndices = listResult.indices.map((idx: any) => idx.indexName);
-                console.log(`[Default Query Tool] ✅ List tool found ${allIndices.length} indices:`, allIndices);
-                indicesToSearch = allIndices;
-              } else {
-                const toolError = `List tool failed: ${listResult.error || 'Unknown error'}`;
-                console.log('[Default Query Tool]', toolError);
-                listingErrors.push(toolError);
-              }
-            } catch (listError) {
-              const errorMsg = listError instanceof Error ? listError.message : 'Unknown error';
-              console.log('[Default Query Tool] s3VectorsListIndicesTool failed:', errorMsg);
-              listingErrors.push(`s3VectorsListIndicesTool error: ${errorMsg}`);
-              
-              // Try s3VectorsBucketMonitorTool as last resort
-              try {
-                console.log('[Default Query Tool] Trying s3VectorsBucketMonitorTool as last resort...');
-                const { s3VectorsBucketMonitorTool } = await import('./s3-vectors-bucket-monitor.js');
-                const monitorResult = await s3VectorsBucketMonitorTool.execute({
-                  runtimeContext: {},
-                  context: { action: 'list-indices' }
-                } as any);
-                
-                if (monitorResult.success && monitorResult.indices) {
-                  allIndices = monitorResult.indices.map((idx: any) => idx.indexName);
-                  console.log(`[Default Query Tool] ✅ Monitor tool found ${allIndices.length} indices:`, allIndices);
-                  indicesToSearch = allIndices;
-                }
-              } catch (monitorError) {
-                const errorMsg = monitorError instanceof Error ? monitorError.message : 'Unknown error';
-                console.log('[Default Query Tool] Monitor tool also failed:', errorMsg);
-                listingErrors.push(`Monitor tool error: ${errorMsg}`);
-              }
-            }
-          }
-          
-          // If all methods failed, only search the queries index
+          // If listing failed, still search the queries index
           if (indicesToSearch.length === 1) {
-            console.log('[Default Query Tool] All listing methods failed. Only searching the "queries" index.');
-            console.log('[Default Query Tool] This means the tool will only search stored questions, not document content.');
-            // indicesToSearch already contains ['queries'] as the default
+            console.log('[Default Query Tool] Listing failed. Only searching the "queries" index.');
+            console.log('[Default Query Tool] Note: Document content will not be searched.');
           }
           
           console.log(`[Default Query Tool] Will search ${indicesToSearch.length} indices:`, indicesToSearch);
