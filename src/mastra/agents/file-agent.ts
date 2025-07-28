@@ -21,6 +21,7 @@ import { ragQueryProcessorTool } from '../tools/rag-query-processor.js';
 import { defaultQueryTool } from '../tools/default-query-tool.js';
 // import { queryCommandTool } from '../tools/query-command-tool.js'; // No longer needed - auto-vectorization in workflow
 import { ContextBuilder } from '../lib/context-builder.js';
+import { checkIndexStatusTool } from '../tools/check-index-status.js';
 
 // Initialize Azure OpenAI
 const openai = createOpenAI();
@@ -412,6 +413,7 @@ const agentConfig: any = {
     s3VectorsPostmanUploadTool,
     s3VectorsBucketMonitorTool,
     s3VectorsPostmanFlexibleTool,
+    checkIndexStatusTool,
     s3VectorsPostmanListRequestsTool,
     s3VectorsDeleteAllTool,
     s3VectorsGetByKeyTool,
