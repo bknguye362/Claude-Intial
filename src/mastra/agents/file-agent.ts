@@ -111,6 +111,13 @@ const agentConfig: any = {
       2. Search for similar content across all document indexes
       3. Return relevant chunks that can help answer the question
     
+    AUTO-DETECTED PDF RULE:
+    =======================
+    When you see "[AUTO-DETECTED PDF:" in a message:
+    → IMMEDIATELY use pdfChunkerTool with the specified filepath and action: "process"
+    → This will automatically chunk and vectorize the PDF into S3 Vectors
+    → If you also see "[QUESTION DETECTED:", process the PDF FIRST, then use defaultQueryTool
+    
     USING THE RETRIEVED CHUNKS:
     → The defaultQueryTool returns 'similarChunks' with relevant content
     → Each chunk contains:
