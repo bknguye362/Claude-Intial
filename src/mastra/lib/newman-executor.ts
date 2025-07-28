@@ -297,6 +297,7 @@ export async function listIndicesWithNewman(): Promise<string[]> {
   
   const collectionFile = './postman-s3-vectors.json';
   const outputFile = './newman-list-output.json';
+  let envFile: string | null = null;
   
   console.log('[Newman List] Collection file:', collectionFile);
   console.log('[Newman List] Collection exists?', existsSync(collectionFile));
@@ -305,8 +306,22 @@ export async function listIndicesWithNewman(): Promise<string[]> {
     const bucketName = process.env.S3_VECTORS_BUCKET || 'chatbotvectors362';
     const region = process.env.S3_VECTORS_REGION || 'us-east-2';
     
-    // Use --env-var instead of environment file (like defaultQueryTool does)
-    const command = `npx newman run "${collectionFile}" --env-var "BUCKET_NAME=${bucketName}" --env-var "AWS_REGION=${region}" --env-var "AWS_ACCESS_KEY_ID=${process.env.AWS_ACCESS_KEY_ID}" --env-var "AWS_SECRET_ACCESS_KEY=${process.env.AWS_SECRET_ACCESS_KEY}" --folder "List All Indexes" --reporters cli,json --reporter-json-export "${outputFile}"`;
+    // Create environment file (same approach as uploadVectorsWithNewman)
+    const envData = {
+      values: [
+        { key: 'AWS_ACCESS_KEY_ID', value: process.env.AWS_ACCESS_KEY_ID },
+        { key: 'AWS_SECRET_ACCESS_KEY', value: process.env.AWS_SECRET_ACCESS_KEY },
+        { key: 'AWS_REGION', value: region },
+        { key: 'BUCKET_NAME', value: bucketName }
+      ]
+    };
+    
+    envFile = `/tmp/newman-list-env-${Date.now()}.json`;
+    await fs.writeFile(envFile, JSON.stringify(envData));
+    console.log('[Newman List] Created environment file:', envFile);
+    
+    // Use environment file instead of --env-var
+    const command = `npx newman run "${collectionFile}" --environment "${envFile}" --folder "List All Indexes" --reporters cli,json --reporter-json-export "${outputFile}"`;
     
     console.log('[Newman List] Running command:', command);
     
@@ -385,6 +400,7 @@ export async function listIndicesWithNewman(): Promise<string[]> {
               });
               
               await fs.unlink(outputFile);
+              if (envFile && existsSync(envFile)) await fs.unlink(envFile);
               return indexNames;
             } else {
               console.log('[Newman List] ⚠️ No indexes array in response');
@@ -427,6 +443,7 @@ export async function listIndicesWithNewman(): Promise<string[]> {
   } finally {
     try {
       if (existsSync(outputFile)) await fs.unlink(outputFile);
+      if (envFile && existsSync(envFile)) await fs.unlink(envFile);
     } catch (cleanupError) {
       console.error('[Newman List] Cleanup error:', cleanupError);
     }
