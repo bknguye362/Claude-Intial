@@ -1,6 +1,7 @@
 import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
 import { uploadVectorsWithNewman, queryVectorsWithNewman, listIndicesWithNewman } from '../lib/newman-executor.js';
+import { ContextBuilder } from '../lib/context-builder.js';
 
 // Azure OpenAI configuration for embeddings
 const AZURE_OPENAI_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT || 'https://franklin-open-ai-test.openai.azure.com';
@@ -158,67 +159,43 @@ export const defaultQueryTool = createTool({
       console.log(`[Default Query Tool] Total results found across all indices: ${allResults.length}`);
       console.log(`[Default Query Tool] Results from ${resultsByDocument.size} different documents`);
       
-      // Build contextualized response with page references
-      const contextualizedChunks = top10.map(r => {
-        const chunk = {
-          key: r.key,
-          score: r.score,
-          index: r.index,
-          metadata: r.metadata,
-          content: r.metadata?.content || r.metadata?.text || 'No content available',
-          // Enhanced contextual information
-          context: {
-            documentId: r.metadata?.documentId || r.metadata?.filename || 'Unknown',
-            pageStart: r.metadata?.pageStart,
-            pageEnd: r.metadata?.pageEnd,
-            chunkIndex: r.metadata?.chunkIndex,
-            totalChunks: r.metadata?.totalChunks,
-            timestamp: r.metadata?.timestamp
-          }
-        };
-        
-        // Add page reference string for easy citation
-        if (r.metadata?.pageStart) {
-          const pageRef = r.metadata.pageEnd && r.metadata.pageEnd !== r.metadata.pageStart 
-            ? `pages ${r.metadata.pageStart}-${r.metadata.pageEnd}`
-            : `page ${r.metadata.pageStart}`;
-          chunk.context.pageReference = pageRef;
-          chunk.context.citation = `${chunk.context.documentId} (${pageRef})`;
+      // Build contextualized chunks for ContextBuilder
+      const contextualizedChunks = top10.map(r => ({
+        key: r.key,
+        score: r.score,
+        index: r.index,
+        content: r.metadata?.content || r.metadata?.text || 'No content available',
+        metadata: r.metadata,
+        context: {
+          documentId: r.metadata?.documentId || r.metadata?.filename || r.index,
+          pageStart: r.metadata?.pageStart,
+          pageEnd: r.metadata?.pageEnd,
+          chunkIndex: r.metadata?.chunkIndex,
+          totalChunks: r.metadata?.totalChunks,
+          timestamp: r.metadata?.timestamp
         }
-        
-        return chunk;
-      });
+      }));
       
-      // Create document summary for better context understanding
-      const documentSummary = Array.from(resultsByDocument.entries()).map(([docId, docResults]) => {
-        const pageNumbers = new Set<number>();
-        docResults.forEach(r => {
-          if (r.metadata?.pageStart) pageNumbers.add(r.metadata.pageStart);
-          if (r.metadata?.pageEnd) pageNumbers.add(r.metadata.pageEnd);
-        });
-        
-        return {
-          documentId: docId,
-          relevantChunks: docResults.length,
-          relevantPages: Array.from(pageNumbers).sort((a, b) => a - b),
-          averageScore: docResults.reduce((sum, r) => sum + (r.score || 0), 0) / docResults.length
-        };
-      });
+      // Use ContextBuilder to create enhanced response
+      const contextualResponse = ContextBuilder.buildContextualResponse(contextualizedChunks);
       
-      // Return the enhanced results
+      // Return the enhanced results with ContextBuilder output
       const result = {
         success: true,
         message: 'Question vectorized and similar content found with enhanced context',
         timestamp: new Date().toISOString(),
         questionLength: context.question.length,
         embeddingDimension: embedding.length,
-        similarChunks: contextualizedChunks,
-        totalSimilarChunks: top10.length,
-        // Document-level context summary
+        similarChunks: contextualResponse.chunks,
+        totalSimilarChunks: contextualResponse.chunks.length,
+        // Document-level context summary from ContextBuilder
         documentContext: {
-          documentsFound: documentSummary.length,
-          summary: documentSummary
+          documentsFound: contextualResponse.documentSummary.length,
+          summary: contextualResponse.documentSummary
         },
+        // Additional context from ContextBuilder
+        contextString: contextualResponse.contextString,
+        citations: contextualResponse.citations,
         // Debug information
         debug: {
           indicesSearched: indices.join(','),
