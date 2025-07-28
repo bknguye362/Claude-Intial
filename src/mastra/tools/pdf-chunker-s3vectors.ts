@@ -272,9 +272,9 @@ export const pdfChunkerS3VectorsTool = createTool({
           
           // Add a short timestamp suffix for uniqueness (just date, not full timestamp)
           const dateStr = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-          context.indexName = `${cleanName}-${dateStr}`;
+          context.indexName = `file-${cleanName}-${dateStr}`;
           
-          console.log(`[PDF Chunker S3Vectors] No index name provided, using: ${context.indexName}`);
+          console.log(`[PDF Chunker S3Vectors] No index name provided, generated: ${context.indexName}`);
         }
         
         console.log(`[PDF Chunker S3Vectors] Using Newman/Postman to create index '${context.indexName}'`);
@@ -379,6 +379,7 @@ export const pdfChunkerS3VectorsTool = createTool({
           success: true,
           action: 'process',
           filename: basename(filepath),
+          fileIndexName: fileIndexName,
           totalChunks: chunks.length,
           chunks: chunks.slice(0, 3).map((c, i) => ({
             index: i,
