@@ -454,7 +454,21 @@ const originalStream = baseFileAgent.stream.bind(baseFileAgent);
     const fileTaskMatch = content.match(/\[FILE_AGENT_TASK\]\s*([^(]+)\s*\(([^)]+)\)/);
     
     let pdfPath: string | null = null;
-    let hasQuestion = isQuestion(content);
+    
+    // Only check for questions in the actual user message, not the file upload metadata
+    let actualUserMessage = content;
+    if (uploadedFileMatch) {
+      // Remove the [Uploaded files: ...] part to get the actual user message
+      actualUserMessage = content.replace(/\[Uploaded files: [^\]]+\]\n?/, '').trim();
+    } else if (fileTaskMatch) {
+      // Remove the [FILE_AGENT_TASK] part
+      actualUserMessage = content.replace(/\[FILE_AGENT_TASK\][^)]+\)\s*/, '').trim();
+    }
+    
+    let hasQuestion = actualUserMessage && isQuestion(actualUserMessage);
+    
+    console.log('[File Agent] Actual user message:', actualUserMessage || '(empty)');
+    console.log('[File Agent] Has question:', hasQuestion);
     
     if (uploadedFileMatch || fileTaskMatch) {
       console.log('[File Agent] Detected file upload in message');
@@ -502,7 +516,7 @@ const originalStream = baseFileAgent.stream.bind(baseFileAgent);
     
     // Now handle questions (using defaultQueryTool instead of manual vectorization)
     if (hasQuestion) {
-      console.log(`[File Agent] AUTO-DETECTED QUESTION: "${content}"`);
+      console.log(`[File Agent] AUTO-DETECTED QUESTION: "${actualUserMessage}"`);
       console.log('[File Agent] Will let agent use defaultQueryTool for question processing');
       // The agent will automatically use defaultQueryTool based on its instructions
     }
