@@ -461,27 +461,23 @@ const originalStream = baseFileAgent.stream.bind(baseFileAgent);
         console.log('[File Agent] Auto-processing PDF with chunking and vectorization...');
         
         try {
-          // Use pdfChunkerTool to process the PDF
-          const result = await pdfChunkerTool.execute({
-            context: {
-              action: 'process',
-              filepath: pdfPath
-            }
-          });
+          // Since we're in the stream override, we don't have direct access to tools
+          // Instead, we'll just log that PDF was detected and let the agent handle it
+          console.log('[File Agent] PDF will be processed by agent with pdfChunkerTool');
+          console.log('[File Agent] The agent should use: pdfChunkerTool with action: "process"');
           
-          console.log('[File Agent] PDF processing result:', result);
+          // Modify the message to include instructions for the agent
+          const lastMessageIndex = messages.length - 1;
+          messages[lastMessageIndex] = {
+            ...messages[lastMessageIndex],
+            content: messages[lastMessageIndex].content + 
+              `\n\n[AUTO-DETECTED PDF: Please use pdfChunkerTool with action: "process" and filepath: "${pdfPath}" to automatically chunk and vectorize this PDF file.]`
+          };
           
-          if (result.success && result.fileIndexName) {
-            console.log(`[File Agent] ✅ PDF successfully chunked and vectorized`);
-            console.log(`[File Agent] Created index: ${result.fileIndexName}`);
-            console.log(`[File Agent] Total chunks: ${result.totalChunks || 'unknown'}`);
-            
-            // If there's also a question, we'll handle it after the PDF is processed
-            if (hasQuestion) {
-              console.log('[File Agent] User also asked a question - will use defaultQueryTool after processing');
-            }
-          } else {
-            console.log('[File Agent] ⚠️ PDF processing failed:', result.error || 'Unknown error');
+          // If there's also a question, add that instruction too
+          if (hasQuestion) {
+            messages[lastMessageIndex].content += 
+              '\n[QUESTION DETECTED: After processing the PDF, please use defaultQueryTool to answer the user\'s question.]';
           }
         } catch (error) {
           console.error('[File Agent] Error auto-processing PDF:', error);
