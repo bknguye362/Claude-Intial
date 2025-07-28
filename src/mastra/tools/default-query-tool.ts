@@ -1,6 +1,6 @@
 import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
-import { uploadVectorsWithNewman, queryVectorsWithNewman } from '../lib/newman-executor.js';
+import { uploadVectorsWithNewman, queryVectorsWithNewman, listIndicesWithNewman } from '../lib/newman-executor.js';
 
 // Azure OpenAI configuration for embeddings
 const AZURE_OPENAI_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT || 'https://franklin-open-ai-test.openai.azure.com';
@@ -8,7 +8,7 @@ const AZURE_OPENAI_API_KEY = process.env.AZURE_OPENAI_API_KEY || process.env.AZU
 const AZURE_OPENAI_API_VERSION = process.env.AZURE_OPENAI_API_VERSION || '2023-12-01-preview';
 const EMBEDDINGS_DEPLOYMENT = 'text-embedding-ada-002';
 
-// Helper function to generate embeddings
+// Helper function to generate embeddings - identical to test file
 async function generateEmbedding(text: string): Promise<number[]> {
   if (!AZURE_OPENAI_API_KEY) {
     console.log('[Default Query Tool] No API key for embeddings, using mock embeddings...');
@@ -56,15 +56,23 @@ export const defaultQueryTool = createTool({
     console.log(`[Default Query Tool] Question: "${context.question}"`);
     console.log(`[Default Query Tool] Context: ${context.context || 'None'}`);
     
+    console.log('[Default Query Tool] Environment check:');
+    console.log('[Default Query Tool] - AWS_ACCESS_KEY_ID:', process.env.AWS_ACCESS_KEY_ID ? `Set (${process.env.AWS_ACCESS_KEY_ID.substring(0, 8)}...)` : 'NOT SET');
+    console.log('[Default Query Tool] - AWS_SECRET_ACCESS_KEY:', process.env.AWS_SECRET_ACCESS_KEY ? 'Set' : 'NOT SET');
+    console.log('[Default Query Tool] - AZURE_OPENAI_API_KEY:', AZURE_OPENAI_API_KEY ? 'Set' : 'NOT SET');
+    console.log('[Default Query Tool] - S3_VECTORS_BUCKET:', process.env.S3_VECTORS_BUCKET || 'chatbotvectors362');
+    console.log('[Default Query Tool] - S3_VECTORS_REGION:', process.env.S3_VECTORS_REGION || 'us-east-2');
+    
     try {
-      // Generate embedding for the question
-      console.log('[Default Query Tool] Generating embedding for question...');
+      // Step 1: Generate embedding for the question
+      console.log('[Default Query Tool] 1. Generating embedding for question...');
       const embedding = await generateEmbedding(context.question);
-      console.log(`[Default Query Tool] Generated embedding with length: ${embedding.length}`);
+      console.log(`[Default Query Tool]    Embedding generated, length: ${embedding.length}`);
+      console.log(`[Default Query Tool]    First 5 values: [${embedding.slice(0, 5).map(v => v.toFixed(4)).join(', ')}...]`);
       
       const timestamp = Date.now();
       
-      // Create vector with metadata
+      // Step 2: Create and upload vector to queries index
       const vectors = [{
         key: `question-default-tool-${timestamp}`,
         embedding: embedding,
@@ -79,166 +87,12 @@ export const defaultQueryTool = createTool({
         }
       }];
       
-      // Upload to queries index
-      console.log('[Default Query Tool] Uploading question vector to "queries" index...');
-      console.log('[Default Query Tool] Vector details:', {
-        key: vectors[0].key,
-        embeddingLength: embedding.length,
-        metadataKeys: Object.keys(vectors[0].metadata)
-      });
-      
+      console.log('[Default Query Tool] 2. Uploading question vector to "queries" index...');
       const uploadedCount = await uploadVectorsWithNewman('queries', vectors);
-      console.log(`[Default Query Tool] Upload result: ${uploadedCount} vectors uploaded`);
+      console.log(`[Default Query Tool]    Upload result: ${uploadedCount} vectors uploaded`);
       
-      if (uploadedCount > 0) {
-        console.log('[Default Query Tool] Successfully vectorized and stored question');
-        
-        // Now search for similar vectors across relevant indexes
-        console.log('[Default Query Tool] ========= STARTING SIMILARITY SEARCH =========');
-        console.log('[Default Query Tool] Searching for similar content across indexes...');
-        
-        try {
-          // Try to get ALL indices dynamically
-          console.log('[Default Query Tool] Attempting to list all indices dynamically...');
-          
-          let indicesToSearch = ['queries']; // Always include queries
-          
-          // Use the listIndicesWithNewman function (simplified like the test)
-          let allIndices: string[] = [];
-          const listingErrors: string[] = [];
-          
-          try {
-            console.log('[Default Query Tool] Listing all indices...');
-            const { listIndicesWithNewman } = await import('../lib/newman-executor.js');
-            allIndices = await listIndicesWithNewman();
-            
-            if (allIndices && allIndices.length > 0) {
-              console.log(`[Default Query Tool] ✅ Found ${allIndices.length} indices:`, allIndices);
-              indicesToSearch = allIndices; // Use ALL indices
-            } else {
-              console.log('[Default Query Tool] ⚠️ No indices returned from listing');
-              listingErrors.push('No indices returned - check AWS credentials on server');
-            }
-          } catch (listError) {
-            const errorMsg = listError instanceof Error ? listError.message : 'Unknown error';
-            console.log('[Default Query Tool] Listing failed:', errorMsg);
-            listingErrors.push(`Listing error: ${errorMsg}`);
-          }
-          
-          // If listing failed, still search the queries index
-          if (indicesToSearch.length === 1) {
-            console.log('[Default Query Tool] Listing failed. Only searching the "queries" index.');
-            console.log('[Default Query Tool] Note: Document content will not be searched.');
-          }
-          
-          console.log(`[Default Query Tool] Will search ${indicesToSearch.length} indices:`, indicesToSearch);
-          
-          const similarResults = [];
-          
-          // Search each index
-          for (const indexName of indicesToSearch) {
-            console.log(`[Default Query Tool] 🔍 SEARCHING in index: ${indexName}`);
-            console.log(`[Default Query Tool] Using embedding with length: ${embedding.length}`);
-            
-            try {
-              console.log(`[Default Query Tool] Calling queryVectorsWithNewman for ${indexName}...`);
-              
-              const queryResults = await queryVectorsWithNewman(indexName, embedding, 5);
-              
-              if (queryResults && queryResults.length > 0) {
-                console.log(`[Default Query Tool] ✅ Found ${queryResults.length} similar vectors in ${indexName}`);
-                console.log(`[Default Query Tool] First result preview:`, {
-                  key: queryResults[0].key,
-                  score: queryResults[0].score,
-                  hasMetadata: !!queryResults[0].metadata,
-                  contentPreview: queryResults[0].metadata?.content?.substring(0, 100) || 'No content'
-                });
-                
-                similarResults.push(...queryResults.map((r: any) => ({
-                  key: r.key,
-                  score: r.score || 0,
-                  metadata: r.metadata || {},
-                  index: indexName
-                })));
-              } else {
-                console.log(`[Default Query Tool] ❌ No results found in ${indexName}`);
-              }
-            } catch (searchError) {
-              console.log(`[Default Query Tool] ⚠️ Error searching ${indexName}:`, searchError);
-            }
-          }
-          
-          // Sort by similarity score (higher is better)
-          similarResults.sort((a, b) => (b.score || 0) - (a.score || 0));
-          
-          // Take top 10 results
-          const topResults = similarResults.slice(0, 10);
-          
-          console.log(`[Default Query Tool] 📊 FINAL RESULTS: Found ${topResults.length} relevant chunks total`);
-          
-          // Log summary of results
-          if (topResults.length > 0) {
-            console.log('[Default Query Tool] Top 3 results summary:');
-            topResults.slice(0, 3).forEach((r, i) => {
-              console.log(`[Default Query Tool] ${i + 1}. Score: ${r.score}, Index: ${r.index}, Content preview: ${(r.metadata?.content || '').substring(0, 50)}...`);
-            });
-          }
-          
-          const result = {
-            success: true,
-            message: 'Question vectorized, stored, and similar content found',
-            vectorKey: vectors[0].key,
-            index: 'queries',
-            timestamp: new Date().toISOString(),
-            questionLength: context.question.length,
-            embeddingDimension: embedding.length,
-            similarChunks: topResults.map(r => ({
-              key: r.key,
-              score: r.score,
-              index: r.index,
-              metadata: r.metadata,
-              content: r.metadata?.content || r.metadata?.text || 'No content available'
-            })),
-            totalSimilarChunks: topResults.length,
-            // Debug information
-            debug: {
-              indicesSearched: indicesToSearch,
-              totalIndicesSearched: indicesToSearch.length,
-              totalResultsBeforeFilter: similarResults.length,
-              listingMethod: indicesToSearch.length > 1 ? 'listIndicesWithNewman' : 'fallback',
-              awsKeySet: !!process.env.AWS_ACCESS_KEY_ID,
-              bucketName: process.env.S3_VECTORS_BUCKET || 'chatbotvectors362',
-              listingErrors: listingErrors
-            }
-          };
-          
-          console.log('[Default Query Tool] 🎯 RETURNING RESULT WITH CHUNKS TO AGENT');
-          console.log(`[Default Query Tool] Result contains ${result.similarChunks.length} chunks for the LLM to use`);
-          
-          return result;
-        } catch (searchError) {
-          console.error('[Default Query Tool] Error searching for similar content:', searchError);
-          console.error('[Default Query Tool] Search error details:', {
-            errorMessage: searchError instanceof Error ? searchError.message : 'Unknown error',
-            errorStack: searchError instanceof Error ? searchError.stack : 'No stack trace',
-            errorType: searchError?.constructor?.name
-          });
-          
-          // Still return success for vectorization even if search fails
-          return {
-            success: true,
-            message: 'Question vectorized and stored successfully (search failed)',
-            vectorKey: vectors[0].key,
-            index: 'queries',
-            timestamp: new Date().toISOString(),
-            questionLength: context.question.length,
-            embeddingDimension: embedding.length,
-            searchError: searchError instanceof Error ? searchError.message : 'Unknown search error',
-            searchErrorDetails: searchError instanceof Error ? searchError.stack : 'No details available'
-          };
-        }
-      } else {
-        console.log('[Default Query Tool] Failed to upload vector');
+      if (uploadedCount === 0) {
+        console.log('[Default Query Tool] ❌ Failed to upload vector');
         return {
           success: false,
           message: 'Failed to upload question vector',
@@ -246,8 +100,115 @@ export const defaultQueryTool = createTool({
         };
       }
       
+      console.log('[Default Query Tool] ✅ Successfully vectorized and stored question');
+      
+      // Step 3: List all indices (exactly like the test file)
+      console.log('\n[Default Query Tool] 3. Listing all indices...');
+      let indices: string[] = [];
+      const listingErrors: string[] = [];
+      
+      try {
+        indices = await listIndicesWithNewman();
+        console.log(`[Default Query Tool]    Found ${indices.length} indices:`);
+        indices.forEach((idx, i) => {
+          console.log(`[Default Query Tool]      ${i + 1}. ${idx}`);
+        });
+      } catch (listError) {
+        const errorMsg = listError instanceof Error ? listError.message : 'Unknown error';
+        console.log(`[Default Query Tool] ⚠️  Listing failed: ${errorMsg}`);
+        listingErrors.push(errorMsg);
+        indices = ['queries']; // Fallback to just queries
+      }
+      
+      if (indices.length === 0) {
+        console.log('[Default Query Tool] ⚠️  No indices found! Defaulting to queries index only.');
+        indices = ['queries'];
+        listingErrors.push('No indices returned from listing');
+      }
+      
+      // Step 4: Query each index for similar content (exactly like the test file)
+      console.log('\n[Default Query Tool] 4. Querying each index for similar content...');
+      const allResults: any[] = [];
+      
+      for (const indexName of indices) {
+        console.log(`[Default Query Tool] --- Querying index: ${indexName} ---`);
+        
+        try {
+          const results = await queryVectorsWithNewman(indexName, embedding, 5);
+          console.log(`[Default Query Tool]     Found ${results.length} results`);
+          
+          if (results.length > 0) {
+            // Add index name to each result
+            const indexedResults = results.map((r: any) => ({
+              ...r,
+              index: indexName
+            }));
+            allResults.push(...indexedResults);
+            
+            // Show first result preview
+            const firstResult = results[0];
+            console.log(`[Default Query Tool]     Top result score: ${firstResult.score || 'N/A'}`);
+            console.log(`[Default Query Tool]     Content preview: ${(firstResult.metadata?.content || '').substring(0, 150)}...`);
+          }
+        } catch (searchError) {
+          const errorMsg = searchError instanceof Error ? searchError.message : 'Unknown error';
+          console.error(`[Default Query Tool]     Error querying ${indexName}: ${errorMsg}`);
+        }
+      }
+      
+      // Step 5: Sort all results by score and show top 10 (exactly like the test file)
+      console.log('\n[Default Query Tool] 5. TOP 10 RESULTS ACROSS ALL INDICES:');
+      console.log('[Default Query Tool] =====================================');
+      
+      // Sort by score (higher is better)
+      allResults.sort((a, b) => (b.score || 0) - (a.score || 0));
+      const top10 = allResults.slice(0, 10);
+      
+      top10.forEach((result, i) => {
+        console.log(`[Default Query Tool] ${i + 1}. [${result.index}] Score: ${result.score || 'N/A'}`);
+        console.log(`[Default Query Tool]    Key: ${result.key}`);
+        console.log(`[Default Query Tool]    Content: ${(result.metadata?.content || 'No content').substring(0, 200)}...`);
+      });
+      
+      console.log(`[Default Query Tool] Total results found across all indices: ${allResults.length}`);
+      
+      // Return the results
+      const result = {
+        success: true,
+        message: 'Question vectorized, stored, and similar content found',
+        vectorKey: vectors[0].key,
+        index: 'queries',
+        timestamp: new Date().toISOString(),
+        questionLength: context.question.length,
+        embeddingDimension: embedding.length,
+        similarChunks: top10.map(r => ({
+          key: r.key,
+          score: r.score,
+          index: r.index,
+          metadata: r.metadata,
+          content: r.metadata?.content || r.metadata?.text || 'No content available'
+        })),
+        totalSimilarChunks: top10.length,
+        // Debug information
+        debug: {
+          indicesSearched: indices.join(','),
+          totalIndicesSearched: indices.length,
+          totalResultsBeforeFilter: allResults.length,
+          listingMethod: indices.length > 1 ? 'listIndicesWithNewman' : 'fallback',
+          awsKeySet: !!process.env.AWS_ACCESS_KEY_ID,
+          bucketName: process.env.S3_VECTORS_BUCKET || 'chatbotvectors362',
+          listingErrors: listingErrors
+        }
+      };
+      
+      console.log('[Default Query Tool] 🎯 RETURNING RESULT WITH CHUNKS TO AGENT');
+      console.log(`[Default Query Tool] Result contains ${result.similarChunks.length} chunks for the LLM to use`);
+      
+      return result;
+      
     } catch (error) {
-      console.error('[Default Query Tool] Error processing question:', error);
+      console.error('[Default Query Tool] ❌ Error:', error instanceof Error ? error.message : 'Unknown error');
+      console.error('[Default Query Tool] Stack:', error instanceof Error ? error.stack : 'No stack trace');
       return {
         success: false,
         message: 'Error processing question',
