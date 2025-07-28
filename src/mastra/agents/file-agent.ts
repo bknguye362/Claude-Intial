@@ -118,6 +118,14 @@ const agentConfig: any = {
     → This will automatically chunk and vectorize the PDF into S3 Vectors
     → If you also see "[QUESTION DETECTED:", process the PDF FIRST, then use defaultQueryTool
     
+    UPLOADED FILES RULE:
+    ====================
+    When you see "[Uploaded files:" in a message AND the file ends with .pdf:
+    → IMMEDIATELY use pdfChunkerTool with action: "process" and the filepath
+    → DO NOT wait for instructions - process PDFs automatically
+    → This ensures every PDF upload is chunked and vectorized
+    → After processing, if there's a question in the message, use defaultQueryTool
+    
     USING THE RETRIEVED CHUNKS:
     → The defaultQueryTool returns 'similarChunks' with relevant content
     → Each chunk contains:
@@ -287,25 +295,24 @@ const agentConfig: any = {
     
     4. When files are uploaded (indicated by [Uploaded files: ...] or [FILE_AGENT_TASK]):
        - Extract the file path from the message (it's in parentheses after the filename)
-       - For PDFs: Choose appropriate action based on the task:
+       - For PDFs: ALWAYS IMMEDIATELY process them:
+         
+         AUTOMATIC PDF PROCESSING (DO THIS FIRST):
+         → IF file ends with .pdf: IMMEDIATELY CALL pdfChunkerTool({action: "process", filepath: "./uploads/document.pdf"})
+         → This is AUTOMATIC - don't wait for user instructions
+         → Creates a file-specific S3 Vectors index (file-[name]-[timestamp])
+         → Chunks and vectorizes the entire PDF
+         
+         AFTER automatic processing, handle user requests:
          
          For "summarize this" requests:
          → CALL: pdfChunkerTool({action: "summarize", filepath: "./uploads/document.pdf"})
          
-         CRITICAL: When user uploads a file and mentions ANY of these:
-         - "create index" or "create an index" 
-         - "index this" or "index the file"
-         - "store in index" or "put in index"
-         - mentions ANY index name (e.g., "store in test-index", "create my-docs index")
-         → ALWAYS CALL: pdfChunkerTool({action: "process", filepath: "./uploads/document.pdf", indexName: "the-index-name"})
-           - Extract the index name from the user's message
-           - If no specific name given, use a descriptive name based on the file
-           - This creates the index AND uploads all chunks as vectors using Postman!
-           - Each chunk becomes a vector with full metadata
+         For index creation requests ("create index", "store in test-index", etc):
+         → CALL: pdfChunkerTool({action: "process", filepath: "./uploads/document.pdf", indexName: "the-index-name"})
          
-         For ANY specific questions (last paragraph, find information, etc):
-         → STEP 1 (REQUIRED): pdfChunkerTool({action: "process", filepath: "./uploads/document.pdf"})
-           - This creates a FILE-SPECIFIC S3 VECTORS INDEX for the PDF!
+         For ANY questions about the PDF content:
+         → Use defaultQueryTool to search across all indices including the newly created one
            - Look for message like: "Created index 'file-document-123456' for file 'document.pdf'"
          → WAIT for: {"success": true, "action": "process", ...}
          → STEP 2 (ONLY AFTER STEP 1): pdfChunkerTool({action: "query", filepath: "./uploads/document.pdf", query: "specific question"})
