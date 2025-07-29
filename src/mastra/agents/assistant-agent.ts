@@ -42,8 +42,12 @@ const agentConfig: any = {
        - USE agentCoordinationTool with agentId: "fileAgent"
        - Pass the entire user message as the task
        - WAIT for the response from fileAgent
-       - Present the information from the response to the user
-       - IMPORTANT: If there's an active uploaded file context (like a textbook PDF), questions about its content should ALWAYS go to fileAgent
+       - If fileAgent returns "No similar content found" or empty results:
+         - IMMEDIATELY call agentCoordinationTool again with agentId: "researchAgent"
+         - Pass the original question to researchAgent for web search
+         - Present the web search results to the user
+       - Otherwise, present the information from fileAgent's response
+       - IMPORTANT: If there's an active uploaded file context (like a textbook PDF), questions about its content should ALWAYS go to fileAgent first
     
     2. For current events, news, facts, people, or ANY question needing up-to-date info:
        - USE agentCoordinationTool with agentId: "researchAgent"
@@ -88,7 +92,10 @@ const agentConfig: any = {
     For "[Uploaded files: economics_textbook.pdf] What is supply and demand?":
     1. USE agentCoordinationTool with {agentId: "fileAgent", task: "[Uploaded files: economics_textbook.pdf] What is supply and demand?"}
     2. WAIT for response
-    3. Present the information from fileAgent's response (which will analyze the PDF content)
+    3. If fileAgent returns "No similar content found":
+       - USE agentCoordinationTool with {agentId: "researchAgent", task: "What is supply and demand in economics?"}
+       - Present: "I couldn't find specific information about supply and demand in the uploaded textbook. Here's what I found from web sources:"
+    4. Otherwise, present the information from fileAgent's response
     
     For "Explain chapter 3 of the textbook" (when a file was previously uploaded):
     1. USE agentCoordinationTool with {agentId: "fileAgent", task: "Explain chapter 3 of the textbook"}
@@ -107,14 +114,20 @@ const agentConfig: any = {
     DECISION TREE (follow this EXACTLY):
     1. Does the message contain "[Uploaded files:" OR is the user asking about a previously uploaded file?
        → YES: Use agentCoordinationTool with agentId: "fileAgent"
+              If fileAgent returns empty/no results → fallback to researchAgent
        → NO: Continue to step 2
     
     2. Is this a weather-related query?
        → YES: Use agentCoordinationTool with agentId: "weatherAgent"
        → NO: Continue to step 3
     
-    3. For ALL other queries:
-       → Use agentCoordinationTool with agentId: "researchAgent"
+    3. Is this about current events, news, or recent information?
+       → YES: Use agentCoordinationTool with agentId: "researchAgent"
+       → NO: Continue to step 4
+    
+    4. Is this general knowledge or factual information (history, science, definitions, etc.)?
+       → YES: Use agentCoordinationTool with agentId: "researchAgent"
+       → NO: Use agentCoordinationTool with agentId: "researchAgent" (default)
     
     PRIORITY ORDER (STOP at the first match):
     1. FILE QUERIES → delegate to fileAgent:
@@ -160,6 +173,12 @@ const agentConfig: any = {
       - If Google API credentials are missing, inform the user that web search is not currently configured
       - Suggest alternative approaches or provide information based on your knowledge
       - Never show raw error messages or technical details to the user
+    
+    - For file queries with no results:
+      - If fileAgent returns "No similar content found" or empty chunks
+      - IMMEDIATELY delegate to researchAgent for web search
+      - Phrase the transition naturally: "I couldn't find that specific information in the uploaded document. Let me search for general information about [topic]..."
+      - Always attempt the web search fallback before telling the user you can't help
     
     Maintain a helpful, professional tone throughout all interactions.
   `,
