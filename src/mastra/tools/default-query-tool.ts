@@ -9,33 +9,6 @@ const AZURE_OPENAI_API_KEY = process.env.AZURE_OPENAI_API_KEY || process.env.AZU
 const AZURE_OPENAI_API_VERSION = process.env.AZURE_OPENAI_API_VERSION || '2023-12-01-preview';
 const EMBEDDINGS_DEPLOYMENT = 'text-embedding-ada-002';
 
-// Helper function to calculate cosine similarity between two vectors
-function cosineSimilarity(vecA: number[], vecB: number[]): number {
-  if (vecA.length !== vecB.length) {
-    console.log(`[Cosine Similarity] Vector length mismatch: ${vecA.length} vs ${vecB.length}`);
-    return 0;
-  }
-  
-  let dotProduct = 0;
-  let normA = 0;
-  let normB = 0;
-  
-  for (let i = 0; i < vecA.length; i++) {
-    dotProduct += vecA[i] * vecB[i];
-    normA += vecA[i] * vecA[i];
-    normB += vecB[i] * vecB[i];
-  }
-  
-  normA = Math.sqrt(normA);
-  normB = Math.sqrt(normB);
-  
-  if (normA === 0 || normB === 0) {
-    return 0;
-  }
-  
-  return dotProduct / (normA * normB);
-}
-
 // Helper function to generate embeddings - identical to test file
 async function generateEmbedding(text: string): Promise<number[]> {
   if (!AZURE_OPENAI_API_KEY) {
@@ -138,33 +111,19 @@ export const defaultQueryTool = createTool({
           console.log(`[Default Query Tool]     Found ${results.length} results`);
           
           if (results.length > 0) {
-            // Calculate cosine similarity for each result since S3 Vectors doesn't return scores
-            const resultsWithScores = results.map((r: any) => {
-              let score = 0;
-              
-              // Try to get the stored embedding from the result
-              if (r.embedding && Array.isArray(r.embedding)) {
-                score = cosineSimilarity(embedding, r.embedding);
-              } else if (r.float32 && Array.isArray(r.float32)) {
-                score = cosineSimilarity(embedding, r.float32);
-              } else if (r.vector && Array.isArray(r.vector)) {
-                score = cosineSimilarity(embedding, r.vector);
-              } else {
-                console.log(`[Default Query Tool]     Warning: No embedding found in result ${r.key || 'unknown'} for similarity calculation`);
-              }
-              
-              return {
-                ...r,
-                index: indexName,
-                score: score
-              };
-            });
+            // S3 Vectors returns results already sorted by similarity
+            // Assign pseudo-scores based on rank to help with cross-index sorting
+            const indexedResults = results.map((r: any, idx: number) => ({
+              ...r,
+              index: indexName,
+              score: 1.0 - (idx * 0.1) // First result gets 1.0, second 0.9, etc.
+            }));
             
-            allResults.push(...resultsWithScores);
+            allResults.push(...indexedResults);
             
             // Show first result preview
-            const firstResult = resultsWithScores[0];
-            console.log(`[Default Query Tool]     Top result score: ${firstResult.score.toFixed(4)}`);
+            const firstResult = indexedResults[0];
+            console.log(`[Default Query Tool]     Top result: ${firstResult.key || 'unknown'}`);
             console.log(`[Default Query Tool]     Content preview: ${(firstResult.metadata?.content || '').substring(0, 150)}...`);
           }
         } catch (searchError) {
@@ -177,38 +136,22 @@ export const defaultQueryTool = createTool({
       console.log('\n[Default Query Tool] 5. TOP 10 RESULTS ACROSS ALL INDICES:');
       console.log('[Default Query Tool] =====================================');
       
-      // Filter results by cosine similarity > 0.7
-      console.log('[Default Query Tool] 🎯 Filtering results by cosine similarity...');
-      const SIMILARITY_THRESHOLD = 0.7;
+      // S3 Vectors already returns the most similar results
+      // We trust their similarity ranking and use all results
+      console.log('[Default Query Tool] 🎯 Processing S3 Vectors results...');
       
-      const filteredResults = allResults.filter(result => {
-        if (result.score !== undefined && result.score > 0) {
-          const passesThreshold = result.score > SIMILARITY_THRESHOLD;
-          if (!passesThreshold) {
-            console.log(`[Default Query Tool] ❌ Filtered out chunk from ${result.index} with score ${result.score.toFixed(4)} < ${SIMILARITY_THRESHOLD}`);
-          }
-          return passesThreshold;
-        }
-        console.log(`[Default Query Tool] ⚠️ No valid score for result from ${result.index}`);
-        return false;
+      // Sort by our pseudo-score to maintain relative ranking from each index
+      allResults.sort((a, b) => (b.score || 0) - (a.score || 0));
+      const top10 = allResults.slice(0, 10);
+      
+      console.log(`[Default Query Tool] 📊 Selected top ${top10.length} results from ${allResults.length} total`);
+      
+      // Show which indices contributed results
+      const indexContributions = new Map<string, number>();
+      top10.forEach(r => {
+        indexContributions.set(r.index, (indexContributions.get(r.index) || 0) + 1);
       });
-      
-      console.log(`[Default Query Tool] 📊 Filtered ${allResults.length} results to ${filteredResults.length} with similarity > ${SIMILARITY_THRESHOLD}`);
-      
-      // Sort by score (higher is better)
-      filteredResults.sort((a, b) => (b.score || 0) - (a.score || 0));
-      const top10 = filteredResults.slice(0, 10);
-      
-      // Log similarity score distribution
-      if (top10.length > 0) {
-        const scores = top10.map(r => r.score || 0);
-        const minScore = Math.min(...scores);
-        const maxScore = Math.max(...scores);
-        const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
-        console.log(`[Default Query Tool] 📊 Top ${top10.length} scores: Min=${minScore.toFixed(4)}, Max=${maxScore.toFixed(4)}, Avg=${avgScore.toFixed(4)}`);
-      } else {
-        console.log(`[Default Query Tool] ⚠️ No results passed the similarity threshold of ${SIMILARITY_THRESHOLD}`);
-      }
+      console.log(`[Default Query Tool] Results by index:`, Object.fromEntries(indexContributions));
       
       // Group results by document for better contextualization
       const resultsByDocument = new Map<string, any[]>();
@@ -220,7 +163,7 @@ export const defaultQueryTool = createTool({
         }
         resultsByDocument.get(docId)!.push(result);
         
-        console.log(`[Default Query Tool] ${i + 1}. [${result.index}] Score: ${result.score || 'N/A'}`);
+        console.log(`[Default Query Tool] ${i + 1}. [${result.index}]`);
         console.log(`[Default Query Tool]    Key: ${result.key}`);
         if (result.metadata?.pageStart) {
           console.log(`[Default Query Tool]    Pages: ${result.metadata.pageStart}-${result.metadata.pageEnd || result.metadata.pageStart}`);

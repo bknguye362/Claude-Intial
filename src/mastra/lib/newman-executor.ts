@@ -601,21 +601,20 @@ export async function queryVectorsWithNewman(
             console.log(`[Newman Query] ✅ SUCCESS: Found ${response.vectors.length} similar vectors`);
             if (response.vectors.length > 0) {
               const firstVector = response.vectors[0];
-              console.log('[Newman Query] First result structure:', {
-                hasKey: !!firstVector.key,
+              console.log('[Newman Query] First result:', {
+                key: firstVector.key,
                 hasMetadata: !!firstVector.metadata,
-                hasEmbedding: !!firstVector.embedding,
-                hasFloat32: !!firstVector.float32,
-                hasVector: !!firstVector.vector,
-                hasScore: !!firstVector.score,
-                allKeys: Object.keys(firstVector)
+                metadataKeys: firstVector.metadata ? Object.keys(firstVector.metadata) : []
               });
-              // Don't log the full embedding - it's too large
-              const preview = { ...firstVector };
-              if (preview.embedding) preview.embedding = `[${preview.embedding.length} floats]`;
-              if (preview.float32) preview.float32 = `[${preview.float32.length} floats]`;
-              if (preview.vector) preview.vector = `[${preview.vector.length} floats]`;
-              console.log('[Newman Query] First result preview:', JSON.stringify(preview, null, 2));
+              // Log a preview of the metadata
+              if (firstVector.metadata) {
+                console.log('[Newman Query] Metadata preview:', {
+                  content: firstVector.metadata.content ? firstVector.metadata.content.substring(0, 100) + '...' : 'N/A',
+                  documentId: firstVector.metadata.documentId || 'N/A',
+                  chunkIndex: firstVector.metadata.chunkIndex,
+                  pageStart: firstVector.metadata.pageStart
+                });
+              }
             }
             return response.vectors;
           } else {
