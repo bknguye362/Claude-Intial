@@ -523,7 +523,8 @@ export async function queryVectorsWithNewman(
                 },
                 topK: topK,
                 returnMetadata: true,
-                returnValues: true
+                returnValues: true,
+                returnDistance: true
               })
             },
             url: {
