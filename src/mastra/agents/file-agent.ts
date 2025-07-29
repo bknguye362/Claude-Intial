@@ -195,21 +195,22 @@ const agentConfig: any = {
        - Named: file-[filename]-[timestamp]
        - Contains vectors from that specific PDF
     
-    CRITICAL PDF WORKFLOW:
-    When a PDF is uploaded, ALWAYS PROCESS IT FIRST:
+    CRITICAL PDF WORKFLOW - AUTOMATIC PROCESSING:
+    When a PDF is detected (via [Uploaded files:] or file path), IMMEDIATELY:
     
-    STEP 1 - PROCESS THE PDF (REQUIRED):
-    - Use pdfChunkerTool with action: "process" and filepath: "path/to/file.pdf"
+    STEP 1 - AUTO-PROCESS THE PDF (DO NOT WAIT FOR USER):
+    - IMMEDIATELY call pdfChunkerTool with action: "process" and filepath: "path/to/file.pdf"
+    - Do NOT ask user if they want to process it - just do it automatically
     - This chunks the PDF and creates a FILE-SPECIFIC S3 VECTORS INDEX
-    - Each PDF gets its own unique index named: file-[filename]-[timestamp]
-    - WAIT for this to complete before doing anything else!
+    - Show user: "Processing PDF: [filename]..." while it runs
     
-    STEP 2 - ANSWER QUESTIONS (AFTER PROCESSING):
-    - Once the PDF is processed and indexed, use defaultQueryTool
-    - This will search across all indices including the newly created one
-    - The enhanced context will include page numbers and citations
+    STEP 2 - AUTO-QUERY AFTER PROCESSING (AUTOMATIC):
+    - As soon as processing completes, AUTOMATICALLY call defaultQueryTool
+    - If user asked a question: use their question
+    - If no question: use "Please provide a comprehensive summary of this document"
+    - This ensures user always gets useful output without having to ask
     
-    IMPORTANT: "process" must ALWAYS happen first, even if user asks a question immediately
+    IMPORTANT: Both steps happen AUTOMATICALLY without user having to request them
     
     ALWAYS use tools - do not just describe what you would do!
     
@@ -293,19 +294,19 @@ const agentConfig: any = {
     
     4. When files are uploaded (indicated by [Uploaded files: ...] or [FILE_AGENT_TASK]):
        - Extract the file path from the message (it's in parentheses after the filename)
-       - For PDFs: Choose appropriate action based on the task:
+       - For PDFs: AUTOMATIC PROCESSING SEQUENCE:
          
-         For ANY request after PDF upload:
-         → FIRST: pdfChunkerTool({action: "process", filepath: "./uploads/document.pdf"})
-         → THEN: defaultQueryTool({question: "summarize this document"})
+         AUTOMATIC BEHAVIOR (no user action needed):
+         → IMMEDIATELY: pdfChunkerTool({action: "process", filepath: "./uploads/document.pdf"})
+         → THEN: defaultQueryTool({question: user's question OR "Please provide a comprehensive summary"})
          
-         CRITICAL: When user uploads a file and mentions ANY of these:
-         - "create index" or "create an index" 
-         - "index this" or "index the file"
-         - "store in index" or "put in index"
-         - mentions ANY index name (e.g., "store in test-index", "create my-docs index")
-         → ALWAYS CALL: pdfChunkerTool({action: "process", filepath: "./uploads/document.pdf", indexName: "the-index-name"})
-           - Extract the index name from the user's message
+         The user uploads a PDF → You process it → You answer/summarize it
+         ALL AUTOMATICALLY IN ONE RESPONSE!
+         
+         SPECIAL CASE - Custom index name:
+         If user mentions a specific index name:
+         → pdfChunkerTool({action: "process", filepath: "./uploads/document.pdf", indexName: "the-index-name"})
+         → Then proceed with defaultQueryTool as usual
            - If no specific name given, use a descriptive name based on the file
            - This creates the index AND uploads all chunks as vectors using Postman!
            - Each chunk becomes a vector with full metadata

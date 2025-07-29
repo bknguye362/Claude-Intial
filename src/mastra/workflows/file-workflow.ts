@@ -133,12 +133,13 @@ const generateFileResponse = createStep({
     // Build context based on what was detected
     if (inputData.hasPdf && inputData.pdfPath) {
       context = `A PDF file has been uploaded: ${inputData.fileName} at ${inputData.pdfPath}. `;
-      context += `You MUST FIRST use pdfChunkerTool with action: "process" and filepath: "${inputData.pdfPath}" to chunk and vectorize this PDF into S3 Vectors. `;
-      context += `This will create a file-specific index (file-${inputData.fileName?.replace(/\.pdf$/i, '')}-YYYY-MM-DD). `;
+      context += `IMMEDIATELY process this PDF by calling pdfChunkerTool with action: "process" and filepath: "${inputData.pdfPath}". `;
+      context += `Do NOT wait for user instructions - process it automatically. `;
       
-      if (inputData.hasQuestion || inputData.actualUserMessage) {
-        context += `AFTER processing is complete, use defaultQueryTool with question: "${inputData.actualUserMessage || 'Summarize this document'}" to search the newly created index and answer the user. `;
-      }
+      // Always include a default query after processing
+      const queryText = inputData.actualUserMessage || 'Please provide a comprehensive summary of this document, including its main topics and key points.';
+      context += `AFTER the PDF is fully processed and indexed, automatically call defaultQueryTool with question: "${queryText}" to provide the user with relevant information. `;
+      context += `The user should see both the processing confirmation AND the answer to their question (or summary if no question was asked). `;
     } else if (inputData.hasQuestion) {
       context = `The user has asked a question. Use defaultQueryTool to find relevant information and answer: "${inputData.actualUserMessage}". `;
     }
