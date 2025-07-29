@@ -125,13 +125,19 @@ const processPdfIfNeeded = createStep({
     indexName: z.string().optional(),
   }),
   execute: async ({ inputData }) => {
-    console.log('[File Workflow - ProcessPDF] Step executed');
+    console.log('[File Workflow - ProcessPDF] ===== STEP EXECUTED =====');
+    console.log('[File Workflow - ProcessPDF] Input data:', {
+      hasPdf: inputData.hasPdf,
+      pdfPath: inputData.pdfPath,
+      fileName: inputData.fileName
+    });
     
     let pdfProcessed = false;
     let indexName: string | undefined;
     
     if (inputData.hasPdf && inputData.pdfPath) {
       console.log('[File Workflow - ProcessPDF] PDF detected, processing automatically...');
+      console.log('[File Workflow - ProcessPDF] PDF Path:', inputData.pdfPath);
       
       try {
         // Call the PDF processor function directly

@@ -2,6 +2,7 @@ import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
 import { mastra } from '../index.js';
 import { createIndexWithNewman, uploadVectorsWithNewman } from '../lib/newman-executor.js';
+import { processPDF } from '../lib/pdf-processor.js';
 
 // Azure OpenAI configuration for embeddings
 const AZURE_OPENAI_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT || 'https://franklin-open-ai-test.openai.azure.com';
@@ -183,11 +184,56 @@ export const agentCoordinationTool = createTool({
       console.log(`[Agent Coordination] Has [Uploaded files:]:`, messages[0].content.includes('[Uploaded files:'));
       console.log(`[Agent Coordination] Agent has tools:`, agent.tools ? Object.keys(agent.tools) : 'none');
       
+      // Get response from the agent or workflow
+      let fullResponse = '';
+      
+      // Check if this is a file agent task with a PDF upload
+      if (context.agentId === 'fileAgent') {
+        console.log(`[Agent Coordination] Checking for PDF uploads in file agent task...`);
+        
+        // Check if there's a PDF file in the message
+        const uploadedFileMatch = messageContent.match(/\[Uploaded files: ([^\]]+)\]/);
+        const fileTaskMatch = messageContent.match(/\[FILE_AGENT_TASK\]\s*([^(]+)\s*\(([^)]+)\)/);
+        
+        let pdfPath: string | null = null;
+        let fileName: string | null = null;
+        
+        if (fileTaskMatch) {
+          pdfPath = fileTaskMatch[2];
+          fileName = pdfPath.split('/').pop() || 'unknown';
+        } else if (uploadedFileMatch) {
+          const fileInfo = uploadedFileMatch[1];
+          const pathMatch = fileInfo.match(/([^(]+)\s*\(([^)]+)\)/);
+          if (pathMatch) {
+            fileName = pathMatch[1].trim();
+            pdfPath = pathMatch[2];
+          }
+        }
+        
+        // If we found a PDF, process it automatically
+        if (pdfPath && pdfPath.toLowerCase().endsWith('.pdf')) {
+          console.log(`[Agent Coordination] PDF detected: ${pdfPath}`);
+          console.log(`[Agent Coordination] Processing PDF automatically...`);
+          
+          try {
+            const result = await processPDF(pdfPath);
+            if (result.success) {
+              console.log(`[Agent Coordination] PDF processed successfully. Index: ${result.indexName}`);
+              // Update the message to inform the agent that PDF was processed
+              messages[0].content = `PDF file '${fileName}' has been automatically processed and indexed as: ${result.indexName}. ` + messages[0].content;
+            } else {
+              console.error(`[Agent Coordination] PDF processing failed:`, result.error);
+            }
+          } catch (error) {
+            console.error(`[Agent Coordination] Error processing PDF:`, error);
+          }
+        }
+      }
+      
       // Get response from the agent
       const stream = await agent.stream(messages);
       
       // Collect the streamed response
-      let fullResponse = '';
       let chunkCount = 0;
       console.log(`[Agent Coordination] Starting to collect response from ${context.agentId}...`);
       
@@ -202,8 +248,9 @@ export const agentCoordinationTool = createTool({
           console.log(`[Agent Coordination] Received ${chunkCount} chunks so far...`);
         }
       }
-
+        
       console.log(`[Agent Coordination] Completed! Received ${chunkCount} chunks from ${context.agentId}`);
+      
       console.log(`[Agent Coordination] Full response length: ${fullResponse.length} characters`);
       console.log(`[Agent Coordination] Response preview: ${fullResponse.substring(0, 200)}...`);
       

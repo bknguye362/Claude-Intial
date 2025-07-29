@@ -131,12 +131,19 @@ function chunkTextByLines(text: string, linesPerChunk: number): string[] {
 
 // Main function to process PDF
 export async function processPDF(filepath: string, chunkSize: number = 200): Promise<ProcessPDFResult> {
+  console.log(`[PDF Processor] ===== STARTING PDF PROCESSING =====`);
   console.log(`[PDF Processor] Processing PDF: ${filepath}`);
+  console.log(`[PDF Processor] Chunk size: ${chunkSize}`);
   
   try {
     // Read and parse PDF
+    console.log(`[PDF Processor] Reading file from: ${filepath}`);
     const dataBuffer = await readFile(filepath);
+    console.log(`[PDF Processor] File read successfully, buffer size: ${dataBuffer.length} bytes`);
+    
+    console.log(`[PDF Processor] Parsing PDF...`);
     const pdfData = await pdf(dataBuffer);
+    console.log(`[PDF Processor] PDF parsed successfully`);
     
     const metadata = {
       title: pdfData.info?.Title,
@@ -146,8 +153,10 @@ export async function processPDF(filepath: string, chunkSize: number = 200): Pro
     };
     
     // Split into chunks
+    console.log(`[PDF Processor] Text length: ${pdfData.text.length} characters`);
     const textChunks = chunkTextByLines(pdfData.text, chunkSize);
     console.log(`[PDF Processor] Split into ${textChunks.length} chunks`);
+    console.log(`[PDF Processor] First chunk preview: ${textChunks[0]?.substring(0, 100)}...`);
     
     // Check size limits
     const MAX_CHUNKS = 300;
@@ -197,11 +206,13 @@ export async function processPDF(filepath: string, chunkSize: number = 200): Pro
     const dateStr = new Date().toISOString().split('T')[0];
     const indexName = `file-${cleanName}-${dateStr}`;
     
-    console.log(`[PDF Processor] Creating index '${indexName}'`);
+    console.log(`[PDF Processor] Creating S3 Vectors index '${indexName}'`);
+    console.log(`[PDF Processor] Using dimension: ${embeddings[0]?.length || 1536}`);
     
     // Create index and upload vectors
     const dimension = embeddings[0]?.length || 1536;
     const indexCreated = await createIndexWithNewman(indexName, dimension);
+    console.log(`[PDF Processor] Index creation result: ${indexCreated}`);
     
     if (!indexCreated) {
       throw new Error(`Failed to create index '${indexName}'`);
@@ -223,9 +234,11 @@ export async function processPDF(filepath: string, chunkSize: number = 200): Pro
       }
     }));
     
+    console.log(`[PDF Processor] Uploading ${vectors.length} vectors to index '${indexName}'...`);
     const uploadedCount = await uploadVectorsWithNewman(indexName, vectors);
     
-    console.log(`[PDF Processor] Uploaded ${uploadedCount} vectors to index '${indexName}'`);
+    console.log(`[PDF Processor] Upload complete. Uploaded ${uploadedCount} vectors to index '${indexName}'`);
+    console.log(`[PDF Processor] ===== PDF PROCESSING COMPLETE =====`);
     
     return {
       success: true,
@@ -236,7 +249,9 @@ export async function processPDF(filepath: string, chunkSize: number = 200): Pro
     };
     
   } catch (error) {
+    console.error('[PDF Processor] ===== ERROR IN PDF PROCESSING =====');
     console.error('[PDF Processor] Error:', error);
+    console.error('[PDF Processor] Stack trace:', error instanceof Error ? error.stack : 'No stack trace');
     return {
       success: false,
       filename: basename(filepath),
