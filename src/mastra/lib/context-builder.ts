@@ -3,6 +3,7 @@ import { ChunkContext, DocumentSummary } from './types.js';
 export interface ContextualChunk {
   key: string;
   score: number;
+  distance?: number;
   index: string;
   content: string;
   metadata?: any;
