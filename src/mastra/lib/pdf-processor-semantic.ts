@@ -172,7 +172,7 @@ export async function processSemanticPDF(
     console.log(`[Semantic PDF Processor] Created ${textChunks.length} semantic chunks`);
     
     // Check size limits
-    const MAX_CHUNKS = 500; // Increased for better granularity
+    const MAX_CHUNKS = 800; // Increased for better granularity
     if (textChunks.length > MAX_CHUNKS) {
       return {
         success: false,
