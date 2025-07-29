@@ -227,6 +227,28 @@ export const defaultQueryTool = createTool({
       console.log('[Default Query Tool] 🎯 RETURNING RESULT WITH CHUNKS TO AGENT');
       console.log(`[Default Query Tool] Result contains ${result.similarChunks.length} chunks for the LLM to use`);
       
+      // Show exactly what chunks are being sent to the LLM
+      console.log('\n[Default Query Tool] 📚 CHUNKS BEING SENT TO LLM:');
+      console.log('[Default Query Tool] =====================================');
+      result.similarChunks.forEach((chunk, idx) => {
+        console.log(`\n[Default Query Tool] CHUNK ${idx + 1}/${result.similarChunks.length}:`);
+        console.log(`[Default Query Tool] - From index: ${chunk.metadata?.indexName || 'unknown'}`);
+        console.log(`[Default Query Tool] - Document: ${chunk.metadata?.documentId || chunk.metadata?.filename || 'unknown'}`);
+        if (chunk.metadata?.pageStart) {
+          console.log(`[Default Query Tool] - Pages: ${chunk.metadata.pageStart}-${chunk.metadata.pageEnd || chunk.metadata.pageStart}`);
+        }
+        console.log(`[Default Query Tool] - Content length: ${chunk.content.length} chars`);
+        console.log(`[Default Query Tool] - Content preview: "${chunk.content.substring(0, 200)}..."`);
+      });
+      console.log('\n[Default Query Tool] =====================================');
+      
+      // Calculate total content size being sent to LLM
+      const totalChars = result.similarChunks.reduce((sum, chunk) => sum + chunk.content.length, 0);
+      const avgCharsPerChunk = totalChars / result.similarChunks.length;
+      console.log(`[Default Query Tool] 📊 TOTAL CONTEXT SIZE: ${totalChars} characters across ${result.similarChunks.length} chunks`);
+      console.log(`[Default Query Tool] 📊 AVERAGE CHUNK SIZE: ${Math.round(avgCharsPerChunk)} characters`);
+      console.log('[Default Query Tool] =====================================\n');
+      
       return result;
       
     } catch (error) {
