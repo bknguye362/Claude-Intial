@@ -6,7 +6,7 @@ import { googleSearchTool } from '../tools/google-search-tool.js';
 import { webScraperTool } from '../tools/web-scraper-tool.js';
 import { knowledgeTool } from '../tools/knowledge-tool.js';
 // import { pdfReaderTool } from '../tools/pdf-reader-tool.js'; // Removed - causes pdf-parse debug mode
-import { pdfChunkerS3VectorsTool as pdfChunkerTool } from '../tools/pdf-chunker-s3vectors.js';
+// PDF processing is now handled as a function in workflows, not as a tool
 import { textReaderTool } from '../tools/text-reader-tool.js';
 // import { localListTool } from '../tools/local-list-tool.js'; // TEMPORARILY DISABLED
 import { agentCoordinationTool } from '../tools/agent-coordination-tool.js';
@@ -22,9 +22,7 @@ const manualTools = {
   webScraperTool,
   knowledgeTool,
   // pdfReaderTool, // Removed - not used and causes pdf-parse debug mode
-  pdfChunkerTool,
-  pdfChunkerS3VectorsTool: pdfChunkerTool, // Also register under original name
-  'pdf-chunker-s3vectors': pdfChunkerTool, // Register under the tool's ID
+  // PDF processing removed - now handled automatically in workflows
   textReaderTool,
   // localListTool, // TEMPORARILY DISABLED
   agentCoordinationTool,
@@ -250,37 +248,7 @@ export function createOpenAI(options?: any) {
               //     }
               //   }
               // },
-              {
-                type: 'function',
-                function: {
-                  name: 'pdfChunkerTool',
-                  description: 'Advanced PDF processing with chunking and Q&A capabilities',
-                  parameters: {
-                    type: 'object',
-                    properties: {
-                      action: {
-                        type: 'string',
-                        enum: ['process', 'query', 'summarize'],
-                        description: 'Action to perform'
-                      },
-                      filepath: {
-                        type: 'string',
-                        description: 'Path to the PDF file'
-                      },
-                      chunkSize: {
-                        type: 'number',
-                        description: 'Number of lines per chunk',
-                        default: 20
-                      },
-                      query: {
-                        type: 'string',
-                        description: 'Question to answer (for query action)'
-                      }
-                    },
-                    required: ['action', 'filepath']
-                  }
-                }
-              },
+              // PDF processing is now automatic in workflows
               {
                 type: 'function',
                 function: {

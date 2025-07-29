@@ -1,6 +1,6 @@
 import { createStep, createWorkflow } from '@mastra/core/workflows';
 import { z } from 'zod';
-import { pdfChunkerS3VectorsTool } from '../tools/pdf-chunker-s3vectors.js';
+import { processPDF } from '../lib/pdf-processor.js';
 
 // Check if input is a question
 function isQuestion(input: string): boolean {
@@ -134,18 +134,12 @@ const processPdfIfNeeded = createStep({
       console.log('[File Workflow - ProcessPDF] PDF detected, processing automatically...');
       
       try {
-        // Call the PDF chunker tool directly
-        const result = await pdfChunkerS3VectorsTool.execute({
-          context: {
-            action: 'process',
-            filepath: inputData.pdfPath,
-          },
-          mastra: null as any, // Tool doesn't need mastra context
-        });
+        // Call the PDF processor function directly
+        const result = await processPDF(inputData.pdfPath);
         
         if (result.success) {
           pdfProcessed = true;
-          indexName = result.indexName || result.fileIndexName;
+          indexName = result.indexName;
           console.log(`[File Workflow - ProcessPDF] PDF processed successfully. Index: ${indexName}`);
         } else {
           console.error('[File Workflow - ProcessPDF] PDF processing failed:', result.error);

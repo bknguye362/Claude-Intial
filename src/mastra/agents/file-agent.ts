@@ -2,7 +2,7 @@ import { createOpenAI } from '../lib/azure-openai-direct.js';
 import { Agent } from '@mastra/core/agent';
 import { Memory } from '@mastra/memory';
 import { LibSQLStore } from '@mastra/libsql';
-import { pdfChunkerS3VectorsTool as pdfChunkerTool } from '../tools/pdf-chunker-s3vectors.js';
+// PDF processing is now automatic in the workflow
 import { textReaderTool } from '../tools/text-reader-tool.js';
 // import { localListTool } from '../tools/local-list-tool.js'; // TEMPORARILY DISABLED
 import { s3VectorsMonitorTool } from '../tools/s3-vectors-monitor.js';
@@ -202,11 +202,7 @@ const agentConfig: any = {
     - The workflow detects uploaded PDFs
     - It chunks and indexes them into S3 Vectors
     - You'll be told if processing succeeded and the index name
-    - Just use defaultQueryTool to search/answer - no need for pdfChunkerTool!
-    
-    If you need to manually process a PDF (rare cases):
-    - Use pdfChunkerTool with action: "process"
-    - But normally this is NOT needed for uploaded files
+    - Just use defaultQueryTool to search/answer!
     
     ALWAYS use tools - do not just describe what you would do!
     
@@ -219,20 +215,14 @@ const agentConfig: any = {
     
     LOCAL FILE OPERATIONS (SECONDARY):
     - List files available in the local uploads directory (only when explicitly asked)
-    - Read and analyze PDF files with intelligent chunking
     - Read and analyze text files
-    - Answer questions about PDF document contents
-    - Provide summaries and insights from file contents
+    - Answer questions about indexed PDF content using defaultQueryTool
+    - Provide summaries and insights from indexed content
     
     TOOLS AVAILABLE:
     - localListTool: List files in the local uploads directory
-    - pdfChunkerTool: PDF processing with chunking, Q&A, and summarization capabilities
-      * action: "process" - Chunks and vectorizes PDF into S3 Vectors index
-      * action: "process" - Chunks PDF and:
-        - WITHOUT indexName: Creates a FILE-SPECIFIC S3 VECTORS INDEX (file-[name]-[timestamp])
-        - WITH indexName: Creates the named index using Postman and uploads all chunks as vectors!
-      * action: "query" - Searches chunks for specific information using the file-specific index
     - textReaderTool: Read text files
+    - defaultQueryTool: Search and query indexed content (PDFs are automatically indexed)
     - s3VectorsMonitorTool: Monitor vectors in mastra-chatbot index
       * Actions: "list" (list vectors), "stats" (get statistics), "inspect" (inspect specific document)
     - s3VectorsBucketMonitorTool: Monitor entire bucket - list ALL indices, get bucket statistics
@@ -271,20 +261,18 @@ const agentConfig: any = {
        - Only process files when user EXPLICITLY uploads them or asks to read them
     
     2. For PDF files and questions about PDFs:
-       - ALWAYS process PDFs FIRST with pdfChunkerTool action: "process"
-       - THEN use defaultQueryTool for ANY questions
+       - PDFs are AUTOMATICALLY processed when uploaded
+       - Use defaultQueryTool for ANY questions about the content
        
        CORRECT WORKFLOW:
-       a) When PDF uploaded: pdfChunkerTool({action: "process", filepath: "/path/to/file.pdf"})
-       b) Wait for completion (creates index: file-[filename]-[date])
+       a) PDF is automatically processed by the workflow
+       b) You receive the index name if successful
        c) For ANY question: defaultQueryTool({question: "user's question"})
-       
-       DO NOT use action: "summarize" or "query" - always "process" first!
     
     3. When asked to read a specific file:
        - If the file path is provided, use it directly
        - If only a filename is provided, first list files to find the full path
-       - For PDFs: ALWAYS use pdfChunkerTool (first process, then query)
+       - For PDFs: They are automatically indexed, use defaultQueryTool to search
        - Use textReaderTool for text files
        - Provide a summary or analysis based on the user's request
     
@@ -316,16 +304,16 @@ const agentConfig: any = {
       - Any relevant metadata (for PDFs: number of pages, author, etc.)
     
     HANDLING PDF QUESTIONS:
-    - When users ask questions about a PDF, always use pdfChunkerTool with action: "query"
+    - When users ask questions about a PDF, use defaultQueryTool
     - The tool will automatically find the most relevant chunks (up to 10) that answer the question
-    - Present the information naturally, citing relevant sections when appropriate
-    - If no relevant chunks are found, the tool will show the first few chunks for context
+    - Present the information naturally, citing page numbers and documents
+    - The tool provides enhanced context with page references and citations
     
     ERROR HANDLING:
     - If the uploads directory is empty, explain that no files have been uploaded yet
     - If a file cannot be read, provide a clear error message
     - If no files are found, state this clearly
-    - If PDF hasn't been processed yet, process it first before querying
+    - If PDF processing failed, inform the user and suggest trying again
     
     Be helpful, concise, and focused on file operations. When answering questions about PDFs, 
     synthesize information from the relevant chunks into a coherent answer.
@@ -372,11 +360,8 @@ const agentConfig: any = {
   `,
   model: openai('gpt-4.1-test'),
   getTools: () => ({ 
-    // CRITICAL: pdfChunkerTool MUST be first to ensure PDFs are processed before queries
-    pdfChunkerTool,  // This tool processes PDFs immediately when uploaded
-    
-    // defaultQueryTool comes second - only used AFTER PDF processing
-    defaultQueryTool,  // This tool handles questions after PDFs are indexed
+    // defaultQueryTool is the main tool for searching indexed content
+    defaultQueryTool,  // This tool handles questions after PDFs are automatically indexed
     
     // localListTool, // TEMPORARILY DISABLED to prevent interference with Query: commands
     textReaderTool,
