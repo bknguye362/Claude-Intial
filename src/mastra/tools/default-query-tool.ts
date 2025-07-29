@@ -9,6 +9,33 @@ const AZURE_OPENAI_API_KEY = process.env.AZURE_OPENAI_API_KEY || process.env.AZU
 const AZURE_OPENAI_API_VERSION = process.env.AZURE_OPENAI_API_VERSION || '2023-12-01-preview';
 const EMBEDDINGS_DEPLOYMENT = 'text-embedding-ada-002';
 
+// Helper function to calculate cosine similarity between two vectors
+function cosineSimilarity(vecA: number[], vecB: number[]): number {
+  if (vecA.length !== vecB.length) {
+    console.log(`[Cosine Similarity] Vector length mismatch: ${vecA.length} vs ${vecB.length}`);
+    return 0;
+  }
+  
+  let dotProduct = 0;
+  let normA = 0;
+  let normB = 0;
+  
+  for (let i = 0; i < vecA.length; i++) {
+    dotProduct += vecA[i] * vecB[i];
+    normA += vecA[i] * vecA[i];
+    normB += vecB[i] * vecB[i];
+  }
+  
+  normA = Math.sqrt(normA);
+  normB = Math.sqrt(normB);
+  
+  if (normA === 0 || normB === 0) {
+    return 0;
+  }
+  
+  return dotProduct / (normA * normB);
+}
+
 // Helper function to generate embeddings - identical to test file
 async function generateEmbedding(text: string): Promise<number[]> {
   if (!AZURE_OPENAI_API_KEY) {
@@ -111,16 +138,33 @@ export const defaultQueryTool = createTool({
           console.log(`[Default Query Tool]     Found ${results.length} results`);
           
           if (results.length > 0) {
-            // Add index name to each result
-            const indexedResults = results.map((r: any) => ({
-              ...r,
-              index: indexName
-            }));
-            allResults.push(...indexedResults);
+            // Calculate cosine similarity for each result since S3 Vectors doesn't return scores
+            const resultsWithScores = results.map((r: any) => {
+              let score = 0;
+              
+              // Try to get the stored embedding from the result
+              if (r.embedding && Array.isArray(r.embedding)) {
+                score = cosineSimilarity(embedding, r.embedding);
+              } else if (r.float32 && Array.isArray(r.float32)) {
+                score = cosineSimilarity(embedding, r.float32);
+              } else if (r.vector && Array.isArray(r.vector)) {
+                score = cosineSimilarity(embedding, r.vector);
+              } else {
+                console.log(`[Default Query Tool]     Warning: No embedding found in result ${r.key || 'unknown'} for similarity calculation`);
+              }
+              
+              return {
+                ...r,
+                index: indexName,
+                score: score
+              };
+            });
+            
+            allResults.push(...resultsWithScores);
             
             // Show first result preview
-            const firstResult = results[0];
-            console.log(`[Default Query Tool]     Top result score: ${firstResult.score || 'N/A'}`);
+            const firstResult = resultsWithScores[0];
+            console.log(`[Default Query Tool]     Top result score: ${firstResult.score.toFixed(4)}`);
             console.log(`[Default Query Tool]     Content preview: ${(firstResult.metadata?.content || '').substring(0, 150)}...`);
           }
         } catch (searchError) {
@@ -133,9 +177,38 @@ export const defaultQueryTool = createTool({
       console.log('\n[Default Query Tool] 5. TOP 10 RESULTS ACROSS ALL INDICES:');
       console.log('[Default Query Tool] =====================================');
       
+      // Filter results by cosine similarity > 0.7
+      console.log('[Default Query Tool] 🎯 Filtering results by cosine similarity...');
+      const SIMILARITY_THRESHOLD = 0.7;
+      
+      const filteredResults = allResults.filter(result => {
+        if (result.score !== undefined && result.score > 0) {
+          const passesThreshold = result.score > SIMILARITY_THRESHOLD;
+          if (!passesThreshold) {
+            console.log(`[Default Query Tool] ❌ Filtered out chunk from ${result.index} with score ${result.score.toFixed(4)} < ${SIMILARITY_THRESHOLD}`);
+          }
+          return passesThreshold;
+        }
+        console.log(`[Default Query Tool] ⚠️ No valid score for result from ${result.index}`);
+        return false;
+      });
+      
+      console.log(`[Default Query Tool] 📊 Filtered ${allResults.length} results to ${filteredResults.length} with similarity > ${SIMILARITY_THRESHOLD}`);
+      
       // Sort by score (higher is better)
-      allResults.sort((a, b) => (b.score || 0) - (a.score || 0));
-      const top10 = allResults.slice(0, 10);
+      filteredResults.sort((a, b) => (b.score || 0) - (a.score || 0));
+      const top10 = filteredResults.slice(0, 10);
+      
+      // Log similarity score distribution
+      if (top10.length > 0) {
+        const scores = top10.map(r => r.score || 0);
+        const minScore = Math.min(...scores);
+        const maxScore = Math.max(...scores);
+        const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
+        console.log(`[Default Query Tool] 📊 Top ${top10.length} scores: Min=${minScore.toFixed(4)}, Max=${maxScore.toFixed(4)}, Avg=${avgScore.toFixed(4)}`);
+      } else {
+        console.log(`[Default Query Tool] ⚠️ No results passed the similarity threshold of ${SIMILARITY_THRESHOLD}`);
+      }
       
       // Group results by document for better contextualization
       const resultsByDocument = new Map<string, any[]>();

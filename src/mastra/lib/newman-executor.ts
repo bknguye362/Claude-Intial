@@ -600,7 +600,22 @@ export async function queryVectorsWithNewman(
           if (response.vectors && Array.isArray(response.vectors)) {
             console.log(`[Newman Query] ✅ SUCCESS: Found ${response.vectors.length} similar vectors`);
             if (response.vectors.length > 0) {
-              console.log('[Newman Query] First result:', JSON.stringify(response.vectors[0], null, 2));
+              const firstVector = response.vectors[0];
+              console.log('[Newman Query] First result structure:', {
+                hasKey: !!firstVector.key,
+                hasMetadata: !!firstVector.metadata,
+                hasEmbedding: !!firstVector.embedding,
+                hasFloat32: !!firstVector.float32,
+                hasVector: !!firstVector.vector,
+                hasScore: !!firstVector.score,
+                allKeys: Object.keys(firstVector)
+              });
+              // Don't log the full embedding - it's too large
+              const preview = { ...firstVector };
+              if (preview.embedding) preview.embedding = `[${preview.embedding.length} floats]`;
+              if (preview.float32) preview.float32 = `[${preview.float32.length} floats]`;
+              if (preview.vector) preview.vector = `[${preview.vector.length} floats]`;
+              console.log('[Newman Query] First result preview:', JSON.stringify(preview, null, 2));
             }
             return response.vectors;
           } else {
