@@ -595,6 +595,18 @@ export function createOpenAI(options?: any) {
                     
                     console.log(`[Azure Direct] Tool result:`, JSON.stringify(result).substring(0, 200));
                     
+                    // Special handling for defaultQueryTool to show chunk info
+                    if ((toolName === 'defaultQueryTool' || toolName === 'default-query') && result.similarChunks) {
+                      console.log('================================================================================');
+                      console.log('📚 FEEDING QUERY RESULTS TO LLM:');
+                      console.log(`[Azure Direct] Number of chunks being sent to LLM: ${result.similarChunks.length}`);
+                      console.log(`[Azure Direct] Total characters of context: ${JSON.stringify(result).length}`);
+                      if (result.similarChunks.length > 0) {
+                        console.log(`[Azure Direct] First chunk preview: "${result.similarChunks[0].content.substring(0, 100)}..."`);
+                      }
+                      console.log('================================================================================');
+                    }
+                    
                     // Add tool result message
                     messageArray.push({
                       tool_call_id: toolCall.id,
@@ -628,6 +640,19 @@ export function createOpenAI(options?: any) {
               
               // Make second API call with tool results
               console.log('[Azure Direct] Making second API call with tool results');
+              console.log(`[Azure Direct] Message array now contains ${messageArray.length} messages`);
+              console.log(`[Azure Direct] Messages: ${messageArray.map(m => `${m.role}${m.name ? `(${m.name})` : ''}`).join(' -> ')}`);
+              
+              // Count tool results with chunks
+              const toolResultsWithChunks = messageArray.filter(m => 
+                m.role === 'tool' && 
+                m.content && 
+                m.content.includes('similarChunks')
+              ).length;
+              if (toolResultsWithChunks > 0) {
+                console.log(`[Azure Direct] 📚 ${toolResultsWithChunks} tool result(s) contain query chunks for the LLM`);
+              }
+              
               const secondRequestBody = {
                 messages: messageArray,
                 max_tokens: 4096,
