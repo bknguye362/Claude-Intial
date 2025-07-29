@@ -55,7 +55,7 @@ async function generateEmbedding(text: string): Promise<number[]> {
         'api-key': AZURE_OPENAI_API_KEY
       },
       body: JSON.stringify({
-        input: text.slice(0, 8000),
+        input: text.slice(0, 8000), // OpenAI limit
         model: 'text-embedding-ada-002'
       })
     });
@@ -230,6 +230,35 @@ export const pdfChunkerS3VectorsTool = createTool({
         // Split into chunks
         const textChunks = chunkTextByLines(pdfData.text, context.chunkSize || 200);
         console.log(`[PDF Chunker S3Vectors] Split into ${textChunks.length} chunks`);
+        console.log(`[PDF Chunker S3Vectors] Total text length: ${pdfData.text.length} characters`);
+        console.log(`[PDF Chunker S3Vectors] Total pages: ${pdfData.numpages}`);
+        
+        // Warn if textbook is very large
+        if (textChunks.length > 150) {
+          console.warn(`[PDF Chunker S3Vectors] WARNING: Large document with ${textChunks.length} chunks. Processing may take time and could fail partway.`);
+        }
+        
+        // Hard limit to prevent failures
+        const MAX_CHUNKS = 300; // Approximately 60,000 lines or ~1500 pages
+        if (textChunks.length > MAX_CHUNKS) {
+          console.error(`[PDF Chunker S3Vectors] ERROR: Document too large (${textChunks.length} chunks). Maximum supported: ${MAX_CHUNKS} chunks.`);
+          console.error(`[PDF Chunker S3Vectors] Consider splitting the PDF into parts (e.g., chapters 1-10, 11-20).`);
+          
+          // Process only the first MAX_CHUNKS chunks
+          const truncatedChunks = textChunks.slice(0, MAX_CHUNKS);
+          console.warn(`[PDF Chunker S3Vectors] Processing only the first ${MAX_CHUNKS} chunks (approximately ${Math.floor(MAX_CHUNKS * 200 / 40)} pages).`);
+          
+          return {
+            success: false,
+            action: 'process',
+            filename: basename(filepath),
+            totalChunks: textChunks.length,
+            processedChunks: MAX_CHUNKS,
+            metadata,
+            message: `PDF is too large (${textChunks.length} chunks). Only the first ${MAX_CHUNKS} chunks were processed. Please split the PDF into smaller parts for complete indexing.`,
+            error: 'Document exceeds maximum size limit'
+          };
+        }
         
         // Generate embeddings
         const embeddings = await generateEmbeddings(textChunks);
@@ -296,7 +325,7 @@ export const pdfChunkerS3VectorsTool = createTool({
             key: `${documentId}-chunk-${index}`,
             embedding: chunk.embedding,
             metadata: {
-              content: chunk.content.substring(0, 1000),
+              content: chunk.content.substring(0, 2000), // Increased from 1000 to 2000 for better context
               documentId,
               filename: basename(filepath),
               chunkIndex: index,

@@ -192,6 +192,8 @@ export async function uploadVectorsWithNewman(
     
     // Process in batches
     const batchSize = 10;
+    const totalBatches = Math.ceil(vectors.length / batchSize);
+    console.log(`[Newman Executor] Total vectors to upload: ${vectors.length} in ${totalBatches} batches`);
     for (let i = 0; i < vectors.length; i += batchSize) {
       const batch = vectors.slice(i, i + batchSize);
       
@@ -257,7 +259,9 @@ export async function uploadVectorsWithNewman(
         const { stdout, stderr } = await execAsync(command);
         uploaded += batch.length;
         
-        console.log(`[Newman Executor] Batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(vectors.length / batchSize)}: ${batch.length} vectors uploaded`);
+        const batchNum = Math.floor(i / batchSize) + 1;
+        console.log(`[Newman Executor] Batch ${batchNum}/${totalBatches}: ${batch.length} vectors uploaded successfully`);
+        console.log(`[Newman Executor] Progress: ${uploaded}/${vectors.length} vectors (${((uploaded / vectors.length) * 100).toFixed(1)}%)`);
         
         // Check if output file exists and read the result
         if (outputFile && existsSync(outputFile)) {
