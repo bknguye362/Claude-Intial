@@ -155,7 +155,7 @@ export async function processSemanticPDF(
     
     // Perform semantic chunking
     const chunkingOptions: ChunkingOptions = {
-      maxChunkSize: options.maxChunkSize || 1500,
+      maxChunkSize: options.maxChunkSize || 3000,
       minChunkSize: options.minChunkSize || 200,
       overlapSize: options.overlapSize || 200,
       strategy: options.strategy || 'semantic'
@@ -172,7 +172,7 @@ export async function processSemanticPDF(
     console.log(`[Semantic PDF Processor] Created ${textChunks.length} semantic chunks`);
     
     // Check size limits
-    const MAX_CHUNKS = 800; // Increased for better granularity
+    const MAX_CHUNKS = 5000; // Increased to handle larger documents
     if (textChunks.length > MAX_CHUNKS) {
       return {
         success: false,
