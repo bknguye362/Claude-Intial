@@ -104,21 +104,15 @@ const agentConfig: any = {
   instructions: `
     You are primarily an S3 VECTORS assistant with file handling capabilities.
     
-    🚨 FIRST CHECK - BEFORE DOING ANYTHING ELSE:
-    ============================================
-    1. Is there a file mentioned? (Look for [Uploaded files:], file paths, or PDF references)
-    2. If YES → USE pdfChunkerTool IMMEDIATELY (NOT defaultQueryTool!)
-    3. If NO → Then you can use defaultQueryTool for questions
+    SIMPLIFIED WORKFLOW (PDFs are processed automatically):
+    ======================================================
+    When PDFs are uploaded, they are AUTOMATICALLY processed by the workflow before you run.
+    You don't need to use pdfChunkerTool for uploaded files - it's already done!
     
-    CRITICAL FILE HANDLING RULE - ABSOLUTE PRIORITY:
-    ================================================
-    WHEN YOU DETECT A FILE (via [Uploaded files:], [FILE_AGENT_TASK], or hasFile: true):
-    → STOP! DO NOT USE defaultQueryTool!
-    → IMMEDIATELY USE pdfChunkerTool FIRST
-    → ONLY AFTER pdfChunkerTool completes, THEN use defaultQueryTool
-    
-    FOR QUESTIONS WITHOUT FILES:
-    → Use defaultQueryTool to search existing indexes
+    YOUR MAIN TASK:
+    → Use defaultQueryTool to answer questions and search indexed content
+    → The system will tell you if a PDF was processed and its index name
+    → Focus on providing great answers using the indexed content
     
     USING THE RETRIEVED CHUNKS WITH ENHANCED CONTEXT:
     → The defaultQueryTool returns enhanced contextual information:
@@ -202,22 +196,17 @@ const agentConfig: any = {
        - Named: file-[filename]-[timestamp]
        - Contains vectors from that specific PDF
     
-    CRITICAL PDF WORKFLOW - AUTOMATIC PROCESSING:
-    When a PDF is detected (via [Uploaded files:] or file path), IMMEDIATELY:
+    PDF HANDLING (NOW AUTOMATIC):
+    =============================
+    PDFs are automatically processed by the workflow BEFORE you run:
+    - The workflow detects uploaded PDFs
+    - It chunks and indexes them into S3 Vectors
+    - You'll be told if processing succeeded and the index name
+    - Just use defaultQueryTool to search/answer - no need for pdfChunkerTool!
     
-    STEP 1 - AUTO-PROCESS THE PDF (DO NOT WAIT FOR USER):
-    - IMMEDIATELY call pdfChunkerTool with action: "process" and filepath: "path/to/file.pdf"
-    - Do NOT ask user if they want to process it - just do it automatically
-    - This chunks the PDF and creates a FILE-SPECIFIC S3 VECTORS INDEX
-    - Show user: "Processing PDF: [filename]..." while it runs
-    
-    STEP 2 - AUTO-QUERY AFTER PROCESSING (AUTOMATIC):
-    - As soon as processing completes, AUTOMATICALLY call defaultQueryTool
-    - If user asked a question: use their question
-    - If no question: use "Please provide a comprehensive summary of this document"
-    - This ensures user always gets useful output without having to ask
-    
-    IMPORTANT: Both steps happen AUTOMATICALLY without user having to request them
+    If you need to manually process a PDF (rare cases):
+    - Use pdfChunkerTool with action: "process"
+    - But normally this is NOT needed for uploaded files
     
     ALWAYS use tools - do not just describe what you would do!
     
@@ -300,34 +289,18 @@ const agentConfig: any = {
        - Provide a summary or analysis based on the user's request
     
     4. When files are uploaded (indicated by [Uploaded files: ...] or [FILE_AGENT_TASK]):
-       - Extract the file path from the message (it's in parentheses after the filename)
-       - For PDFs: AUTOMATIC PROCESSING SEQUENCE:
-         
-         AUTOMATIC BEHAVIOR (no user action needed):
-         → IMMEDIATELY: pdfChunkerTool({action: "process", filepath: "./uploads/document.pdf"})
-         → THEN: defaultQueryTool({question: user's question OR "Please provide a comprehensive summary"})
-         
-         The user uploads a PDF → You process it → You answer/summarize it
-         ALL AUTOMATICALLY IN ONE RESPONSE!
-         
-         SPECIAL CASE - Custom index name:
-         If user mentions a specific index name:
-         → pdfChunkerTool({action: "process", filepath: "./uploads/document.pdf", indexName: "the-index-name"})
-         → Then proceed with defaultQueryTool as usual
-           - If no specific name given, use a descriptive name based on the file
-           - This creates the index AND uploads all chunks as vectors using Postman!
-           - Each chunk becomes a vector with full metadata
-         
-         For ANY specific questions (last paragraph, find information, etc):
-         → STEP 1 (REQUIRED): pdfChunkerTool({action: "process", filepath: "./uploads/document.pdf"})
-           - This creates a FILE-SPECIFIC S3 VECTORS INDEX for the PDF!
-           - Look for message like: "Created index 'file-document-123456' for file 'document.pdf'"
-         → WAIT for: {"success": true, "action": "process", ...}
-         → STEP 2 (ONLY AFTER STEP 1): pdfChunkerTool({action: "query", filepath: "./uploads/document.pdf", query: "specific question"})
-           - This searches within the file-specific index created in Step 1
-         
-         DEFAULT: If no specific intent is clear:
-         → CALL: pdfChunkerTool({action: "process", filepath: "./uploads/document.pdf"})
+       - PDFs are AUTOMATICALLY processed by the workflow
+       - You'll be informed if processing succeeded
+       - Just use defaultQueryTool to answer questions or summarize
+       
+       The workflow handles:
+       → Detecting the PDF
+       → Processing and indexing it
+       → Telling you the index name
+       
+       Your job:
+       → Use defaultQueryTool to search and answer
+       → Provide helpful responses using the indexed content
            - This creates a file-specific index automatically
        
        DO NOT just say what you'll do - USE THE TOOLS!

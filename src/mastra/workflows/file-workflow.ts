@@ -1,5 +1,6 @@
 import { createStep, createWorkflow } from '@mastra/core/workflows';
 import { z } from 'zod';
+import { pdfChunkerS3VectorsTool } from '../tools/pdf-chunker-s3vectors.js';
 
 // Check if input is a question
 function isQuestion(input: string): boolean {
@@ -101,7 +102,68 @@ const analyzeFileUpload = createStep({
   },
 });
 
-// Step 2: Generate response
+// Step 2: Process PDF if detected
+const processPdfIfNeeded = createStep({
+  id: 'process-pdf-if-needed',
+  description: 'Automatically processes PDF files before agent runs',
+  inputSchema: z.object({
+    message: z.string(),
+    hasPdf: z.boolean(),
+    pdfPath: z.string().optional(),
+    fileName: z.string().optional(),
+    actualUserMessage: z.string(),
+    hasQuestion: z.boolean(),
+  }),
+  outputSchema: z.object({
+    message: z.string(),
+    hasPdf: z.boolean(),
+    pdfPath: z.string().optional(),
+    fileName: z.string().optional(),
+    actualUserMessage: z.string(),
+    hasQuestion: z.boolean(),
+    pdfProcessed: z.boolean(),
+    indexName: z.string().optional(),
+  }),
+  execute: async ({ inputData }) => {
+    console.log('[File Workflow - ProcessPDF] Step executed');
+    
+    let pdfProcessed = false;
+    let indexName: string | undefined;
+    
+    if (inputData.hasPdf && inputData.pdfPath) {
+      console.log('[File Workflow - ProcessPDF] PDF detected, processing automatically...');
+      
+      try {
+        // Call the PDF chunker tool directly
+        const result = await pdfChunkerS3VectorsTool.execute({
+          context: {
+            action: 'process',
+            filepath: inputData.pdfPath,
+          },
+          mastra: null as any, // Tool doesn't need mastra context
+        });
+        
+        if (result.success) {
+          pdfProcessed = true;
+          indexName = result.indexName || result.fileIndexName;
+          console.log(`[File Workflow - ProcessPDF] PDF processed successfully. Index: ${indexName}`);
+        } else {
+          console.error('[File Workflow - ProcessPDF] PDF processing failed:', result.error);
+        }
+      } catch (error) {
+        console.error('[File Workflow - ProcessPDF] Error processing PDF:', error);
+      }
+    }
+    
+    return {
+      ...inputData,
+      pdfProcessed,
+      indexName,
+    };
+  },
+});
+
+// Step 3: Generate response
 const generateFileResponse = createStep({
   id: 'generate-file-response',
   description: 'Generates response using the file agent',
@@ -112,6 +174,8 @@ const generateFileResponse = createStep({
     fileName: z.string().optional(),
     actualUserMessage: z.string(),
     hasQuestion: z.boolean(),
+    pdfProcessed: z.boolean(),
+    indexName: z.string().optional(),
   }),
   outputSchema: z.object({
     response: z.string(),
@@ -131,19 +195,21 @@ const generateFileResponse = createStep({
     let context = '';
     
     // Build context based on what was detected
-    if (inputData.hasPdf && inputData.pdfPath) {
-      context = `🚨 FILE DETECTED - MANDATORY SEQUENCE:
-      1. A PDF file has been uploaded: ${inputData.fileName} at ${inputData.pdfPath}
-      2. YOU MUST use pdfChunkerTool FIRST (NOT defaultQueryTool!)
-      3. Call: pdfChunkerTool({action: "process", filepath: "${inputData.pdfPath}"})
-      4. WAIT for it to complete
-      5. ONLY THEN use defaultQueryTool for questions
+    if (inputData.hasPdf && inputData.pdfProcessed) {
+      // PDF has already been processed by the workflow
+      context = `A PDF file (${inputData.fileName}) has been automatically processed and indexed as: ${inputData.indexName}. `;
+      context += `The document is now searchable. `;
       
-      CRITICAL: If you use defaultQueryTool before pdfChunkerTool, the search will fail because the PDF won't be indexed yet!
-      
-      After processing, answer: "${inputData.actualUserMessage || 'Please provide a comprehensive summary of this document'}"`
+      if (inputData.hasQuestion || inputData.actualUserMessage) {
+        context += `Please use defaultQueryTool to answer: "${inputData.actualUserMessage}" `;
+      } else {
+        context += `Please use defaultQueryTool to provide a comprehensive summary of this document. `;
+      }
+    } else if (inputData.hasPdf && !inputData.pdfProcessed) {
+      // PDF processing failed
+      context = `A PDF file (${inputData.fileName}) was uploaded but could not be processed. Please inform the user of this issue. `;
     } else if (inputData.hasQuestion) {
-      context = `No file detected. The user has asked a question. Use defaultQueryTool to find relevant information and answer: "${inputData.actualUserMessage}". `;
+      context = `The user has asked a question. Use defaultQueryTool to find relevant information and answer: "${inputData.actualUserMessage}". `;
     }
     
     if (!context) {
@@ -184,6 +250,7 @@ const fileWorkflow = createWorkflow({
   }),
 })
   .then(analyzeFileUpload)
+  .then(processPdfIfNeeded)
   .then(generateFileResponse);
 
 fileWorkflow.commit();
