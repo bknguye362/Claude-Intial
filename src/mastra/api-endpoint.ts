@@ -1,4 +1,5 @@
 import { mastra } from './index.js';
+import { processPDF } from './lib/pdf-processor.js';
 
 // Simple HTTP server example for the assistant chatbot
 const PORT = 3000;
@@ -18,22 +19,49 @@ async function handleRequest(body: any) {
 
   // Handle uploaded files if present
   let enhancedMessage = body.message;
+  let processedPdfInfo = '';
+  
   if (body.files && body.files.length > 0) {
     console.log(`[API Endpoint] Processing ${body.files.length} files:`);
-    body.files.forEach((file: any, index: number) => {
-      console.log(`[API Endpoint] File ${index + 1}:`, {
+    
+    // Process any PDF files automatically
+    for (const file of body.files) {
+      console.log(`[API Endpoint] File:`, {
         originalName: file.originalName,
         savedName: file.savedName,
         path: file.path,
         filePath: file.filePath,
         size: file.size
       });
-    });
+      
+      // Check if it's a PDF
+      const filePath = file.filePath || file.location || file.path;
+      if (filePath && filePath.toLowerCase().endsWith('.pdf')) {
+        console.log(`[API Endpoint] 🎯 PDF detected: ${file.originalName}`);
+        console.log(`[API Endpoint] 🔄 Automatically processing PDF...`);
+        
+        try {
+          const result = await processPDF(filePath);
+          if (result.success) {
+            console.log(`[API Endpoint] ✅ PDF processed successfully!`);
+            console.log(`[API Endpoint] 📊 Created index: ${result.indexName}`);
+            console.log(`[API Endpoint] 📄 Total chunks: ${result.totalChunks}`);
+            processedPdfInfo += `\n[PDF PROCESSED: ${file.originalName} → Index: ${result.indexName}, Chunks: ${result.totalChunks}]`;
+          } else {
+            console.error(`[API Endpoint] ❌ PDF processing failed:`, result.error);
+            processedPdfInfo += `\n[PDF PROCESSING FAILED: ${file.originalName} - ${result.error}]`;
+          }
+        } catch (error) {
+          console.error(`[API Endpoint] ❌ Error processing PDF:`, error);
+          processedPdfInfo += `\n[PDF PROCESSING ERROR: ${file.originalName}]`;
+        }
+      }
+    }
     
     const fileInfo = body.files.map((file: any) => 
       `${file.originalName} (${file.filePath || file.location})`
     ).join(', ');
-    enhancedMessage = `[Uploaded files: ${fileInfo}]\n${body.message}`;
+    enhancedMessage = `[Uploaded files: ${fileInfo}]${processedPdfInfo}\n${body.message}`;
     console.log(`[API Endpoint] Enhanced message: ${enhancedMessage}`);
   }
   
