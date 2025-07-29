@@ -53,7 +53,7 @@ const agentConfig: any = {
     Remember: The superdocument content is your primary source for answering questions. Use it to provide detailed, accurate responses based on real web content.
   `,
   model: openai('gpt-4.1-test'),
-  tools: { googleSearchTool, webScraperTool },
+  getTools: () => ({ googleSearchTool, webScraperTool }),
 };
 
 // Only add memory if not in production environment

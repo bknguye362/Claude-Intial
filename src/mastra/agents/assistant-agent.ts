@@ -11,6 +11,9 @@ const openai = createOpenAI();
 const agentConfig: any = {
   name: 'Assistant Agent',
   maxTokens: 4096,  // Increased limit for longer responses
+  getTools: () => ({ 
+    agentCoordinationTool
+  }),
   instructions: `
     You are a helpful assistant that coordinates with specialized agents to provide accurate information.
     
@@ -162,9 +165,6 @@ const agentConfig: any = {
   `,
   model: openai('gpt-4.1-test'),
   provider: 'AZURE_OPENAI',
-  tools: { 
-    agentCoordinationTool
-  },
   toolChoice: 'required', // Force the model to always use tools
 };
 

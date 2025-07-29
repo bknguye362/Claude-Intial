@@ -26,7 +26,7 @@ const agentConfig: any = {
       Use the weatherTool to fetch current weather data.
 `,
   model: openai('gpt-4.1-test'),
-  tools: { weatherTool },
+  getTools: () => ({ weatherTool }),
 };
 
 // Only add memory if not in production environment

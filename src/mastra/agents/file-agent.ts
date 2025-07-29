@@ -391,7 +391,7 @@ const agentConfig: any = {
     - ragQueryProcessorTool: Complete RAG pipeline - process query, search, and generate response
   `,
   model: openai('gpt-4.1-test'),
-  tools: { 
+  getTools: () => ({ 
     // CRITICAL: defaultQueryTool MUST be first to ensure questions are vectorized
     defaultQueryTool,  // This tool handles ALL questions and vectorizes them
     
@@ -420,7 +420,7 @@ const agentConfig: any = {
     multiIndexSimilaritySearchTool,
     ragQueryProcessorTool
     // queryCommandTool // No longer needed
-  },
+  }),
   toolChoice: 'auto', // Encourage tool use
 };
 
