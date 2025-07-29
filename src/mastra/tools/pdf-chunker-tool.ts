@@ -738,8 +738,8 @@ export const pdfChunkerTool = createTool({
           characters: pdfData.text.length,
         };
         
-        // Split text into chunks
-        const textChunks = chunkTextByLines(pdfData.text, context.chunkSize || 200);
+        // Split text into chunks - using larger chunk size to avoid too many small chunks
+        const textChunks = chunkTextByLines(pdfData.text, context.chunkSize || 500);
         console.log(`[PDF Chunker Tool] Split PDF into ${textChunks.length} chunks`);
         
         // Create chunk objects with estimated page numbers
@@ -895,8 +895,8 @@ export const pdfChunkerTool = createTool({
             author: pdfData.info?.Author || 'Unknown',
           };
 
-          // Chunk the text
-          const textChunks = chunkTextByLines(text, context.chunkSize || 200);
+          // Chunk the text - using larger chunk size to avoid too many small chunks
+          const textChunks = chunkTextByLines(text, context.chunkSize || 500);
           
           // Create chunk objects with estimated page numbers (same as summarize action)
           const chunks: PDFChunk[] = textChunks.map((content, index) => {
@@ -1130,8 +1130,8 @@ export const pdfChunkerTool = createTool({
             characters: pdfData.text.length,
           };
           
-          // Split text into chunks
-          const textChunks = chunkTextByLines(pdfData.text, context.chunkSize || 200);
+          // Split text into chunks - using larger chunk size to avoid too many small chunks
+          const textChunks = chunkTextByLines(pdfData.text, context.chunkSize || 500);
           console.log(`[PDF Chunker Tool] Split PDF into ${textChunks.length} chunks for summarization`);
           
           // Create chunk objects with estimated page numbers

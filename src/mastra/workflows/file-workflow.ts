@@ -1,8 +1,8 @@
 import { createStep, createWorkflow } from '@mastra/core/workflows';
 import { z } from 'zod';
-// Temporarily using semantic processor instead of line-based
-// import { processPDF } from '../lib/pdf-processor.js';
-import { processSemanticPDF as processPDF } from '../lib/pdf-processor-semantic.js';
+// Using original line-based processor
+import { processPDF } from '../lib/pdf-processor.js';
+// import { processSemanticPDF as processPDF } from '../lib/pdf-processor-semantic.js';
 
 // Check if input is a question
 function isQuestion(input: string): boolean {

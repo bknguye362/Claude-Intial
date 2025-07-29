@@ -93,21 +93,43 @@ async function generateEmbedding(text: string): Promise<number[]> {
   }
 }
 
-// Helper function to generate embeddings for multiple texts
+// Helper function to generate embeddings for multiple texts with rate limiting
 async function generateEmbeddings(texts: string[]): Promise<number[][]> {
   console.log(`[PDF Processor] Generating embeddings for ${texts.length} chunks...`);
   
-  const batchSize = 5;
+  const batchSize = 3; // Reduced to avoid rate limits
   const embeddings: number[][] = [];
+  const delayBetweenBatches = 1000; // 1 second between batches
   
   for (let i = 0; i < texts.length; i += batchSize) {
     const batch = texts.slice(i, i + batchSize);
-    const batchPromises = batch.map(text => generateEmbedding(text));
-    const batchEmbeddings = await Promise.all(batchPromises);
+    
+    // Process batch with individual delays if needed
+    const batchEmbeddings: number[][] = [];
+    for (let j = 0; j < batch.length; j++) {
+      try {
+        const embedding = await generateEmbedding(batch[j]);
+        batchEmbeddings.push(embedding);
+        
+        // Small delay between individual requests
+        if (j < batch.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+      } catch (error) {
+        console.error(`[PDF Processor] Failed to generate embedding for chunk ${i + j}:`, error);
+        // Use fallback embedding on error
+        const hash = batch[j].split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+        batchEmbeddings.push(Array(1536).fill(0).map((_, idx) => Math.sin(hash + idx) * 0.5 + 0.5));
+      }
+    }
+    
     embeddings.push(...batchEmbeddings);
     
+    console.log(`[PDF Processor] Progress: ${Math.min(i + batchSize, texts.length)}/${texts.length}`);
+    
+    // Delay between batches to avoid rate limiting
     if (i + batchSize < texts.length) {
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
     }
   }
   
@@ -130,7 +152,7 @@ function chunkTextByLines(text: string, linesPerChunk: number): string[] {
 }
 
 // Main function to process PDF
-export async function processPDF(filepath: string, chunkSize: number = 200): Promise<ProcessPDFResult> {
+export async function processPDF(filepath: string, chunkSize: number = 500): Promise<ProcessPDFResult> {
   console.log(`[PDF Processor] ===== STARTING PDF PROCESSING =====`);
   console.log(`[PDF Processor] Processing PDF: ${filepath}`);
   console.log(`[PDF Processor] Chunk size: ${chunkSize}`);
