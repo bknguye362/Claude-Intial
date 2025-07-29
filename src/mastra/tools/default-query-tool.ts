@@ -69,7 +69,7 @@ export const defaultQueryTool = createTool({
       console.log('[Default Query Tool] 1. Generating embedding for question...');
       const embedding = await generateEmbedding(context.question);
       console.log(`[Default Query Tool]    Embedding generated, length: ${embedding.length}`);
-      console.log(`[Default Query Tool]    First 5 values: [${embedding.slice(0, 5).map(v => v.toFixed(4)).join(', ')}...]`);
+      console.log(`[Default Query Tool]    Generated embedding first 5: [${embedding.slice(0, 5).map(v => v.toFixed(6)).join(', ')}...]`);
       
       // Step 2: Skip uploading - we'll query directly with the embedding
       console.log('[Default Query Tool] 2. Skipping vector storage - will query directly');
@@ -107,6 +107,7 @@ export const defaultQueryTool = createTool({
         console.log(`[Default Query Tool] --- Querying index: ${indexName} ---`);
         
         try {
+          console.log(`[Default Query Tool]     Calling queryVectorsWithNewman with embedding first 5: [${embedding.slice(0, 5).map(v => v.toFixed(6)).join(', ')}...]`);
           const results = await queryVectorsWithNewman(indexName, embedding, 10);
           console.log(`[Default Query Tool]     Found ${results.length} results`);
           

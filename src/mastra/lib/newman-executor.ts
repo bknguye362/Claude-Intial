@@ -474,7 +474,7 @@ export async function queryVectorsWithNewman(
   console.log(`[Newman Query] Index: ${indexName}`);
   console.log(`[Newman Query] Query vector length: ${queryVector.length}`);
   console.log(`[Newman Query] Top K: ${topK}`);
-  console.log(`[Newman Query] First 5 vector values: [${queryVector.slice(0, 5).join(', ')}...]`);
+  console.log(`[Newman Query] Received queryVector first 5: [${queryVector.slice(0, 5).map(v => v.toFixed(6)).join(', ')}...]`);
   
   const collectionFile = './postman-s3-vectors.json';
   const envFile = './postman-s3-vectors-env-temp.json';
