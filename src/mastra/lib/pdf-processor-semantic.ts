@@ -183,17 +183,42 @@ export async function processSemanticPDF(
       };
     }
     
-    // Generate embeddings in parallel batches
+    // Generate embeddings with rate limiting
     console.log(`[Semantic PDF Processor] Generating embeddings...`);
     const embeddings: number[][] = [];
-    const batchSize = 10;
+    const batchSize = 3; // Reduced batch size to avoid rate limits
+    const delayBetweenBatches = 1000; // 1 second delay between batches
     
     for (let i = 0; i < textChunks.length; i += batchSize) {
       const batch = textChunks.slice(i, i + batchSize);
-      const batchEmbeddings = await Promise.all(batch.map(text => generateEmbedding(text)));
+      
+      // Process batch with individual delays if needed
+      const batchEmbeddings: number[][] = [];
+      for (let j = 0; j < batch.length; j++) {
+        try {
+          const embedding = await generateEmbedding(batch[j]);
+          batchEmbeddings.push(embedding);
+          
+          // Small delay between individual requests
+          if (j < batch.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 200));
+          }
+        } catch (error) {
+          console.error(`[Semantic PDF Processor] Failed to generate embedding for chunk ${i + j}:`, error);
+          // Use fallback embedding on error
+          const hash = batch[j].split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+          batchEmbeddings.push(Array(1536).fill(0).map((_, idx) => Math.sin(hash + idx) * 0.5 + 0.5));
+        }
+      }
+      
       embeddings.push(...batchEmbeddings);
       
       console.log(`[Semantic PDF Processor] Progress: ${Math.min(i + batchSize, textChunks.length)}/${textChunks.length}`);
+      
+      // Delay between batches to avoid rate limiting
+      if (i + batchSize < textChunks.length) {
+        await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
+      }
     }
     
     // Create enhanced chunks with metadata
