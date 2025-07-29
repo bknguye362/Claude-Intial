@@ -392,11 +392,13 @@ const agentConfig: any = {
   `,
   model: openai('gpt-4.1-test'),
   getTools: () => ({ 
-    // CRITICAL: defaultQueryTool MUST be first to ensure questions are vectorized
-    defaultQueryTool,  // This tool handles ALL questions and vectorizes them
+    // CRITICAL: pdfChunkerTool MUST be first to ensure PDFs are processed before queries
+    pdfChunkerTool,  // This tool processes PDFs immediately when uploaded
+    
+    // defaultQueryTool comes second - only used AFTER PDF processing
+    defaultQueryTool,  // This tool handles questions after PDFs are indexed
     
     // localListTool, // TEMPORARILY DISABLED to prevent interference with Query: commands
-    pdfChunkerTool,
     textReaderTool,
     s3VectorsMonitorTool,
     s3VectorsLogsTool,
