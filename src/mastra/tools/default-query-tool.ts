@@ -138,14 +138,59 @@ export const defaultQueryTool = createTool({
       console.log('[Default Query Tool] =====================================');
       
       // S3 Vectors already returns the most similar results
-      // We trust their similarity ranking and use all results
+      // Filter by distance threshold and take top 10
       console.log('[Default Query Tool] 🎯 Processing S3 Vectors results...');
       
-      // Sort by our pseudo-score to maintain relative ranking from each index
-      allResults.sort((a, b) => (b.score || 0) - (a.score || 0));
-      const top10 = allResults.slice(0, 10);
+      // Filter results with distance >= 0.7
+      const DISTANCE_THRESHOLD = 0.7;
+      const filteredResults = allResults.filter(result => {
+        // If no distance provided, exclude it (to be safe)
+        if (result.distance === undefined) {
+          console.log(`[Default Query Tool] ⚠️ Excluding result without distance: ${result.key}`);
+          return false;
+        }
+        return result.distance >= DISTANCE_THRESHOLD;
+      });
       
-      console.log(`[Default Query Tool] 📊 Selected top ${top10.length} results from ${allResults.length} total`);
+      console.log(`[Default Query Tool] 📊 Filtered from ${allResults.length} to ${filteredResults.length} results with distance >= ${DISTANCE_THRESHOLD}`);
+      
+      // Sort by distance (highest first) and take up to 10
+      filteredResults.sort((a, b) => (b.distance || 0) - (a.distance || 0));
+      const top10 = filteredResults.slice(0, 10);
+      
+      console.log(`[Default Query Tool] 📊 Selected ${top10.length} results (max 10) from filtered results`);
+      
+      // Check if we have any results that meet the threshold
+      if (top10.length === 0) {
+        console.log(`[Default Query Tool] ⚠️ NO RESULTS met the distance threshold of ${DISTANCE_THRESHOLD}`);
+        console.log(`[Default Query Tool] Best distance found: ${allResults.length > 0 ? allResults[0].distance : 'N/A'}`);
+        
+        // Return early with no chunks
+        const result = {
+          success: true,
+          message: `No similar content found with distance >= ${DISTANCE_THRESHOLD}`,
+          timestamp: new Date().toISOString(),
+          questionLength: context.question.length,
+          embeddingDimension: embedding.length,
+          similarChunks: [],
+          totalSimilarChunks: 0,
+          documentContext: {
+            documentsFound: 0,
+            summary: []
+          },
+          contextString: '',
+          citations: [],
+          debug: {
+            indicesSearched: indices.join(','),
+            totalResultsBeforeFilter: allResults.length,
+            distanceThreshold: DISTANCE_THRESHOLD,
+            bestDistanceFound: allResults.length > 0 ? allResults[0].distance : null
+          }
+        };
+        
+        console.log('[Default Query Tool] 🎯 RETURNING EMPTY RESULT - No chunks meet distance threshold');
+        return result;
+      }
       
       // Show which indices contributed results
       const indexContributions = new Map<string, number>();
@@ -220,6 +265,8 @@ export const defaultQueryTool = createTool({
           indicesSearched: indices.join(','),
           totalIndicesSearched: indices.length,
           totalResultsBeforeFilter: allResults.length,
+          totalResultsAfterFilter: filteredResults.length,
+          distanceThreshold: DISTANCE_THRESHOLD,
           listingMethod: indices.length > 1 ? 'listIndicesWithNewman' : 'fallback',
           awsKeySet: !!process.env.AWS_ACCESS_KEY_ID,
           bucketName: process.env.S3_VECTORS_BUCKET || 'chatbotvectors362',
