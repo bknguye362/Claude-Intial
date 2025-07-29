@@ -132,16 +132,18 @@ const generateFileResponse = createStep({
     
     // Build context based on what was detected
     if (inputData.hasPdf && inputData.pdfPath) {
-      context = `A PDF file has been uploaded: ${inputData.fileName} at ${inputData.pdfPath}. `;
-      context += `IMMEDIATELY process this PDF by calling pdfChunkerTool with action: "process" and filepath: "${inputData.pdfPath}". `;
-      context += `Do NOT wait for user instructions - process it automatically. `;
+      context = `🚨 FILE DETECTED - MANDATORY SEQUENCE:
+      1. A PDF file has been uploaded: ${inputData.fileName} at ${inputData.pdfPath}
+      2. YOU MUST use pdfChunkerTool FIRST (NOT defaultQueryTool!)
+      3. Call: pdfChunkerTool({action: "process", filepath: "${inputData.pdfPath}"})
+      4. WAIT for it to complete
+      5. ONLY THEN use defaultQueryTool for questions
       
-      // Always include a default query after processing
-      const queryText = inputData.actualUserMessage || 'Please provide a comprehensive summary of this document, including its main topics and key points.';
-      context += `AFTER the PDF is fully processed and indexed, automatically call defaultQueryTool with question: "${queryText}" to provide the user with relevant information. `;
-      context += `The user should see both the processing confirmation AND the answer to their question (or summary if no question was asked). `;
+      CRITICAL: If you use defaultQueryTool before pdfChunkerTool, the search will fail because the PDF won't be indexed yet!
+      
+      After processing, answer: "${inputData.actualUserMessage || 'Please provide a comprehensive summary of this document'}"`
     } else if (inputData.hasQuestion) {
-      context = `The user has asked a question. Use defaultQueryTool to find relevant information and answer: "${inputData.actualUserMessage}". `;
+      context = `No file detected. The user has asked a question. Use defaultQueryTool to find relevant information and answer: "${inputData.actualUserMessage}". `;
     }
     
     if (!context) {
