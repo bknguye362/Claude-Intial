@@ -121,9 +121,10 @@ export const defaultQueryTool = createTool({
             
             allResults.push(...indexedResults);
             
-            // Show first result preview
+            // Show first result preview with distance
             const firstResult = indexedResults[0];
             console.log(`[Default Query Tool]     Top result: ${firstResult.key || 'unknown'}`);
+            console.log(`[Default Query Tool]     Distance: ${firstResult.distance !== undefined ? firstResult.distance : 'not provided'}`);
             console.log(`[Default Query Tool]     Content preview: ${(firstResult.metadata?.content || '').substring(0, 150)}...`);
           }
         } catch (searchError) {
@@ -165,6 +166,7 @@ export const defaultQueryTool = createTool({
         
         console.log(`[Default Query Tool] ${i + 1}. [${result.index}]`);
         console.log(`[Default Query Tool]    Key: ${result.key}`);
+        console.log(`[Default Query Tool]    Distance: ${result.distance !== undefined ? result.distance.toFixed(4) : 'not provided'}`);
         if (result.metadata?.pageStart) {
           console.log(`[Default Query Tool]    Pages: ${result.metadata.pageStart}-${result.metadata.pageEnd || result.metadata.pageStart}`);
           console.log(`[Default Query Tool]    Chunk: ${result.metadata.chunkIndex + 1}/${result.metadata.totalChunks || '?'}`);
@@ -179,6 +181,7 @@ export const defaultQueryTool = createTool({
       const contextualizedChunks = top10.map(r => ({
         key: r.key,
         score: r.score,
+        distance: r.distance,
         index: r.index,
         content: r.metadata?.content || r.metadata?.text || 'No content available',
         metadata: r.metadata,
@@ -233,6 +236,7 @@ export const defaultQueryTool = createTool({
       result.similarChunks.forEach((chunk, idx) => {
         console.log(`\n[Default Query Tool] CHUNK ${idx + 1}/${result.similarChunks.length}:`);
         console.log(`[Default Query Tool] - From index: ${chunk.metadata?.indexName || 'unknown'}`);
+        console.log(`[Default Query Tool] - Distance: ${chunk.distance !== undefined ? chunk.distance.toFixed(4) : 'not provided'}`);
         console.log(`[Default Query Tool] - Document: ${chunk.metadata?.documentId || chunk.metadata?.filename || 'unknown'}`);
         if (chunk.metadata?.pageStart) {
           console.log(`[Default Query Tool] - Pages: ${chunk.metadata.pageStart}-${chunk.metadata.pageEnd || chunk.metadata.pageStart}`);

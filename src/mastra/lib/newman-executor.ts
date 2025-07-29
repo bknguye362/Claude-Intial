@@ -604,8 +604,10 @@ export async function queryVectorsWithNewman(
               const firstVector = response.vectors[0];
               console.log('[Newman Query] First result:', {
                 key: firstVector.key,
+                distance: firstVector.distance,
                 hasMetadata: !!firstVector.metadata,
-                metadataKeys: firstVector.metadata ? Object.keys(firstVector.metadata) : []
+                metadataKeys: firstVector.metadata ? Object.keys(firstVector.metadata) : [],
+                allFields: Object.keys(firstVector)
               });
               // Log a preview of the metadata
               if (firstVector.metadata) {
