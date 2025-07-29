@@ -139,37 +139,34 @@ export const defaultQueryTool = createTool({
       console.log('[Default Query Tool] =====================================');
       
       // S3 Vectors already returns the most similar results
-      // Filter by distance threshold and take top 10
+      // For cosine distance, smaller values = more similar
       console.log('[Default Query Tool] 🎯 Processing S3 Vectors results...');
       
-      // Filter results with distance >= 0.7
-      const DISTANCE_THRESHOLD = 0.7;
-      const filteredResults = allResults.filter(result => {
-        // If no distance provided, exclude it (to be safe)
+      // Filter out results without distance values
+      const resultsWithDistance = allResults.filter(result => {
         if (result.distance === undefined) {
           console.log(`[Default Query Tool] ⚠️ Excluding result without distance: ${result.key}`);
           return false;
         }
-        return result.distance >= DISTANCE_THRESHOLD;
+        return true;
       });
       
-      console.log(`[Default Query Tool] 📊 Filtered from ${allResults.length} to ${filteredResults.length} results with distance >= ${DISTANCE_THRESHOLD}`);
+      console.log(`[Default Query Tool] 📊 Found ${resultsWithDistance.length} results with distance values from ${allResults.length} total`);
       
-      // Sort by distance (highest first) and take up to 10
-      filteredResults.sort((a, b) => (b.distance || 0) - (a.distance || 0));
-      const top10 = filteredResults.slice(0, 10);
+      // Sort by distance (smallest first for cosine distance) and take top 10
+      resultsWithDistance.sort((a, b) => (a.distance || 999) - (b.distance || 999));
+      const top10 = resultsWithDistance.slice(0, 10);
       
-      console.log(`[Default Query Tool] 📊 Selected ${top10.length} results (max 10) from filtered results`);
-      
-      // Check if we have any results that meet the threshold
-      if (top10.length === 0) {
-        console.log(`[Default Query Tool] ⚠️ NO RESULTS met the distance threshold of ${DISTANCE_THRESHOLD}`);
-        console.log(`[Default Query Tool] Best distance found: ${allResults.length > 0 ? allResults[0].distance : 'N/A'}`);
+      if (top10.length > 0) {
+        console.log(`[Default Query Tool] 📊 Selected top ${top10.length} results with smallest distances`);
+        console.log(`[Default Query Tool] Distance range: ${top10[0].distance?.toFixed(4)} to ${top10[top10.length-1].distance?.toFixed(4)}`);
+      } else {
+        console.log(`[Default Query Tool] ⚠️ No results found with distance values`);
         
         // Return early with no chunks
         const result = {
           success: true,
-          message: `No similar content found with distance >= ${DISTANCE_THRESHOLD}`,
+          message: 'No similar content found with distance values',
           timestamp: new Date().toISOString(),
           questionLength: context.question.length,
           embeddingDimension: embedding.length,
@@ -183,13 +180,12 @@ export const defaultQueryTool = createTool({
           citations: [],
           debug: {
             indicesSearched: indices.join(','),
-            totalResultsBeforeFilter: allResults.length,
-            distanceThreshold: DISTANCE_THRESHOLD,
-            bestDistanceFound: allResults.length > 0 ? allResults[0].distance : null
+            totalResultsFound: allResults.length,
+            resultsWithDistance: resultsWithDistance.length
           }
         };
         
-        console.log('[Default Query Tool] 🎯 RETURNING EMPTY RESULT - No chunks meet distance threshold');
+        console.log('[Default Query Tool] 🎯 RETURNING EMPTY RESULT - No results with distance values');
         return result;
       }
       
@@ -266,8 +262,8 @@ export const defaultQueryTool = createTool({
           indicesSearched: indices.join(','),
           totalIndicesSearched: indices.length,
           totalResultsBeforeFilter: allResults.length,
-          totalResultsAfterFilter: filteredResults.length,
-          distanceThreshold: DISTANCE_THRESHOLD,
+          resultsWithDistance: resultsWithDistance.length,
+          top10Count: top10.length,
           listingMethod: indices.length > 1 ? 'listIndicesWithNewman' : 'fallback',
           awsKeySet: !!process.env.AWS_ACCESS_KEY_ID,
           bucketName: process.env.S3_VECTORS_BUCKET || 'chatbotvectors362',
