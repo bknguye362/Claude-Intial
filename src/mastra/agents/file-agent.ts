@@ -196,19 +196,20 @@ const agentConfig: any = {
        - Contains vectors from that specific PDF
     
     CRITICAL PDF WORKFLOW:
-    When handling PDFs, you MUST determine the user's intent:
+    When a PDF is uploaded, ALWAYS PROCESS IT FIRST:
     
-    IMPORTANT: When a PDF is uploaded, the pdfChunkerTool automatically creates a FILE-SPECIFIC S3 VECTORS INDEX!
+    STEP 1 - PROCESS THE PDF (REQUIRED):
+    - Use pdfChunkerTool with action: "process" and filepath: "path/to/file.pdf"
+    - This chunks the PDF and creates a FILE-SPECIFIC S3 VECTORS INDEX
     - Each PDF gets its own unique index named: file-[filename]-[timestamp]
-    - This allows isolated storage and retrieval of vectors for each document
+    - WAIT for this to complete before doing anything else!
     
-    For GENERAL SUMMARIES (e.g., "summarize this", "what's this PDF about"):
-    - Use pdfChunkerTool with action: "summarize"
-    - This creates a recursive summary of the entire document
+    STEP 2 - ANSWER QUESTIONS (AFTER PROCESSING):
+    - Once the PDF is processed and indexed, use defaultQueryTool
+    - This will search across all indices including the newly created one
+    - The enhanced context will include page numbers and citations
     
-    For SPECIFIC QUESTIONS (e.g., "what's the last paragraph", "find information about X"):
-    - Use pdfChunkerTool with action: "query" and include the question
-    - The tool will automatically process the PDF if needed
+    IMPORTANT: "process" must ALWAYS happen first, even if user asks a question immediately
     
     ALWAYS use tools - do not just describe what you would do!
     
@@ -229,7 +230,7 @@ const agentConfig: any = {
     TOOLS AVAILABLE:
     - localListTool: List files in the local uploads directory
     - pdfChunkerTool: PDF processing with chunking, Q&A, and summarization capabilities
-      * action: "summarize" - Creates recursive summary of entire PDF
+      * action: "process" - Chunks and vectorizes PDF into S3 Vectors index
       * action: "process" - Chunks PDF and:
         - WITHOUT indexName: Creates a FILE-SPECIFIC S3 VECTORS INDEX (file-[name]-[timestamp])
         - WITH indexName: Creates the named index using Postman and uploads all chunks as vectors!
@@ -273,19 +274,15 @@ const agentConfig: any = {
        - Only process files when user EXPLICITLY uploads them or asks to read them
     
     2. For PDF files and questions about PDFs:
-       - ALWAYS use pdfChunkerTool for PDFs
-       - Choose action based on user intent:
+       - ALWAYS process PDFs FIRST with pdfChunkerTool action: "process"
+       - THEN use defaultQueryTool for ANY questions
        
-       FOR SUMMARIES ("summarize this", "what's this about", "give me an overview"):
-       a) Use pdfChunkerTool with action: "summarize"
-       b) This creates a recursive summary of the entire document
+       CORRECT WORKFLOW:
+       a) When PDF uploaded: pdfChunkerTool({action: "process", filepath: "/path/to/file.pdf"})
+       b) Wait for completion (creates index: file-[filename]-[date])
+       c) For ANY question: defaultQueryTool({question: "user's question"})
        
-       FOR SPECIFIC QUESTIONS ("what's the last paragraph", "find info about X"):
-       a) Call pdfChunkerTool({action: "query", filepath: "/path/to/file.pdf", query: "the user's question"})
-       b) The tool will automatically process the PDF if needed
-       
-       Example for "What is the last paragraph?":
-       pdfChunkerTool({action: "query", filepath: "/app/uploads/doc.pdf", query: "What is the last paragraph?"})
+       DO NOT use action: "summarize" or "query" - always "process" first!
     
     3. When asked to read a specific file:
        - If the file path is provided, use it directly
@@ -298,8 +295,9 @@ const agentConfig: any = {
        - Extract the file path from the message (it's in parentheses after the filename)
        - For PDFs: Choose appropriate action based on the task:
          
-         For "summarize this" requests:
-         → CALL: pdfChunkerTool({action: "summarize", filepath: "./uploads/document.pdf"})
+         For ANY request after PDF upload:
+         → FIRST: pdfChunkerTool({action: "process", filepath: "./uploads/document.pdf"})
+         → THEN: defaultQueryTool({question: "summarize this document"})
          
          CRITICAL: When user uploads a file and mentions ANY of these:
          - "create index" or "create an index" 
