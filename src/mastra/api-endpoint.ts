@@ -1,5 +1,7 @@
 import { mastra } from './index.js';
-import { processPDF } from './lib/pdf-processor.js';
+// Temporarily using semantic processor instead of line-based
+// import { processPDF } from './lib/pdf-processor.js';
+import { processSemanticPDF as processPDF } from './lib/pdf-processor-semantic.js';
 
 // Simple HTTP server example for the assistant chatbot
 const PORT = 3000;
