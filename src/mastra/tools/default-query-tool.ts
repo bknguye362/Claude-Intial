@@ -170,7 +170,7 @@ export const defaultQueryTool = createTool({
         // Return early with no chunks
         const result = {
           success: true,
-          message: 'No similar content found with distance < 0.2',
+          message: 'No similar content found',
           timestamp: new Date().toISOString(),
           questionLength: context.question.length,
           embeddingDimension: embedding.length,
