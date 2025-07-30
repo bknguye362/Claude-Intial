@@ -142,31 +142,35 @@ export const defaultQueryTool = createTool({
       // For cosine distance, smaller values = more similar
       console.log('[Default Query Tool] 🎯 Processing S3 Vectors results...');
       
-      // Filter out results without distance values
+      // Filter out results without distance values and those with distance >= 0.2
       const resultsWithDistance = allResults.filter(result => {
         if (result.distance === undefined) {
           console.log(`[Default Query Tool] ⚠️ Excluding result without distance: ${result.key}`);
           return false;
         }
+        if (result.distance >= 0.2) {
+          console.log(`[Default Query Tool] ⚠️ Excluding result with distance ${result.distance.toFixed(4)} >= 0.2: ${result.key}`);
+          return false;
+        }
         return true;
       });
       
-      console.log(`[Default Query Tool] 📊 Found ${resultsWithDistance.length} results with distance values from ${allResults.length} total`);
+      console.log(`[Default Query Tool] 📊 Found ${resultsWithDistance.length} results with distance < 0.2 from ${allResults.length} total`);
       
-      // Sort by distance (smallest first for cosine distance) and take top 10
+      // Sort by distance (smallest first for cosine distance)
       resultsWithDistance.sort((a, b) => (a.distance || 999) - (b.distance || 999));
-      const top10 = resultsWithDistance.slice(0, 10);
+      const top10 = resultsWithDistance;
       
       if (top10.length > 0) {
-        console.log(`[Default Query Tool] 📊 Selected top ${top10.length} results with smallest distances`);
+        console.log(`[Default Query Tool] 📊 Selected ${top10.length} results with distance < 0.2`);
         console.log(`[Default Query Tool] Distance range: ${top10[0].distance?.toFixed(4)} to ${top10[top10.length-1].distance?.toFixed(4)}`);
       } else {
-        console.log(`[Default Query Tool] ⚠️ No results found with distance values`);
+        console.log(`[Default Query Tool] ⚠️ No results found with distance < 0.2`);
         
         // Return early with no chunks
         const result = {
           success: true,
-          message: 'No similar content found with distance values',
+          message: 'No similar content found with distance < 0.2',
           timestamp: new Date().toISOString(),
           questionLength: context.question.length,
           embeddingDimension: embedding.length,
@@ -185,7 +189,7 @@ export const defaultQueryTool = createTool({
           }
         };
         
-        console.log('[Default Query Tool] 🎯 RETURNING EMPTY RESULT - No results with distance values');
+        console.log('[Default Query Tool] 🎯 RETURNING EMPTY RESULT - No results with distance < 0.2');
         return result;
       }
       
