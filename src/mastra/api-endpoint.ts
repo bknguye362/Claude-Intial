@@ -115,10 +115,32 @@ async function handleRequest(body: any) {
       console.log(`[API Endpoint] Calling agent.stream with message content:`, body.message);
       // Pass the message as a string directly, not as an array
       // Also pass options to ensure tools are included
-      const streamOptions = {
-        toolChoice: 'auto' as const,
-        // Add any other options that might be needed
-      };
+      const streamOptions: any = {};
+      
+      // Get tools from the agent if available
+      if (typeof agent.getTools === 'function') {
+        const tools = agent.getTools();
+        if (tools && Object.keys(tools).length > 0) {
+          streamOptions.tools = tools;
+          console.log(`[API Endpoint] Adding tools to stream options:`, Object.keys(tools));
+        }
+      }
+      
+      // Use the agent's configured toolChoice if available
+      // Check multiple possible locations for toolChoice
+      const agentToolChoice = (agent as any).toolChoice || 
+                             (agent as any).config?.toolChoice || 
+                             (agent as any)._config?.toolChoice ||
+                             (agent as any).agentConfig?.toolChoice;
+                             
+      if (agentToolChoice) {
+        streamOptions.toolChoice = agentToolChoice;
+        console.log(`[API Endpoint] Using agent's toolChoice:`, streamOptions.toolChoice);
+      } else {
+        streamOptions.toolChoice = 'auto';
+        console.log(`[API Endpoint] Using default toolChoice: auto`);
+      }
+      
       console.log(`[API Endpoint] Stream options:`, streamOptions);
       stream = await agent.stream(enhancedMessage, streamOptions);
       console.log(`[API Endpoint] Stream created successfully`);
