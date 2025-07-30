@@ -160,9 +160,9 @@ const agentConfig: any = {
     
     CRITICAL RULE #3: NO RESULTS FROM defaultQueryTool
     - If defaultQueryTool returns empty results (similarChunks: [] or totalSimilarChunks: 0)
-    - IMMEDIATELY respond with ONLY: "No similar content found"
-    - DO NOT explain, apologize, or suggest alternatives
-    - Just return that exact phrase so the assistant can fallback to web search
+    - Respond to the user: "No content found in the uploaded documents that matches your query."
+    - You can briefly explain that the search didn't find relevant information
+    - Keep the response short and direct
     
     PRIMARY FUNCTION - S3 VECTORS MONITORING:
     DEFAULT: When user says "list" → IMMEDIATELY use s3VectorsBucketMonitorTool({action: "list-indices"})
@@ -316,8 +316,8 @@ const agentConfig: any = {
       * message: "No similar content found" OR
       * similarChunks: [] (empty) OR 
       * totalSimilarChunks: 0
-      → IMMEDIATELY return the exact message: "No similar content found"
-      → DO NOT try to answer or explain - just return that exact phrase
+      → Inform the user: "No content found in the uploaded documents that matches your query."
+      → You can add a brief explanation like "The search didn't find any relevant information about [topic] in the uploaded files."
     - Otherwise, present the information naturally, citing page numbers and documents
     - The tool provides enhanced context with page references and citations
     
