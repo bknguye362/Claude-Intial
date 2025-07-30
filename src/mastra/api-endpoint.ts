@@ -121,8 +121,9 @@ async function handleRequest(body: any) {
       if (typeof agent.getTools === 'function') {
         const tools = agent.getTools();
         if (tools && Object.keys(tools).length > 0) {
-          streamOptions.tools = tools;
-          console.log(`[API Endpoint] Adding tools to stream options:`, Object.keys(tools));
+          // Use 'toolsets' as per Mastra documentation for dynamic tools
+          streamOptions.toolsets = { ...tools };
+          console.log(`[API Endpoint] Adding tools to stream options as toolsets:`, Object.keys(tools));
         }
       }
       
