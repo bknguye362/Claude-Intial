@@ -223,7 +223,7 @@ export async function processPDF(filepath: string, chunkSize: number = 500): Pro
       key: `${documentId}-chunk-${index}`,
       embedding: chunk.embedding,
       metadata: {
-        content: chunk.content.substring(0, 2000),
+        content: chunk.content.substring(0, 500), // Reduced to fit within S3 Vectors metadata limit
         documentId,
         filename: basename(filepath),
         chunkIndex: index,
