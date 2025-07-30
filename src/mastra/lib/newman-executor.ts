@@ -250,13 +250,19 @@ export async function uploadVectorsWithNewman(
       
       const collectionFile = `/tmp/newman-collection-batch-${Date.now()}.json`;
       await writeFile(collectionFile, JSON.stringify(customCollection));
+      console.log(`[Newman Executor] Created collection file for batch: ${collectionFile}`);
       
       // Run Newman for this batch
       outputFile = `/tmp/newman-output-batch-${Date.now()}.json`;
       const command = `npx newman run "${collectionFile}" --environment "${envFile}" --reporters cli,json --reporter-json-export "${outputFile}"`;
+      console.log(`[Newman Executor] Running upload command for batch ${Math.floor(i / batchSize) + 1}/${totalBatches}`);
       
       try {
         const { stdout, stderr } = await execAsync(command);
+        console.log(`[Newman Executor] Newman upload stdout:`, stdout ? stdout.substring(0, 200) : 'empty');
+        if (stderr) {
+          console.error(`[Newman Executor] Newman upload stderr:`, stderr);
+        }
         uploaded += batch.length;
         
         const batchNum = Math.floor(i / batchSize) + 1;
@@ -272,9 +278,23 @@ export async function uploadVectorsWithNewman(
             
             // Check for errors in the Newman run
             if (result.run?.stats?.assertions?.failed > 0 || result.run?.stats?.requests?.failed > 0) {
-              const response = result.run?.executions?.[0]?.response?.stream?.toString() || '';
-              console.error(`[Newman Executor] Upload may have failed. Response: ${response}`);
+              const execution = result.run?.executions?.[0];
+              const response = execution?.response?.stream?.toString() || '';
+              console.error(`[Newman Executor] ❌ Upload FAILED for batch ${batchNum}`);
+              console.error(`[Newman Executor] Failed assertions: ${result.run?.stats?.assertions?.failed}`);
+              console.error(`[Newman Executor] Failed requests: ${result.run?.stats?.requests?.failed}`);
+              console.error(`[Newman Executor] Response status: ${execution?.response?.code}`);
+              console.error(`[Newman Executor] Response: ${response.substring(0, 500)}`);
               uploaded -= batch.length; // Subtract if failed
+            } else {
+              // Log success details
+              const execution = result.run?.executions?.[0];
+              console.log(`[Newman Executor] ✅ Upload verified for batch ${batchNum}`);
+              console.log(`[Newman Executor] Response status: ${execution?.response?.code}`);
+              if (execution?.response?.stream) {
+                const responseStr = execution.response.stream.toString();
+                console.log(`[Newman Executor] Response preview: ${responseStr.substring(0, 200)}`);
+              }
             }
           } catch (readError) {
             console.error(`[Newman Executor] Could not read output file:`, readError);
