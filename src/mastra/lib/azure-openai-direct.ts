@@ -405,6 +405,8 @@ export function createOpenAI(options?: any) {
               };
             });
             requestBody.tool_choice = options.toolChoice || 'auto';
+            console.log('[Azure Direct] Tool choice set to:', requestBody.tool_choice);
+            console.log('[Azure Direct] Options toolChoice was:', options.toolChoice);
             console.log('[Azure Direct] Converted tools:', JSON.stringify(requestBody.tools));
           }
           
