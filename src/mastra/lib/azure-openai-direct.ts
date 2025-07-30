@@ -37,7 +37,7 @@ const manualTools = {
 export function createOpenAI(options?: any) {
   const apiKey = process.env.AZURE_OPENAI_API_KEY || process.env.AZURE_API_KEY || process.env.OPENAI_API_KEY;
   const endpoint = process.env.AZURE_OPENAI_ENDPOINT || 'https://franklin-open-ai-test.openai.azure.com';
-  const apiVersion = process.env.AZURE_OPENAI_API_VERSION || '2023-12-01-preview'; // This version supports function calling
+  const apiVersion = process.env.AZURE_OPENAI_API_VERSION || '2024-06-01'; // Updated to support tool_choice: 'required'
   
   if (!apiKey) {
     console.error('[Azure Direct] No API key found. Checked environment variables:');
