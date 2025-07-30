@@ -158,6 +158,12 @@ const agentConfig: any = {
     - This is NOT about processing files or PDFs!
     - Example: create index "my-new-index" with dimension 1536
     
+    CRITICAL RULE #3: NO RESULTS FROM defaultQueryTool
+    - If defaultQueryTool returns empty results (similarChunks: [] or totalSimilarChunks: 0)
+    - IMMEDIATELY respond with ONLY: "No similar content found"
+    - DO NOT explain, apologize, or suggest alternatives
+    - Just return that exact phrase so the assistant can fallback to web search
+    
     PRIMARY FUNCTION - S3 VECTORS MONITORING:
     DEFAULT: When user says "list" → IMMEDIATELY use s3VectorsBucketMonitorTool({action: "list-indices"})
     
@@ -306,7 +312,13 @@ const agentConfig: any = {
     HANDLING PDF QUESTIONS:
     - When users ask questions about a PDF, use defaultQueryTool
     - The tool will automatically find the most relevant chunks (up to 10) that answer the question
-    - Present the information naturally, citing page numbers and documents
+    - CRITICAL: If defaultQueryTool returns:
+      * message: "No similar content found" OR
+      * similarChunks: [] (empty) OR 
+      * totalSimilarChunks: 0
+      → IMMEDIATELY return the exact message: "No similar content found"
+      → DO NOT try to answer or explain - just return that exact phrase
+    - Otherwise, present the information naturally, citing page numbers and documents
     - The tool provides enhanced context with page references and citations
     
     ERROR HANDLING:
