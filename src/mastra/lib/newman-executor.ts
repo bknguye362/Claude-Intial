@@ -277,20 +277,32 @@ export async function uploadVectorsWithNewman(
             const result = JSON.parse(outputData);
             
             // Check for errors in the Newman run
-            if (result.run?.stats?.assertions?.failed > 0 || result.run?.stats?.requests?.failed > 0) {
-              const execution = result.run?.executions?.[0];
-              const response = execution?.response?.stream?.toString() || '';
+            const execution = result.run?.executions?.[0];
+            const responseCode = execution?.response?.code || 0;
+            
+            if (result.run?.stats?.assertions?.failed > 0 || 
+                result.run?.stats?.requests?.failed > 0 ||
+                responseCode >= 400) {
+              let responseBody = '';
+              if (execution?.response?.stream) {
+                if (Buffer.isBuffer(execution.response.stream)) {
+                  responseBody = execution.response.stream.toString();
+                } else if (execution.response.stream.type === 'Buffer' && Array.isArray(execution.response.stream.data)) {
+                  responseBody = Buffer.from(execution.response.stream.data).toString();
+                } else {
+                  responseBody = JSON.stringify(execution.response.stream);
+                }
+              }
               console.error(`[Newman Executor] ❌ Upload FAILED for batch ${batchNum}`);
+              console.error(`[Newman Executor] Response status: ${responseCode}`);
               console.error(`[Newman Executor] Failed assertions: ${result.run?.stats?.assertions?.failed}`);
               console.error(`[Newman Executor] Failed requests: ${result.run?.stats?.requests?.failed}`);
-              console.error(`[Newman Executor] Response status: ${execution?.response?.code}`);
-              console.error(`[Newman Executor] Response: ${response.substring(0, 500)}`);
+              console.error(`[Newman Executor] Error response: ${responseBody}`);
               uploaded -= batch.length; // Subtract if failed
             } else {
               // Log success details
-              const execution = result.run?.executions?.[0];
               console.log(`[Newman Executor] ✅ Upload verified for batch ${batchNum}`);
-              console.log(`[Newman Executor] Response status: ${execution?.response?.code}`);
+              console.log(`[Newman Executor] Response status: ${responseCode}`);
               if (execution?.response?.stream) {
                 const responseStr = execution.response.stream.toString();
                 console.log(`[Newman Executor] Response preview: ${responseStr.substring(0, 200)}`);
@@ -309,6 +321,10 @@ export async function uploadVectorsWithNewman(
       }
     }
     
+    console.log(`[Newman Executor] Upload summary: ${uploaded}/${vectors.length} vectors successfully uploaded`);
+    if (uploaded < vectors.length) {
+      console.error(`[Newman Executor] ⚠️ WARNING: Only ${uploaded} out of ${vectors.length} vectors were uploaded successfully`);
+    }
     return uploaded;
     
   } catch (error) {
