@@ -107,13 +107,23 @@ export function createOpenAI(options?: any) {
           // Determine which agent is making the call
           let callingAgent = 'Unknown';
           
-          // Priority 1: Check for file agent
-          if (isFileAgent) {
+          // Check for Assistant Agent FIRST - must check before file/research agents
+          // Look for unique phrases that only appear in assistant agent
+          const isAssistantAgent = messageArray.some(msg => 
+            msg.content && typeof msg.content === 'string' && 
+            (msg.content.includes('helpful assistant that coordinates with specialized agents') ||
+             msg.content.includes('agentCoordinationTool') ||
+             msg.content.includes('SIMPLE ROUTING RULE') ||
+             msg.content.includes('You MUST ALWAYS use agentCoordinationTool'))
+          );
+          
+          // Priority order: Assistant first, then file, then research
+          if (isAssistantAgent) {
+            callingAgent = 'Assistant Agent';
+          } else if (isFileAgent) {
             callingAgent = 'File Agent';
           } else if (isResearchAgent) {
             callingAgent = 'Research Agent';
-          } else if (messageArray.some(msg => msg.content && typeof msg.content === 'string' && msg.content.includes('helpful assistant'))) {
-            callingAgent = 'Assistant Agent';
           }
           
           console.log(`[Azure Direct] === AGENT IDENTIFICATION: ${callingAgent} ===`);
