@@ -159,7 +159,7 @@ export async function processPDF(filepath: string, chunkSize: number = 500): Pro
     console.log(`[PDF Processor] First chunk preview: ${textChunks[0]?.substring(0, 100)}...`);
     
     // Check size limits
-    const MAX_CHUNKS = 300;
+    const MAX_CHUNKS = 2000; // Increased from 300 to handle larger documents
     if (textChunks.length > MAX_CHUNKS) {
       console.error(`[PDF Processor] Document too large (${textChunks.length} chunks). Maximum: ${MAX_CHUNKS}`);
       return {
@@ -223,7 +223,7 @@ export async function processPDF(filepath: string, chunkSize: number = 500): Pro
       key: `${documentId}-chunk-${index}`,
       embedding: chunk.embedding,
       metadata: {
-        content: chunk.content.substring(0, 500), // Reduced to fit within S3 Vectors metadata limit
+        content: chunk.content.substring(0, 1500), // Increased from 500 to 1500 chars
         documentId,
         filename: basename(filepath),
         chunkIndex: index,
