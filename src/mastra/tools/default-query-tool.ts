@@ -142,7 +142,7 @@ export const defaultQueryTool = createTool({
       // For cosine distance, smaller values = more similar
       console.log('[Default Query Tool] 🎯 Processing S3 Vectors results...');
       
-      // Filter out results without distance values and those with distance >= 0.2
+      // Filter out results without distance values, those with distance >= 0.2, and blank content
       const resultsWithDistance = allResults.filter(result => {
         if (result.distance === undefined) {
           console.log(`[Default Query Tool] ⚠️ Excluding result without distance: ${result.key}`);
@@ -152,6 +152,15 @@ export const defaultQueryTool = createTool({
           console.log(`[Default Query Tool] ⚠️ Excluding result with distance ${result.distance.toFixed(4)} >= 0.2: ${result.key}`);
           return false;
         }
+        
+        // Check for blank or invalid content
+        const content = result.metadata?.content || '';
+        if (!content || content.trim().length < 10) {
+          console.log(`[Default Query Tool] ⚠️ Excluding blank/short chunk: ${result.key} from index: ${result.index}`);
+          console.log(`[Default Query Tool]    Content: "${content.substring(0, 50)}..."`);
+          return false;
+        }
+        
         return true;
       });
       
@@ -159,7 +168,10 @@ export const defaultQueryTool = createTool({
       
       // Sort by distance (smallest first for cosine distance)
       resultsWithDistance.sort((a, b) => (a.distance || 999) - (b.distance || 999));
-      const top10 = resultsWithDistance;
+      
+      // LIMIT TO TOP 10 RESULTS
+      const top10 = resultsWithDistance.slice(0, 10);
+      console.log(`[Default Query Tool] Limited to top ${top10.length} results from ${resultsWithDistance.length} total`);
       
       if (top10.length > 0) {
         console.log(`[Default Query Tool] 📊 Selected ${top10.length} results with distance < 0.2`);
@@ -217,7 +229,13 @@ export const defaultQueryTool = createTool({
           console.log(`[Default Query Tool]    Pages: ${result.metadata.pageStart}-${result.metadata.pageEnd || result.metadata.pageStart}`);
           console.log(`[Default Query Tool]    Chunk: ${result.metadata.chunkIndex + 1}/${result.metadata.totalChunks || '?'}`);
         }
-        console.log(`[Default Query Tool]    Content: ${(result.metadata?.content || 'No content').substring(0, 200)}...`);
+        // Debug content issues
+        const contentPreview = result.metadata?.content || result.metadata?.text || 'No content available';
+        if (contentPreview.trim().length < 10) {
+          console.log(`[Default Query Tool]    ⚠️ BLANK/SHORT CONTENT DETECTED!`);
+          console.log(`[Default Query Tool]    Raw metadata:`, JSON.stringify(result.metadata).substring(0, 200));
+        }
+        console.log(`[Default Query Tool]    Content: ${contentPreview.substring(0, 200)}...`);
       });
       
       console.log(`[Default Query Tool] Total results found across all indices: ${allResults.length}`);
