@@ -20,9 +20,6 @@ interface IntelligentChunk {
   chunkType: 'introduction' | 'definition' | 'example' | 'explanation' | 'conclusion' | 'reference';
 }
 
-// Initialize Azure OpenAI
-const openai = createOpenAI();
-
 // PDF parsing
 async function loadPdfParse() {
   try {
@@ -74,17 +71,26 @@ Return a JSON array of chunks with this structure:
 }]`;
 
   try {
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4',
-      messages: [
-        { role: 'system', content: 'You are a document structure analyzer. Always return valid JSON arrays.' },
-        { role: 'user', content: prompt }
-      ],
+    // Use the same Azure OpenAI pattern as other files
+    const openai = createOpenAI();
+    const model = openai('gpt-4');
+    
+    const messages = [
+      { role: 'system', content: 'You are a document structure analyzer. Always return valid JSON arrays.' },
+      { role: 'user', content: prompt }
+    ];
+    
+    // Stream the response
+    const response = await model.stream(messages, {
       temperature: 0.1,
-      max_tokens: 2000
+      maxTokens: 2000
     });
-
-    const content = response.choices[0]?.message?.content;
+    
+    let content = '';
+    for await (const chunk of response.textStream) {
+      content += chunk;
+    }
+    
     if (!content) throw new Error('No response from LLM');
 
     // Parse the JSON response
