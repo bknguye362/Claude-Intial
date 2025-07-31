@@ -173,29 +173,39 @@ export async function processSemanticPDF(
     
     console.log(`[Semantic PDF Processor] Created ${textChunks.length} semantic chunks`);
     
-    // Check size limits
-    const MAX_CHUNKS = 5000; // Increased to handle larger documents
+    // Check size limits and provide warnings
+    const CHUNKS_WARNING_THRESHOLD = 500;
+    const MAX_CHUNKS = 2000; // Increased limit, but with better handling
+    
     if (textChunks.length > MAX_CHUNKS) {
+      console.log(`[Semantic PDF Processor] ⚠️ PDF too large: ${textChunks.length} chunks`);
+      console.log(`[Semantic PDF Processor] ⚠️ This would take ~${Math.round(textChunks.length * 3 / 60)} minutes to process`);
       return {
         success: false,
         filename: basename(filepath),
         totalChunks: textChunks.length,
-        message: `PDF too large (${textChunks.length} chunks). Maximum: ${MAX_CHUNKS}`,
-        error: 'Document exceeds size limit'
+        message: `PDF too large (${textChunks.length} chunks). Maximum: ${MAX_CHUNKS} chunks. Please upload a smaller PDF or split it into parts.`,
+        error: 'Document exceeds size limit for processing within timeout constraints'
       };
+    }
+    
+    if (textChunks.length > CHUNKS_WARNING_THRESHOLD) {
+      console.log(`[Semantic PDF Processor] ⚠️ Large PDF detected: ${textChunks.length} chunks`);
+      console.log(`[Semantic PDF Processor] ⚠️ Estimated processing time: ${Math.round(textChunks.length * 3 / 60)} minutes`);
+      console.log(`[Semantic PDF Processor] ⚠️ Using aggressive rate limiting to avoid timeouts`);
     }
     
     // Generate embeddings with configurable rate limiting
     console.log(`[Semantic PDF Processor] Generating embeddings...`);
     const embeddings: number[][] = [];
     
-    // Configurable rate limiting parameters
+    // Configurable rate limiting parameters - MORE CONSERVATIVE
     const RATE_LIMIT_CONFIG = {
-      requestsPerMinute: 50,  // Azure OpenAI default TPM for embeddings
-      burstSize: 5,           // Max concurrent requests
+      requestsPerMinute: 20,  // Reduced from 50 to avoid throttling
+      burstSize: 2,           // Reduced from 5 to 2 concurrent requests
       retryAttempts: 3,       // Number of retries on 429
       backoffMultiplier: 2,   // Exponential backoff multiplier
-      initialBackoff: 1000,   // Initial backoff in ms
+      initialBackoff: 2000,   // Increased from 1000ms to 2000ms
     };
     
     // Calculate delays based on rate limit
