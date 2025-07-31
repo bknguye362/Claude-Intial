@@ -69,7 +69,9 @@ async function generateEmbedding(text: string): Promise<number[]> {
     });
 
     if (!response.ok) {
-      throw new Error(`Embedding API error: ${response.status} ${response.statusText}`);
+      const error: any = new Error(`Embedding API error: ${response.status} ${response.statusText}`);
+      error.statusCode = response.status;
+      throw error;
     }
 
     const data: any = await response.json();
@@ -183,41 +185,100 @@ export async function processSemanticPDF(
       };
     }
     
-    // Generate embeddings with rate limiting
+    // Generate embeddings with configurable rate limiting
     console.log(`[Semantic PDF Processor] Generating embeddings...`);
     const embeddings: number[][] = [];
-    const batchSize = 3; // Reduced batch size to avoid rate limits
-    const delayBetweenBatches = 1000; // 1 second delay between batches
+    
+    // Configurable rate limiting parameters
+    const RATE_LIMIT_CONFIG = {
+      requestsPerMinute: 50,  // Azure OpenAI default TPM for embeddings
+      burstSize: 5,           // Max concurrent requests
+      retryAttempts: 3,       // Number of retries on 429
+      backoffMultiplier: 2,   // Exponential backoff multiplier
+      initialBackoff: 1000,   // Initial backoff in ms
+    };
+    
+    // Calculate delays based on rate limit
+    const minDelayBetweenRequests = 60000 / RATE_LIMIT_CONFIG.requestsPerMinute;
+    const batchSize = Math.min(RATE_LIMIT_CONFIG.burstSize, textChunks.length);
+    
+    // Process embeddings with rate limiting
+    let processedCount = 0;
+    let consecutiveErrors = 0;
     
     for (let i = 0; i < textChunks.length; i += batchSize) {
       const batch = textChunks.slice(i, i + batchSize);
-      
-      // Process batch with individual delays if needed
       const batchEmbeddings: number[][] = [];
+      const batchStartTime = Date.now();
+      
+      // Process batch with retry logic
       for (let j = 0; j < batch.length; j++) {
-        try {
-          const embedding = await generateEmbedding(batch[j]);
-          batchEmbeddings.push(embedding);
-          
-          // Small delay between individual requests
-          if (j < batch.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, 200));
+        let retryCount = 0;
+        let backoffDelay = RATE_LIMIT_CONFIG.initialBackoff;
+        let success = false;
+        
+        while (retryCount < RATE_LIMIT_CONFIG.retryAttempts && !success) {
+          try {
+            const embedding = await generateEmbedding(batch[j]);
+            batchEmbeddings.push(embedding);
+            success = true;
+            consecutiveErrors = 0; // Reset error counter on success
+          } catch (error: any) {
+            retryCount++;
+            consecutiveErrors++;
+            
+            if (error?.message?.includes('429') || error?.statusCode === 429) {
+              console.log(`[Semantic PDF Processor] Rate limit hit, retry ${retryCount}/${RATE_LIMIT_CONFIG.retryAttempts}`);
+              
+              // Exponential backoff
+              await new Promise(resolve => setTimeout(resolve, backoffDelay));
+              backoffDelay *= RATE_LIMIT_CONFIG.backoffMultiplier;
+              
+              // If too many consecutive errors, increase delay further
+              if (consecutiveErrors > 10) {
+                console.log(`[Semantic PDF Processor] Many consecutive errors, adding extra delay`);
+                await new Promise(resolve => setTimeout(resolve, 5000));
+              }
+            } else {
+              console.error(`[Semantic PDF Processor] Failed to generate embedding for chunk ${i + j}:`, error);
+              break; // Don't retry non-429 errors
+            }
           }
-        } catch (error) {
-          console.error(`[Semantic PDF Processor] Failed to generate embedding for chunk ${i + j}:`, error);
-          // Use fallback embedding on error
+        }
+        
+        // Use fallback embedding if all retries failed
+        if (!success) {
+          console.warn(`[Semantic PDF Processor] Using fallback embedding for chunk ${i + j}`);
           const hash = batch[j].split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
           batchEmbeddings.push(Array(1536).fill(0).map((_, idx) => Math.sin(hash + idx) * 0.5 + 0.5));
+        }
+        
+        // Ensure minimum delay between requests
+        if (j < batch.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, minDelayBetweenRequests));
         }
       }
       
       embeddings.push(...batchEmbeddings);
+      processedCount += batchEmbeddings.length;
       
-      console.log(`[Semantic PDF Processor] Progress: ${Math.min(i + batchSize, textChunks.length)}/${textChunks.length}`);
+      // Progress logging
+      const progress = Math.round((processedCount / textChunks.length) * 100);
+      const elapsedTime = Date.now() - batchStartTime;
+      const estimatedTimeRemaining = (elapsedTime / batch.length) * (textChunks.length - processedCount);
       
-      // Delay between batches to avoid rate limiting
+      console.log(`[Semantic PDF Processor] Progress: ${processedCount}/${textChunks.length} (${progress}%) - ETA: ${Math.round(estimatedTimeRemaining / 1000)}s`);
+      
+      // Adaptive delay between batches based on processing time
       if (i + batchSize < textChunks.length) {
-        await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
+        const batchProcessingTime = Date.now() - batchStartTime;
+        const targetBatchTime = batch.length * minDelayBetweenRequests;
+        
+        if (batchProcessingTime < targetBatchTime) {
+          // Add extra delay to maintain rate limit
+          const extraDelay = targetBatchTime - batchProcessingTime;
+          await new Promise(resolve => setTimeout(resolve, extraDelay));
+        }
       }
     }
     

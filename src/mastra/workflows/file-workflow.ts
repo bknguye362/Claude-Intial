@@ -1,8 +1,8 @@
 import { createStep, createWorkflow } from '@mastra/core/workflows';
 import { z } from 'zod';
-// Using original line-based processor
-import { processPDF } from '../lib/pdf-processor.js';
-// import { processSemanticPDF as processPDF } from '../lib/pdf-processor-semantic.js';
+// Using semantic processor with rate limiting
+// import { processPDF } from '../lib/pdf-processor.js';
+import { processSemanticPDF as processPDF } from '../lib/pdf-processor-semantic.js';
 
 // Check if input is a question
 function isQuestion(input: string): boolean {
@@ -142,8 +142,13 @@ const processPdfIfNeeded = createStep({
       console.log('[File Workflow - ProcessPDF] PDF Path:', inputData.pdfPath);
       
       try {
-        // Call the PDF processor function directly
-        const result = await processPDF(inputData.pdfPath);
+        // Call the PDF processor function directly with semantic chunking
+        const result = await processPDF(inputData.pdfPath, {
+          strategy: 'semantic',         // Use semantic chunking for better context
+          maxChunkSize: 2500,           // Slightly smaller chunks for better relevance
+          minChunkSize: 200,
+          overlapSize: 200
+        });
         
         if (result.success) {
           pdfProcessed = true;
