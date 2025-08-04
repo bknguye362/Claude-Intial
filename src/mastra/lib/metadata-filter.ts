@@ -71,8 +71,9 @@ export function scoreMetadata(
     } else if (sectionInfo.sectionPattern && metadata.sectionNumber && 
                sectionInfo.sectionPattern.test(metadata.sectionNumber)) {
       score += 50; // Subsection match
-    } else if (metadata.content.includes(`section ${sectionInfo.sectionNumber}`) ||
-               metadata.content.includes(`Section ${sectionInfo.sectionNumber}`)) {
+    } else if (metadata.content && (
+               metadata.content.includes(`section ${sectionInfo.sectionNumber}`) ||
+               metadata.content.includes(`Section ${sectionInfo.sectionNumber}`))) {
       score += 20; // Section mentioned in content
     }
   }
