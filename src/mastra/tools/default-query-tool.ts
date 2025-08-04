@@ -187,15 +187,70 @@ export const defaultQueryTool = createTool({
       
       console.log(`[Default Query Tool] 📊 Found ${validResults.length} valid results after hybrid search and filtering`);
       
+      // Filter chunks by summary relevance to the question
+      console.log('\n[Default Query Tool] 🎯 CHECKING SUMMARY RELEVANCE TO QUESTION:');
+      console.log('[Default Query Tool] =====================================');
+      console.log(`[Default Query Tool] User question: "${context.question}"`);
+      
+      // Extract key terms from the question for matching
+      const questionLower = context.question.toLowerCase();
+      const questionTerms = questionLower
+        .split(/[\s,;:!?()\[\]{}"']+/)
+        .filter(term => term.length > 2 && !['the', 'and', 'for', 'are', 'is', 'it', 'to', 'of', 'in', 'on', 'at', 'with', 'from', 'what', 'how', 'why', 'when', 'where', 'who', 'which', 'can', 'could', 'would', 'should', 'does', 'did', 'has', 'have', 'had', 'will', 'been', 'being', 'was', 'were', 'about', 'explain', 'describe', 'tell'].includes(term));
+      
+      console.log(`[Default Query Tool] Key question terms: [${questionTerms.join(', ')}]`);
+      
+      // Filter chunks where summary is relevant to the question
+      const relevantResults = validResults.filter((result, idx) => {
+        const summary = (result.metadata?.chunkSummary || '').toLowerCase();
+        const content = (result.metadata?.chunkContent || result.metadata?.content || '').toLowerCase();
+        
+        // Check if summary contains any key terms from the question
+        const summaryRelevance = questionTerms.filter(term => summary.includes(term)).length;
+        const contentRelevance = questionTerms.filter(term => content.includes(term)).length;
+        
+        // Calculate relevance score
+        const totalTerms = questionTerms.length || 1;
+        const summaryScore = summaryRelevance / totalTerms;
+        const contentScore = contentRelevance / totalTerms;
+        
+        // Log the analysis for first 20 chunks
+        if (idx < 20) {
+          console.log(`\n[Default Query Tool] Chunk ${idx + 1}:`);
+          console.log(`[Default Query Tool]   Summary (first 100 chars): "${summary.substring(0, 100)}..."`);
+          console.log(`[Default Query Tool]   Summary matches ${summaryRelevance}/${totalTerms} question terms (${(summaryScore * 100).toFixed(1)}%)`);
+          console.log(`[Default Query Tool]   Content matches ${contentRelevance}/${totalTerms} question terms (${(contentScore * 100).toFixed(1)}%)`);
+        }
+        
+        // Accept chunk if:
+        // 1. Summary has at least 20% term overlap with question, OR
+        // 2. Content has at least 30% term overlap (fallback for poor summaries), OR  
+        // 3. It's a section-specific query (already filtered by hybrid search)
+        const isRelevant = summaryScore >= 0.2 || contentScore >= 0.3 || sectionInfo.isSection;
+        
+        if (idx < 20 && !isRelevant) {
+          console.log(`[Default Query Tool]   ❌ FILTERED OUT - Low relevance to question`);
+        } else if (idx < 20 && isRelevant) {
+          console.log(`[Default Query Tool]   ✅ KEPT - Relevant to question`);
+        }
+        
+        return isRelevant;
+      });
+      
+      console.log(`\n[Default Query Tool] 📊 Summary relevance filtering results:`);
+      console.log(`[Default Query Tool]   Started with: ${validResults.length} chunks`);
+      console.log(`[Default Query Tool]   After relevance filter: ${relevantResults.length} chunks`);
+      console.log(`[Default Query Tool]   Filtered out: ${validResults.length - relevantResults.length} irrelevant chunks`);
+      
       // LIMIT TO TOP 10 RESULTS
-      const top10 = validResults.slice(0, 10);
+      const top10 = relevantResults.slice(0, 10);
       console.log(`[Default Query Tool] Limited to top ${top10.length} results`);
       
       if (top10.length > 0) {
-        console.log(`[Default Query Tool] 📊 Selected ${top10.length} results after improved filtering`);
+        console.log(`[Default Query Tool] 📊 Selected ${top10.length} results after relevance filtering`);
         console.log(`[Default Query Tool] Distance range: ${top10[0].distance?.toFixed(4)} to ${top10[top10.length-1].distance?.toFixed(4)}`);
       } else {
-        console.log(`[Default Query Tool] ⚠️ No results found after improved filtering`);
+        console.log(`[Default Query Tool] ⚠️ No results found after relevance filtering`);
         
         // Return early with no chunks
         const result = {
@@ -357,6 +412,7 @@ export const defaultQueryTool = createTool({
           console.log(`[Default Query Tool] - Pages: ${chunk.metadata.pageStart}-${chunk.metadata.pageEnd || chunk.metadata.pageStart}`);
         }
         console.log(`[Default Query Tool] - Content length: ${chunk.content.length} chars`);
+        console.log(`[Default Query Tool] - Summary: "${(chunk.metadata?.chunkSummary || 'No summary').substring(0, 100)}..."`);
         console.log(`[Default Query Tool] - Content preview: "${chunk.content.substring(0, 200)}..."`);
       });
       console.log('\n[Default Query Tool] =====================================');
