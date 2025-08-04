@@ -118,12 +118,17 @@ async function generateEmbeddings(texts: string[]): Promise<number[][]> {
 // Helper function to generate summary for a chunk using LLM
 async function generateChunkSummary(chunkContent: string): Promise<string> {
   if (!AZURE_OPENAI_API_KEY) {
+    console.log('[PDF Processor] No API key, using fallback summary');
     // Return a simple summary if no API key
     const lines = chunkContent.split('\n').filter(l => l.trim());
     return lines.slice(0, 2).join(' ').substring(0, 200);
   }
 
   try {
+    // Log chunk being sent to LLM
+    console.log('[PDF Processor] Sending chunk to LLM for summary. First 200 chars:', chunkContent.substring(0, 200));
+    console.log('[PDF Processor] Chunk length:', chunkContent.length, 'chars');
+    
     const url = `${AZURE_OPENAI_ENDPOINT}/openai/deployments/${LLM_DEPLOYMENT}/chat/completions?api-version=${AZURE_OPENAI_API_VERSION}`;
     
     const response = await fetch(url, {
