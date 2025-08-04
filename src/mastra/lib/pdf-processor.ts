@@ -188,6 +188,7 @@ async function generateChunkSummaries(chunks: string[]): Promise<string[]> {
   return summaries;
 }
 
+
 // Helper function to split text into chunks with overlap
 function chunkTextByLines(text: string, linesPerChunk: number, overlapLines: number = 50): string[] {
   const lines = text.split('\n');
@@ -304,7 +305,7 @@ export async function processPDF(filepath: string, chunkSize: number = 500): Pro
         pageEnd: chunk.metadata.pageEnd,
         totalChunks: chunks.length,
         chunkContent: chunk.content.substring(0, 1000), // Limited to 1000 chars
-        chunkSummary: (summaries[index] || '').substring(0, 200) // LLM-generated summary
+        chunkSummary: (summaries[index] || '').substring(0, 200) // LLM-generated summary limited to 200 chars
       }
     }));
     
