@@ -158,17 +158,9 @@ export async function processPDF(filepath: string, chunkSize: number = 500): Pro
     console.log(`[PDF Processor] Split into ${textChunks.length} chunks`);
     console.log(`[PDF Processor] First chunk preview: ${textChunks[0]?.substring(0, 100)}...`);
     
-    // Check size limits
-    const MAX_CHUNKS = 2000; // Increased from 300 to handle larger documents
-    if (textChunks.length > MAX_CHUNKS) {
-      console.error(`[PDF Processor] Document too large (${textChunks.length} chunks). Maximum: ${MAX_CHUNKS}`);
-      return {
-        success: false,
-        filename: basename(filepath),
-        totalChunks: textChunks.length,
-        message: `PDF is too large (${textChunks.length} chunks). Maximum supported: ${MAX_CHUNKS} chunks.`,
-        error: 'Document exceeds maximum size limit'
-      };
+    // Remove chunk limit - process all chunks but warn if very large
+    if (textChunks.length > 2000) {
+      console.warn(`[PDF Processor] Processing large document with ${textChunks.length} chunks. This may take a while...`);
     }
     
     // Generate embeddings

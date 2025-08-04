@@ -179,7 +179,9 @@ export async function processWithLLMChunking(
     console.log(`[LLM Chunker] PDF parsed: ${pdfData.numpages} pages, ${pdfData.text.length} characters`);
     
     // Split into manageable segments for LLM processing
-    const maxSegmentSize = options.maxSegmentSize || 10000; // 10K chars per LLM call
+    // Use larger segments for large documents to reduce API calls
+    const isLargeDoc = pdfData.numpages > 50 || pdfData.text.length > 1_000_000;
+    const maxSegmentSize = options.maxSegmentSize || (isLargeDoc ? 20000 : 10000); // Larger segments for big docs
     const segments: string[] = [];
     const lines = pdfData.text.split('\n');
     let currentSegment = '';
@@ -228,9 +230,10 @@ export async function processWithLLMChunking(
       // Update line counter
       currentLine += segments[i].split('\n').length;
       
-      // Rate limiting
+      // Rate limiting - reduce for large documents
       if (i < segments.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        const delay = isLargeDoc ? 200 : 1000; // Faster for large docs
+        await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
     

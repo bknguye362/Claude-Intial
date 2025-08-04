@@ -2,6 +2,8 @@ import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
 import { uploadVectorsWithNewman, queryVectorsWithNewman, listIndicesWithNewman } from '../lib/newman-executor.js';
 import { ContextBuilder } from '../lib/context-builder.js';
+import { hybridSearch } from '../lib/hybrid-search.js';
+import { detectSectionQuery, filterByMetadata } from '../lib/metadata-filter.js';
 
 // Azure OpenAI configuration for embeddings
 const AZURE_OPENAI_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT || 'https://franklin-open-ai-test.openai.azure.com';
@@ -65,9 +67,21 @@ export const defaultQueryTool = createTool({
     console.log('[Default Query Tool] - S3_VECTORS_REGION:', process.env.S3_VECTORS_REGION || 'us-east-2');
     
     try {
+      // Check if this is a section-specific query
+      const sectionPattern = /section\s+(\d+\.?\d*)/i;
+      const sectionMatch = context.question.match(sectionPattern);
+      let enhancedQuery = context.question;
+      
+      if (sectionMatch) {
+        const sectionNumber = sectionMatch[1];
+        console.log(`[Default Query Tool] 🔍 Detected section query for: ${sectionNumber}`);
+        // Enhance query to include section number explicitly
+        enhancedQuery = `Section ${sectionNumber} ${context.question}`;
+      }
+      
       // Step 1: Generate embedding for the question
       console.log('[Default Query Tool] 1. Generating embedding for question...');
-      const embedding = await generateEmbedding(context.question);
+      const embedding = await generateEmbedding(enhancedQuery);
       console.log(`[Default Query Tool]    Embedding generated, length: ${embedding.length}`);
       console.log(`[Default Query Tool]    Generated embedding first 5: [${embedding.slice(0, 5).map(v => v.toFixed(6)).join(', ')}...]`);
       
@@ -134,50 +148,60 @@ export const defaultQueryTool = createTool({
         }
       }
       
-      // Step 5: Sort all results by score and show top 10 with enhanced context
-      console.log('\n[Default Query Tool] 5. TOP 10 RESULTS ACROSS ALL INDICES:');
+      // Step 5: Use improved search methods
+      console.log('\n[Default Query Tool] 5. IMPROVED SEARCH WITH HYBRID APPROACH:');
       console.log('[Default Query Tool] =====================================');
       
-      // S3 Vectors already returns the most similar results
-      // For cosine distance, smaller values = more similar
-      console.log('[Default Query Tool] 🎯 Processing S3 Vectors results...');
+      // Detect if this is a section query
+      const sectionInfo = detectSectionQuery(context.question);
+      if (sectionInfo.isSection) {
+        console.log(`[Default Query Tool] 🔍 Section query detected: ${sectionInfo.sectionNumber}`);
+      }
       
-      // Filter out results without distance values, those with distance >= 0.2, and blank content
-      const resultsWithDistance = allResults.filter(result => {
-        if (result.distance === undefined) {
-          console.log(`[Default Query Tool] ⚠️ Excluding result without distance: ${result.key}`);
-          return false;
+      // Use hybrid search instead of simple distance filtering
+      console.log('[Default Query Tool] 🎯 Using hybrid search (vector + keyword matching)...');
+      const hybridResults = await hybridSearch(
+        context.question,
+        embedding,
+        indices,
+        {
+          maxDistance: 0.3,  // More lenient than 0.2
+          topK: 20,          // Get more initial results
+          weightVector: sectionInfo.isSection ? 0.5 : 0.7  // Weight keywords more for section queries
         }
-        if (result.distance >= 0.2) {
-          console.log(`[Default Query Tool] ⚠️ Excluding result with distance ${result.distance.toFixed(4)} >= 0.2: ${result.key}`);
-          return false;
+      );
+      
+      // Apply metadata filtering
+      console.log('[Default Query Tool] 📊 Applying metadata filtering...');
+      const filteredResults = filterByMetadata(
+        hybridResults,
+        context.question,
+        {
+          requireSection: sectionInfo.isSection
         }
-        
-        // Check for blank or invalid content
+      );
+      
+      // Remove blank content
+      const validResults = filteredResults.filter(result => {
         const content = result.metadata?.content || '';
         if (!content || content.trim().length < 10) {
-          console.log(`[Default Query Tool] ⚠️ Excluding blank/short chunk: ${result.key} from index: ${result.index}`);
-          console.log(`[Default Query Tool]    Content: "${content.substring(0, 50)}..."`);
+          console.log(`[Default Query Tool] ⚠️ Excluding blank/short chunk: ${result.key}`);
           return false;
         }
-        
         return true;
       });
       
-      console.log(`[Default Query Tool] 📊 Found ${resultsWithDistance.length} results with distance < 0.2 from ${allResults.length} total`);
-      
-      // Sort by distance (smallest first for cosine distance)
-      resultsWithDistance.sort((a, b) => (a.distance || 999) - (b.distance || 999));
+      console.log(`[Default Query Tool] 📊 Found ${validResults.length} valid results after hybrid search and filtering`);
       
       // LIMIT TO TOP 10 RESULTS
-      const top10 = resultsWithDistance.slice(0, 10);
-      console.log(`[Default Query Tool] Limited to top ${top10.length} results from ${resultsWithDistance.length} total`);
+      const top10 = validResults.slice(0, 10);
+      console.log(`[Default Query Tool] Limited to top ${top10.length} results`);
       
       if (top10.length > 0) {
-        console.log(`[Default Query Tool] 📊 Selected ${top10.length} results with distance < 0.2`);
+        console.log(`[Default Query Tool] 📊 Selected ${top10.length} results after improved filtering`);
         console.log(`[Default Query Tool] Distance range: ${top10[0].distance?.toFixed(4)} to ${top10[top10.length-1].distance?.toFixed(4)}`);
       } else {
-        console.log(`[Default Query Tool] ⚠️ No results found with distance < 0.2`);
+        console.log(`[Default Query Tool] ⚠️ No results found after improved filtering`);
         
         // Return early with no chunks
         const result = {
@@ -197,7 +221,7 @@ export const defaultQueryTool = createTool({
           debug: {
             indicesSearched: indices.join(','),
             totalResultsFound: allResults.length,
-            resultsWithDistance: resultsWithDistance.length
+            resultsWithDistance: validResults.length
           }
         };
         
@@ -284,7 +308,7 @@ export const defaultQueryTool = createTool({
           indicesSearched: indices.join(','),
           totalIndicesSearched: indices.length,
           totalResultsBeforeFilter: allResults.length,
-          resultsWithDistance: resultsWithDistance.length,
+          resultsWithDistance: validResults.length,
           top10Count: top10.length,
           listingMethod: indices.length > 1 ? 'listIndicesWithNewman' : 'fallback',
           awsKeySet: !!process.env.AWS_ACCESS_KEY_ID,

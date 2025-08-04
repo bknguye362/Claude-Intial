@@ -1,10 +1,12 @@
 // Hybrid PDF processor that combines semantic chunking with LLM-assisted analysis
 import { basename } from 'path';
-import { readFile } from 'fs/promises';
+import { readFile, stat } from 'fs/promises';
 import { createRequire } from 'module';
 import { processWithLLMChunking } from './pdf-processor-llm-chunking.js';
 import { processSemanticPDF } from './pdf-processor-semantic.js';
 import { processPDF as processLineBasedPDF } from './pdf-processor.js';
+import { processStreamingPDF } from './pdf-processor-streaming.js';
+import { processSectionAwarePDF } from './pdf-processor-section-aware.js';
 import { createIndexWithNewman, uploadVectorsWithNewman } from './newman-executor.js';
 
 const require = createRequire(import.meta.url);
@@ -89,7 +91,7 @@ async function detectTextbook(pdfText: string, filename: string): Promise<boolea
 export async function processHybridPDF(
   filepath: string,
   options: {
-    forceMethod?: 'llm' | 'semantic' | 'line-based' | 'auto';
+    forceMethod?: 'llm' | 'semantic' | 'line-based' | 'streaming' | 'section-aware' | 'auto';
     maxCost?: number;
   } = {}
 ): Promise<{
@@ -101,12 +103,34 @@ export async function processHybridPDF(
   error?: string;
   method?: string;
   processingCost?: number;
+  statusId?: string;
 }> {
   console.log(`[Hybrid Processor] ===== STARTING HYBRID PDF PROCESSING =====`);
   console.log(`[Hybrid Processor] File: ${filepath}`);
   console.log(`[Hybrid Processor] Options:`, options);
   
   try {
+    // Check file size first to avoid timeout on very large files
+    const stats = await stat(filepath);
+    const fileSizeMB = stats.size / (1024 * 1024);
+    console.log(`[Hybrid Processor] File size: ${fileSizeMB.toFixed(2)}MB`);
+    
+    // For very large files (>50MB), warn but still try LLM unless it would definitely timeout
+    if (fileSizeMB > 50) {
+      console.log(`[Hybrid Processor] ⚠️ Very large file detected (${fileSizeMB.toFixed(2)}MB)`);
+      
+      // Estimate processing time - roughly 1 second per 10KB of text with LLM
+      const estimatedSeconds = (fileSizeMB * 1024) / 10;
+      
+      if (estimatedSeconds > 25) { // Would likely timeout
+        console.log(`[Hybrid Processor] File too large for synchronous LLM processing (est. ${Math.round(estimatedSeconds)}s)`);
+        console.log(`[Hybrid Processor] Consider using streaming processor or splitting the PDF`);
+        
+        // Still try LLM but warn about potential timeout
+        console.log(`[Hybrid Processor] Attempting LLM processing anyway - may timeout...`);
+      }
+    }
+    
     // Load PDF parser
     const pdfParse = require('pdf-parse');
     const dataBuffer = await readFile(filepath);
@@ -123,12 +147,14 @@ export async function processHybridPDF(
     let method = options.forceMethod || 'auto';
     
     if (method === 'auto') {
-      if (isTextbook && pdfData.numpages < 100) {
-        method = 'llm'; // Use LLM for textbooks under 100 pages
-      } else if (isTextbook) {
-        method = 'semantic'; // Use semantic for large textbooks
-      } else {
-        method = 'line-based'; // Use simple for general docs
+      // Always use LLM for all PDFs
+      method = 'llm';
+      const estimatedCost = (pdfData.text.length / 4000) * 0.01;
+      console.log(`[Hybrid Processor] Using LLM for intelligent chunking (${pdfData.numpages} pages, est. cost: $${estimatedCost.toFixed(2)})`);
+      
+      // Warn if it's a large PDF
+      if (pdfData.numpages > 100 || pdfData.text.length > 3_000_000) {
+        console.log(`[Hybrid Processor] ⚠️ Large PDF detected - processing may take several minutes`);
       }
     }
     
@@ -202,6 +228,31 @@ export async function processHybridPDF(
           overlapSize: 200
         });
         
+      case 'streaming':
+        // Use streaming processor for very large PDFs
+        console.log(`[Hybrid Processor] Using streaming processor for large PDF`);
+        const streamResult = await processStreamingPDF(filepath, {
+          batchSize: 50,
+          immediateResponse: true
+        });
+        
+        return {
+          success: streamResult.success,
+          filename: streamResult.filename,
+          totalChunks: streamResult.totalChunks,
+          indexName: streamResult.indexName,
+          message: streamResult.message,
+          error: streamResult.error,
+          method: 'streaming',
+          statusId: streamResult.statusId
+        };
+        
+      case 'section-aware':
+        // Use section-aware processing for textbooks
+        return await processSectionAwarePDF(filepath, {
+          batchSize: 20
+        });
+        
       case 'line-based':
       default:
         // Use simple line-based (fastest)
@@ -224,7 +275,7 @@ export async function analyzePDFForProcessing(filepath: string): Promise<{
   pages: number;
   characters: number;
   isTextbook: boolean;
-  recommendedMethod: 'llm' | 'semantic' | 'line-based';
+  recommendedMethod: 'llm' | 'semantic' | 'line-based' | 'streaming';
   estimatedCost: number;
   estimatedTime: number;
 }> {
@@ -236,11 +287,16 @@ export async function analyzePDFForProcessing(filepath: string): Promise<{
     const filename = basename(filepath);
     const isTextbook = await detectTextbook(pdfData.text, filename);
     
-    let recommendedMethod: 'llm' | 'semantic' | 'line-based';
+    let recommendedMethod: 'llm' | 'semantic' | 'line-based' | 'streaming';
     let estimatedCost = 0;
     let estimatedTime = 0;
     
-    if (isTextbook && pdfData.numpages < 50) {
+    // Check if PDF is very large
+    if (pdfData.numpages > 200 || pdfData.text.length > 5_000_000) {
+      recommendedMethod = 'streaming';
+      estimatedCost = (pdfData.text.length / 1500) * 0.0004; // Embedding cost
+      estimatedTime = 30; // Immediate response, background processing
+    } else if (isTextbook && pdfData.numpages < 50) {
       recommendedMethod = 'llm';
       estimatedCost = (pdfData.text.length / 4000) * 0.01; // GPT-4 input cost
       estimatedTime = pdfData.numpages * 2; // 2 seconds per page

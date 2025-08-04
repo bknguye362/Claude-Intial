@@ -126,6 +126,8 @@ const processPdfIfNeeded = createStep({
     hasQuestion: z.boolean(),
     pdfProcessed: z.boolean(),
     indexName: z.string().optional(),
+    statusId: z.string().optional(),
+    processingMethod: z.string().optional(),
   }),
   execute: async ({ inputData }) => {
     console.log('[File Workflow - ProcessPDF] ===== STEP EXECUTED =====');
@@ -137,6 +139,8 @@ const processPdfIfNeeded = createStep({
     
     let pdfProcessed = false;
     let indexName: string | undefined;
+    let statusId: string | undefined;
+    let processingMethod: string | undefined;
     
     if (inputData.hasPdf && inputData.pdfPath) {
       console.log('[File Workflow - ProcessPDF] PDF detected, processing automatically...');
@@ -146,13 +150,18 @@ const processPdfIfNeeded = createStep({
         // Call the hybrid PDF processor
         const result = await processPDF(inputData.pdfPath, {
           forceMethod: 'auto',  // Let it choose based on document type
-          maxCost: 2.0         // Max $2 for LLM processing
+          maxCost: 20.0        // Increased budget since we're always using LLM
         });
         
         if (result.success) {
           pdfProcessed = true;
           indexName = result.indexName;
-          console.log(`[File Workflow - ProcessPDF] PDF processed successfully. Index: ${indexName}`);
+          statusId = result.statusId;
+          processingMethod = result.method;
+          console.log(`[File Workflow - ProcessPDF] PDF processed successfully. Index: ${indexName}, Method: ${processingMethod}`);
+          if (statusId) {
+            console.log(`[File Workflow - ProcessPDF] Background processing started. Status ID: ${statusId}`);
+          }
         } else {
           console.error('[File Workflow - ProcessPDF] PDF processing failed:', result.error);
         }
@@ -165,6 +174,8 @@ const processPdfIfNeeded = createStep({
       ...inputData,
       pdfProcessed,
       indexName,
+      statusId,
+      processingMethod,
     };
   },
 });
@@ -182,6 +193,8 @@ const generateFileResponse = createStep({
     hasQuestion: z.boolean(),
     pdfProcessed: z.boolean(),
     indexName: z.string().optional(),
+    statusId: z.string().optional(),
+    processingMethod: z.string().optional(),
   }),
   outputSchema: z.object({
     response: z.string(),
@@ -203,13 +216,23 @@ const generateFileResponse = createStep({
     // Build context based on what was detected
     if (inputData.hasPdf && inputData.pdfProcessed) {
       // PDF has already been processed by the workflow
-      context = `A PDF file (${inputData.fileName}) has been automatically processed and indexed as: ${inputData.indexName}. `;
-      context += `The document is now searchable. `;
-      
-      if (inputData.hasQuestion || inputData.actualUserMessage) {
-        context += `Please use defaultQueryTool to answer: "${inputData.actualUserMessage}" `;
+      if (inputData.processingMethod === 'streaming' && inputData.statusId) {
+        // Streaming processing started - immediate response
+        context = `A large PDF file (${inputData.fileName}) has been submitted for processing. `;
+        context += `Processing has started in the background with status ID: ${inputData.statusId}. `;
+        context += `The document is being processed in batches to avoid timeouts. `;
+        context += `You can check the processing status later using the status ID. `;
+        context += `Once processing is complete, the document will be searchable with index: ${inputData.indexName}. `;
       } else {
-        context += `Please use defaultQueryTool to provide a comprehensive summary of this document. `;
+        // Regular processing completed
+        context = `A PDF file (${inputData.fileName}) has been automatically processed and indexed as: ${inputData.indexName}. `;
+        context += `The document is now searchable. `;
+        
+        if (inputData.hasQuestion || inputData.actualUserMessage) {
+          context += `Please use defaultQueryTool to answer: "${inputData.actualUserMessage}" `;
+        } else {
+          context += `Please use defaultQueryTool to provide a comprehensive summary of this document. `;
+        }
       }
     } else if (inputData.hasPdf && !inputData.pdfProcessed) {
       // PDF processing failed

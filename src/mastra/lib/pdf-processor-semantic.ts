@@ -177,16 +177,11 @@ export async function processSemanticPDF(
     const CHUNKS_WARNING_THRESHOLD = 500;
     const MAX_CHUNKS = 2000; // Increased limit, but with better handling
     
+    // Remove hard limit - only warn for very large documents
     if (textChunks.length > MAX_CHUNKS) {
-      console.log(`[Semantic PDF Processor] ⚠️ PDF too large: ${textChunks.length} chunks`);
-      console.log(`[Semantic PDF Processor] ⚠️ This would take ~${Math.round(textChunks.length * 3 / 60)} minutes to process`);
-      return {
-        success: false,
-        filename: basename(filepath),
-        totalChunks: textChunks.length,
-        message: `PDF too large (${textChunks.length} chunks). Maximum: ${MAX_CHUNKS} chunks. Please upload a smaller PDF or split it into parts.`,
-        error: 'Document exceeds size limit for processing within timeout constraints'
-      };
+      console.log(`[Semantic PDF Processor] ⚠️ Very large PDF: ${textChunks.length} chunks`);
+      console.log(`[Semantic PDF Processor] ⚠️ This will take ~${Math.round(textChunks.length * 3 / 60)} minutes to process`);
+      console.log(`[Semantic PDF Processor] ⚠️ Consider using streaming processor for better performance`);
     }
     
     if (textChunks.length > CHUNKS_WARNING_THRESHOLD) {
