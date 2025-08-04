@@ -75,7 +75,7 @@ function calculateKeywordScore(content: string, metadata: any, keywords: string[
       { field: metadata.sectionNumber, weight: 10 },
       { field: metadata.sectionTitle, weight: 5 },
       { field: metadata.topics, weight: 3 },
-      { field: metadata.summary, weight: 4 }, // Increased weight for LLM summaries
+      { field: metadata.chunkSummary || metadata.summary, weight: 4 }, // Increased weight for LLM summaries
       { field: metadata.filename, weight: 1 }
     ];
     
@@ -139,7 +139,7 @@ export async function hybridSearch(
     const vectorScore = 1 - (result.distance || 0);
     
     // Keyword matching score
-    const content = result.metadata?.content || '';
+    const content = result.metadata?.chunkContent || result.metadata?.content || '';
     const keywordScore = calculateKeywordScore(content, result.metadata || {}, keywords);
     const normalizedKeywordScore = Math.min(keywordScore / 10, 1); // Normalize to 0-1
     

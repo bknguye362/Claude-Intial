@@ -299,22 +299,12 @@ export async function processPDF(filepath: string, chunkSize: number = 500): Pro
       key: `${documentId}-chunk-${index}`,
       embedding: chunk.embedding,
       metadata: {
-        content: chunk.content.substring(0, 1500), // Increased back to 1500 chars
-        documentId,
-        filename: basename(filepath),
         chunkIndex: index,
-        totalChunks: chunks.length,
         pageStart: chunk.metadata.pageStart,
         pageEnd: chunk.metadata.pageEnd,
-        timestamp: new Date().toISOString(),
-        // LLM-generated summary (limited to prevent metadata size issues)
-        summary: (summaries[index] || '').substring(0, 200),
-        // Linked list structure
-        prevChunk: index > 0 ? `${documentId}-chunk-${index - 1}` : null,
-        nextChunk: index < chunks.length - 1 ? `${documentId}-chunk-${index + 1}` : null,
-        // Context preview
-        prevContext: index > 0 ? chunks[index - 1].content.slice(-100) : null,
-        nextContext: index < chunks.length - 1 ? chunks[index + 1].content.slice(0, 100) : null
+        totalChunks: chunks.length,
+        chunkContent: chunk.content.substring(0, 1000), // Limited to 1000 chars
+        chunkSummary: (summaries[index] || '').substring(0, 200) // LLM-generated summary
       }
     }));
     

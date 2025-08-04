@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { uploadVectorsWithNewman, queryVectorsWithNewman, listIndicesWithNewman } from '../lib/newman-executor.js';
 import { ContextBuilder } from '../lib/context-builder.js';
 import { hybridSearch } from '../lib/hybrid-search.js';
-import { detectSectionQuery, filterByMetadata } from '../lib/metadata-filter.js';
+import { detectSectionQuery } from '../lib/metadata-filter-simplified.js';
 
 // Azure OpenAI configuration for embeddings
 const AZURE_OPENAI_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT || 'https://franklin-open-ai-test.openai.azure.com';
@@ -140,7 +140,7 @@ export const defaultQueryTool = createTool({
             const firstResult = indexedResults[0];
             console.log(`[Default Query Tool]     Top result: ${firstResult.key || 'unknown'}`);
             console.log(`[Default Query Tool]     Distance: ${firstResult.distance !== undefined ? firstResult.distance : 'not provided'}`);
-            console.log(`[Default Query Tool]     Content preview: ${(firstResult.metadata?.content || '').substring(0, 150)}...`);
+            console.log(`[Default Query Tool]     Content preview: ${(firstResult.metadata?.chunkContent || firstResult.metadata?.content || '').substring(0, 150)}...`);
           }
         } catch (searchError) {
           const errorMsg = searchError instanceof Error ? searchError.message : 'Unknown error';
@@ -177,7 +177,7 @@ export const defaultQueryTool = createTool({
       
       // Remove blank content from hybrid results
       const validResults = hybridResults.filter(result => {
-        const content = result.metadata?.content || '';
+        const content = result.metadata?.chunkContent || result.metadata?.content || '';
         if (!content || content.trim().length < 10) {
           console.log(`[Default Query Tool] ⚠️ Excluding blank/short chunk: ${result.key}`);
           return false;
@@ -250,7 +250,7 @@ export const defaultQueryTool = createTool({
           console.log(`[Default Query Tool]    Chunk: ${result.metadata.chunkIndex + 1}/${result.metadata.totalChunks || '?'}`);
         }
         // Debug content issues
-        const contentPreview = result.metadata?.content || result.metadata?.text || 'No content available';
+        const contentPreview = result.metadata?.chunkContent || result.metadata?.content || result.metadata?.text || 'No content available';
         if (contentPreview.trim().length < 10) {
           console.log(`[Default Query Tool]    ⚠️ BLANK/SHORT CONTENT DETECTED!`);
           console.log(`[Default Query Tool]    Raw metadata:`, JSON.stringify(result.metadata).substring(0, 200));
@@ -267,7 +267,7 @@ export const defaultQueryTool = createTool({
         score: r.score || r.hybridScore || 0,
         distance: r.distance,
         index: r.index || 'unknown',
-        content: r.metadata?.content || r.metadata?.text || 'No content available',
+        content: r.metadata?.chunkContent || r.metadata?.content || r.metadata?.text || 'No content available',
         metadata: r.metadata,
         context: {
           documentId: r.metadata?.documentId || r.metadata?.filename || r.index || 'unknown',
