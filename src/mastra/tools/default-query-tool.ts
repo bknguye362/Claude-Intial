@@ -194,9 +194,40 @@ export const defaultQueryTool = createTool({
       
       // Extract key terms from the question for matching
       const questionLower = context.question.toLowerCase();
-      const questionTerms = questionLower
+      // First, try to extract meaningful phrases and terms
+      const questionTerms = [];
+      
+      // Extract multi-word technical terms (e.g., "operating system", "file system")
+      const commonPhrases = [
+        'operating system', 'file system', 'memory management', 'process scheduling',
+        'virtual memory', 'page replacement', 'disk scheduling', 'cpu scheduling',
+        'deadlock prevention', 'mutual exclusion', 'critical section', 'race condition',
+        'context switch', 'thread synchronization', 'semaphore', 'mutex', 'monitor',
+        'supply and demand', 'market equilibrium', 'price elasticity', 'consumer surplus'
+      ];
+      
+      commonPhrases.forEach(phrase => {
+        if (questionLower.includes(phrase)) {
+          questionTerms.push(phrase);
+        }
+      });
+      
+      // Then extract individual words, excluding stop words
+      const stopWords = new Set(['the', 'and', 'for', 'are', 'is', 'it', 'to', 'of', 'in', 'on', 'at', 'with', 'from', 
+        'what', 'how', 'why', 'when', 'where', 'who', 'which', 'can', 'could', 'would', 'should', 
+        'does', 'did', 'has', 'have', 'had', 'will', 'been', 'being', 'was', 'were', 'about', 
+        'explain', 'describe', 'tell', 'me', 'please', 'need', 'want', 'know', 'understand']);
+        
+      const words = questionLower
         .split(/[\s,;:!?()\[\]{}"']+/)
-        .filter(term => term.length > 2 && !['the', 'and', 'for', 'are', 'is', 'it', 'to', 'of', 'in', 'on', 'at', 'with', 'from', 'what', 'how', 'why', 'when', 'where', 'who', 'which', 'can', 'could', 'would', 'should', 'does', 'did', 'has', 'have', 'had', 'will', 'been', 'being', 'was', 'were', 'about', 'explain', 'describe', 'tell'].includes(term));
+        .filter(term => term.length > 2 && !stopWords.has(term));
+        
+      // Add individual words that aren't already part of phrases
+      words.forEach(word => {
+        if (!questionTerms.some(phrase => phrase.includes(word))) {
+          questionTerms.push(word);
+        }
+      });
       
       console.log(`[Default Query Tool] Key question terms: [${questionTerms.join(', ')}]`);
       
@@ -204,6 +235,14 @@ export const defaultQueryTool = createTool({
       const relevantResults = validResults.filter((result, idx) => {
         const summary = (result.metadata?.chunkSummary || '').toLowerCase();
         const content = (result.metadata?.chunkContent || result.metadata?.content || '').toLowerCase();
+        
+        // Debug: Check if we have summaries
+        if (idx === 0) {
+          console.log(`[Default Query Tool] First chunk has summary: ${!!result.metadata?.chunkSummary}`);
+          if (result.metadata?.chunkSummary) {
+            console.log(`[Default Query Tool] Summary length: ${result.metadata.chunkSummary.length} chars`);
+          }
+        }
         
         // Check if summary contains any key terms from the question
         const summaryRelevance = questionTerms.filter(term => summary.includes(term)).length;
@@ -223,10 +262,11 @@ export const defaultQueryTool = createTool({
         }
         
         // Accept chunk if:
-        // 1. Summary has at least 20% term overlap with question, OR
-        // 2. Content has at least 30% term overlap (fallback for poor summaries), OR  
-        // 3. It's a section-specific query (already filtered by hybrid search)
-        const isRelevant = summaryScore >= 0.2 || contentScore >= 0.3 || sectionInfo.isSection;
+        // 1. Any term matches in summary (even 1 match is significant), OR
+        // 2. At least 20% of terms match in content, OR  
+        // 3. It's a section-specific query (already filtered by hybrid search), OR
+        // 4. Vector distance is very low (< 0.15, indicating high similarity)
+        const isRelevant = summaryRelevance > 0 || contentScore >= 0.2 || sectionInfo.isSection || (result.distance && result.distance < 0.15);
         
         if (idx < 20 && !isRelevant) {
           console.log(`[Default Query Tool]   ❌ FILTERED OUT - Low relevance to question`);
@@ -242,8 +282,15 @@ export const defaultQueryTool = createTool({
       console.log(`[Default Query Tool]   After relevance filter: ${relevantResults.length} chunks`);
       console.log(`[Default Query Tool]   Filtered out: ${validResults.length - relevantResults.length} irrelevant chunks`);
       
+      // If relevance filter was too aggressive, fall back to original results
+      let finalResults = relevantResults;
+      if (relevantResults.length === 0 && validResults.length > 0) {
+        console.log(`[Default Query Tool] ⚠️ Relevance filter too strict - falling back to top vector matches`);
+        finalResults = validResults;
+      }
+      
       // LIMIT TO TOP 10 RESULTS
-      const top10 = relevantResults.slice(0, 10);
+      const top10 = finalResults.slice(0, 10);
       console.log(`[Default Query Tool] Limited to top ${top10.length} results`);
       
       if (top10.length > 0) {
