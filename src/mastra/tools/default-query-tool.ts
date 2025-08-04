@@ -284,6 +284,32 @@ export const defaultQueryTool = createTool({
         }
       }));
       
+      // Check if chunks have linked list structure
+      const hasLinkedStructure = top10.some(r => 
+        r.metadata?.prevChunk || r.metadata?.nextChunk
+      );
+      
+      if (hasLinkedStructure) {
+        console.log('[Default Query Tool] 🔗 Chunks have linked list structure for context expansion');
+        
+        // Add context hints to each chunk
+        contextualizedChunks.forEach(chunk => {
+          if (chunk.metadata?.prevContext) {
+            chunk.contextBefore = chunk.metadata.prevContext;
+          }
+          if (chunk.metadata?.nextContext) {
+            chunk.contextAfter = chunk.metadata.nextContext;
+          }
+          // Add linked chunk references
+          if (chunk.metadata?.prevChunk || chunk.metadata?.nextChunk) {
+            chunk.linkedChunks = {
+              prev: chunk.metadata.prevChunk,
+              next: chunk.metadata.nextChunk
+            };
+          }
+        });
+      }
+      
       // Use ContextBuilder to create enhanced response
       const contextualResponse = ContextBuilder.buildContextualResponse(contextualizedChunks);
       

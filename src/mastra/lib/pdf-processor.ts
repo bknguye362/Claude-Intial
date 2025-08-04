@@ -114,15 +114,20 @@ async function generateEmbeddings(texts: string[]): Promise<number[][]> {
   return embeddings;
 }
 
-// Helper function to split text into chunks
-function chunkTextByLines(text: string, linesPerChunk: number): string[] {
+// Helper function to split text into chunks with overlap
+function chunkTextByLines(text: string, linesPerChunk: number, overlapLines: number = 50): string[] {
   const lines = text.split('\n');
   const chunks: string[] = [];
+  const stride = Math.max(1, linesPerChunk - overlapLines); // How many lines to advance each time
   
-  for (let i = 0; i < lines.length; i += linesPerChunk) {
+  for (let i = 0; i < lines.length; i += stride) {
     const chunk = lines.slice(i, i + linesPerChunk).join('\n').trim();
     if (chunk) {
       chunks.push(chunk);
+    }
+    // Stop if we've covered all lines
+    if (i + linesPerChunk >= lines.length) {
+      break;
     }
   }
   
@@ -210,7 +215,7 @@ export async function processPDF(filepath: string, chunkSize: number = 500): Pro
       throw new Error(`Failed to create index '${indexName}'`);
     }
     
-    // Prepare vectors for upload
+    // Prepare vectors for upload with linked list structure
     const vectors = chunks.map((chunk, index) => ({
       key: `${documentId}-chunk-${index}`,
       embedding: chunk.embedding,
@@ -222,7 +227,13 @@ export async function processPDF(filepath: string, chunkSize: number = 500): Pro
         totalChunks: chunks.length,
         pageStart: chunk.metadata.pageStart,
         pageEnd: chunk.metadata.pageEnd,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        // Linked list structure
+        prevChunk: index > 0 ? `${documentId}-chunk-${index - 1}` : null,
+        nextChunk: index < chunks.length - 1 ? `${documentId}-chunk-${index + 1}` : null,
+        // Context preview
+        prevContext: index > 0 ? chunks[index - 1].content.slice(-100) : null,
+        nextContext: index < chunks.length - 1 ? chunks[index + 1].content.slice(0, 100) : null
       }
     }));
     
