@@ -195,7 +195,7 @@ export const defaultQueryTool = createTool({
       // Extract key terms from the question for matching
       const questionLower = context.question.toLowerCase();
       // First, try to extract meaningful phrases and terms
-      const questionTerms = [];
+      const questionTerms: string[] = [];
       
       // Extract multi-word technical terms (e.g., "operating system", "file system")
       const commonPhrases = [
