@@ -263,10 +263,11 @@ export const defaultQueryTool = createTool({
         
         // Accept chunk if:
         // 1. Any term matches in summary (even 1 match is significant), OR
-        // 2. At least 20% of terms match in content, OR  
+        // 2. At least 1 term matches in content (lowered threshold), OR  
         // 3. It's a section-specific query (already filtered by hybrid search), OR
-        // 4. Vector distance is very low (< 0.15, indicating high similarity)
-        const isRelevant = summaryRelevance > 0 || contentScore >= 0.2 || sectionInfo.isSection || (result.distance && result.distance < 0.15);
+        // 4. Vector distance is very low (< 0.18, indicating high similarity)
+        // Note: We rely more on summaries since content is truncated
+        const isRelevant = summaryRelevance > 0 || contentRelevance > 0 || sectionInfo.isSection || (result.distance && result.distance < 0.18);
         
         if (idx < 20 && !isRelevant) {
           console.log(`[Default Query Tool]   ❌ FILTERED OUT - Low relevance to question`);

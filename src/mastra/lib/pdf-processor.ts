@@ -309,7 +309,20 @@ export async function processPDF(filepath: string, chunkSize: number = 500): Pro
         pageStart: chunk.metadata.pageStart,
         pageEnd: chunk.metadata.pageEnd,
         totalChunks: chunks.length,
-        chunkContent: chunk.content.substring(0, 1000), // Limited to 1000 chars
+        // Store a more meaningful excerpt: beginning + middle + end
+        chunkContent: (() => {
+          const content = chunk.content;
+          if (content.length <= 1000) return content;
+          
+          // For longer content, capture beginning, middle, and end
+          const excerptLength = 300; // ~900/3 chars each section
+          const beginning = content.substring(0, excerptLength);
+          const middleStart = Math.floor(content.length / 2) - Math.floor(excerptLength / 2);
+          const middle = content.substring(middleStart, middleStart + excerptLength);
+          const end = content.substring(content.length - excerptLength);
+          
+          return beginning + '...[mid]...' + middle + '...[end]...' + end;
+        })(),
         chunkSummary: (summaries[index] || '').substring(0, 200) // LLM-generated summary limited to 200 chars
       }
     }));
