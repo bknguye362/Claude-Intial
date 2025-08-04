@@ -7,6 +7,8 @@ interface SearchResult {
   metadata: any;
   keywordScore?: number;
   hybridScore?: number;
+  index?: string;
+  score?: number;
 }
 
 // Extract important keywords from query

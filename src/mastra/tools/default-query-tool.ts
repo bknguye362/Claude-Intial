@@ -171,18 +171,11 @@ export const defaultQueryTool = createTool({
         }
       );
       
-      // Apply metadata filtering
-      console.log('[Default Query Tool] 📊 Applying metadata filtering...');
-      const filteredResults = filterByMetadata(
-        hybridResults,
-        context.question,
-        {
-          requireSection: sectionInfo.isSection
-        }
-      );
+      // Skip metadata filtering - use hybrid results directly
+      console.log('[Default Query Tool] 📊 Skipping metadata filtering - using keyword-based search only...');
       
-      // Remove blank content
-      const validResults = filteredResults.filter(result => {
+      // Remove blank content from hybrid results
+      const validResults = hybridResults.filter(result => {
         const content = result.metadata?.content || '';
         if (!content || content.trim().length < 10) {
           console.log(`[Default Query Tool] ⚠️ Excluding blank/short chunk: ${result.key}`);
@@ -232,7 +225,9 @@ export const defaultQueryTool = createTool({
       // Show which indices contributed results
       const indexContributions = new Map<string, number>();
       top10.forEach(r => {
-        indexContributions.set(r.index, (indexContributions.get(r.index) || 0) + 1);
+        if (r.index) {
+          indexContributions.set(r.index, (indexContributions.get(r.index) || 0) + 1);
+        }
       });
       console.log(`[Default Query Tool] Results by index:`, Object.fromEntries(indexContributions));
       
@@ -240,13 +235,13 @@ export const defaultQueryTool = createTool({
       const resultsByDocument = new Map<string, any[]>();
       
       top10.forEach((result, i) => {
-        const docId = result.metadata?.documentId || result.metadata?.filename || result.index;
+        const docId = result.metadata?.documentId || result.metadata?.filename || result.index || 'unknown';
         if (!resultsByDocument.has(docId)) {
           resultsByDocument.set(docId, []);
         }
         resultsByDocument.get(docId)!.push(result);
         
-        console.log(`[Default Query Tool] ${i + 1}. [${result.index}]`);
+        console.log(`[Default Query Tool] ${i + 1}. [${result.index || 'unknown'}]`);
         console.log(`[Default Query Tool]    Key: ${result.key}`);
         console.log(`[Default Query Tool]    Distance: ${result.distance !== undefined ? result.distance.toFixed(4) : 'not provided'}`);
         if (result.metadata?.pageStart) {
@@ -268,13 +263,13 @@ export const defaultQueryTool = createTool({
       // Build contextualized chunks for ContextBuilder
       const contextualizedChunks = top10.map(r => ({
         key: r.key,
-        score: r.score,
+        score: r.score || r.hybridScore || 0,
         distance: r.distance,
-        index: r.index,
+        index: r.index || 'unknown',
         content: r.metadata?.content || r.metadata?.text || 'No content available',
         metadata: r.metadata,
         context: {
-          documentId: r.metadata?.documentId || r.metadata?.filename || r.index,
+          documentId: r.metadata?.documentId || r.metadata?.filename || r.index || 'unknown',
           pageStart: r.metadata?.pageStart,
           pageEnd: r.metadata?.pageEnd,
           chunkIndex: r.metadata?.chunkIndex,
