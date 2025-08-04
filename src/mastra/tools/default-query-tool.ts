@@ -165,9 +165,10 @@ export const defaultQueryTool = createTool({
         embedding,
         indices,
         {
-          maxDistance: 0.3,  // More lenient than 0.2
-          topK: 20,          // Get more initial results
-          weightVector: sectionInfo.isSection ? 0.5 : 0.7  // Weight keywords more for section queries
+          maxDistance: 0.4,  // Even more lenient for keyword-heavy searches
+          topK: 30,          // Get more initial results for better keyword matching
+          weightVector: sectionInfo.isSection ? 0.3 : 0.6,  // Weight keywords even more for section queries
+          minKeywordScore: 0  // Don't require minimum keyword score
         }
       );
       
@@ -177,7 +178,7 @@ export const defaultQueryTool = createTool({
         hybridResults,
         context.question,
         {
-          requireSection: sectionInfo.isSection
+          requireSection: false  // Don't strictly require section metadata
         }
       );
       

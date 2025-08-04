@@ -11,20 +11,35 @@ interface SearchResult {
 
 // Extract important keywords from query
 function extractKeywords(query: string): string[] {
-  // Remove common words and extract meaningful terms
-  const stopWords = new Set(['the', 'is', 'at', 'which', 'on', 'a', 'an', 'and', 'or', 'but', 'in', 'with', 'to', 'for', 'of', 'as', 'by', 'from', 'what', 'where', 'when', 'how', 'why']);
+  // Minimal stopwords - keep most words for better matching
+  const stopWords = new Set(['the', 'is', 'a', 'an', 'and', 'or', 'but', 'in', 'to', 'for', 'of', 'as', 'by']);
   
-  // Extract section numbers
-  const sectionPattern = /\b(\d+\.?\d*)\b/g;
-  const sectionNumbers = query.match(sectionPattern) || [];
+  // Extract all numbers (including decimals)
+  const numberPattern = /\b(\d+\.?\d*)\b/g;
+  const numbers = query.match(numberPattern) || [];
   
-  // Extract other words
+  // Extract words - keep shorter words too for better matching
   const words = query.toLowerCase()
-    .replace(/[^\w\s.-]/g, '') // Keep dots for section numbers
+    .replace(/[^\w\s.-]/g, '') // Keep dots and hyphens
     .split(/\s+/)
-    .filter(word => word.length > 2 && !stopWords.has(word));
+    .filter(word => {
+      // Keep all numbers
+      if (/\d/.test(word)) return true;
+      // Keep words 2+ chars that aren't stopwords
+      return word.length >= 2 && !stopWords.has(word);
+    });
   
-  return [...new Set([...sectionNumbers, ...words])];
+  // Combine and deduplicate
+  const allKeywords = [...new Set([...numbers, ...words])];
+  
+  // Also add bigrams for better phrase matching
+  const bigrams = [];
+  const wordArray = query.toLowerCase().split(/\s+/);
+  for (let i = 0; i < wordArray.length - 1; i++) {
+    bigrams.push(`${wordArray[i]} ${wordArray[i + 1]}`);
+  }
+  
+  return [...allKeywords, ...bigrams];
 }
 
 // Calculate keyword match score
@@ -33,26 +48,40 @@ function calculateKeywordScore(content: string, metadata: any, keywords: string[
   const lowerContent = content.toLowerCase();
   
   for (const keyword of keywords) {
-    // Exact matches in content
-    const contentMatches = (lowerContent.match(new RegExp(`\\b${keyword}\\b`, 'gi')) || []).length;
-    score += contentMatches * 2; // Weight content matches higher
+    // Handle bigrams (phrases) vs single words differently
+    const isBigram = keyword.includes(' ');
     
-    // Matches in metadata
-    if (metadata.sectionNumber && metadata.sectionNumber.includes(keyword)) {
-      score += 10; // High weight for section number matches
+    if (isBigram) {
+      // For bigrams, look for exact phrase matches
+      const phraseMatches = (lowerContent.match(new RegExp(keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')) || []).length;
+      score += phraseMatches * 5; // Higher weight for phrase matches
+    } else {
+      // For single words, look for word boundary matches
+      try {
+        const contentMatches = (lowerContent.match(new RegExp(`\\b${keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi')) || []).length;
+        score += contentMatches * 2;
+      } catch (e) {
+        // Fallback to simple includes for special characters
+        if (lowerContent.includes(keyword)) {
+          score += 2;
+        }
+      }
     }
     
-    if (metadata.sectionTitle && metadata.sectionTitle.toLowerCase().includes(keyword)) {
-      score += 5; // Good weight for title matches
-    }
+    // Check metadata fields if they exist
+    const metadataChecks = [
+      { field: metadata.sectionNumber, weight: 10 },
+      { field: metadata.sectionTitle, weight: 5 },
+      { field: metadata.topics, weight: 3 },
+      { field: metadata.summary, weight: 2 },
+      { field: metadata.filename, weight: 1 }
+    ];
     
-    if (metadata.topics && metadata.topics.toLowerCase().includes(keyword)) {
-      score += 3; // Medium weight for topic matches
-    }
-    
-    if (metadata.summary && metadata.summary.toLowerCase().includes(keyword)) {
-      score += 2; // Lower weight for summary matches
-    }
+    metadataChecks.forEach(({ field, weight }) => {
+      if (field && field.toString().toLowerCase().includes(keyword)) {
+        score += weight;
+      }
+    });
   }
   
   return score;
