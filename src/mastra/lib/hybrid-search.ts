@@ -7,6 +7,8 @@ interface SearchResult {
   metadata: any;
   keywordScore?: number;
   hybridScore?: number;
+  index?: string;
+  score?: number;
 }
 
 // Extract important keywords from query
@@ -73,7 +75,7 @@ function calculateKeywordScore(content: string, metadata: any, keywords: string[
       { field: metadata.sectionNumber, weight: 10 },
       { field: metadata.sectionTitle, weight: 5 },
       { field: metadata.topics, weight: 3 },
-      { field: metadata.summary, weight: 2 },
+      { field: metadata.summary, weight: 4 }, // Increased weight for LLM summaries
       { field: metadata.filename, weight: 1 }
     ];
     

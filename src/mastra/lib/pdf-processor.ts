@@ -31,6 +31,7 @@ const AZURE_OPENAI_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT || 'https://fran
 const AZURE_OPENAI_API_KEY = process.env.AZURE_OPENAI_API_KEY || process.env.AZURE_API_KEY || process.env.OPENAI_API_KEY || '';
 const AZURE_OPENAI_API_VERSION = process.env.AZURE_OPENAI_API_VERSION || '2023-12-01-preview';
 const EMBEDDINGS_DEPLOYMENT = 'text-embedding-ada-002';
+const LLM_DEPLOYMENT = process.env.AZURE_OPENAI_LLM_DEPLOYMENT || 'gpt-4-turbo';
 
 // PDF parsing setup
 let pdfParse: any = null;
@@ -114,6 +115,79 @@ async function generateEmbeddings(texts: string[]): Promise<number[][]> {
   return embeddings;
 }
 
+// Helper function to generate summary for a chunk using LLM
+async function generateChunkSummary(chunkContent: string): Promise<string> {
+  if (!AZURE_OPENAI_API_KEY) {
+    // Return a simple summary if no API key
+    const lines = chunkContent.split('\n').filter(l => l.trim());
+    return lines.slice(0, 2).join(' ').substring(0, 200);
+  }
+
+  try {
+    const url = `${AZURE_OPENAI_ENDPOINT}/openai/deployments/${LLM_DEPLOYMENT}/chat/completions?api-version=${AZURE_OPENAI_API_VERSION}`;
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'api-key': AZURE_OPENAI_API_KEY
+      },
+      body: JSON.stringify({
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a helpful assistant that creates concise summaries of text chunks. Focus on the key concepts, topics, and information present in the chunk. Keep summaries under 150 words.'
+          },
+          {
+            role: 'user',
+            content: `Please summarize the following text chunk:\n\n${chunkContent.substring(0, 3000)}`
+          }
+        ],
+        max_tokens: 200,
+        temperature: 0.3
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`LLM API error: ${response.status} ${response.statusText}`);
+    }
+
+    const data: any = await response.json();
+    return data.choices[0].message.content.trim();
+  } catch (error) {
+    console.error('[PDF Processor] Error generating summary:', error);
+    // Fallback to simple summary
+    const lines = chunkContent.split('\n').filter(l => l.trim());
+    return lines.slice(0, 2).join(' ').substring(0, 200);
+  }
+}
+
+// Helper function to generate summaries for multiple chunks
+async function generateChunkSummaries(chunks: string[]): Promise<string[]> {
+  console.log(`[PDF Processor] Generating summaries for ${chunks.length} chunks...`);
+  
+  const batchSize = 3; // Smaller batch size for LLM calls
+  const summaries: string[] = [];
+  
+  for (let i = 0; i < chunks.length; i += batchSize) {
+    const batch = chunks.slice(i, i + batchSize);
+    const batchPromises = batch.map(chunk => generateChunkSummary(chunk));
+    const batchSummaries = await Promise.all(batchPromises);
+    summaries.push(...batchSummaries);
+    
+    if (i + batchSize < chunks.length) {
+      await new Promise(resolve => setTimeout(resolve, 500)); // Longer delay for LLM calls
+    }
+    
+    // Progress logging
+    if ((i + batchSize) % 10 === 0 || i + batchSize >= chunks.length) {
+      console.log(`[PDF Processor] Summary progress: ${Math.min(i + batchSize, chunks.length)}/${chunks.length} chunks`);
+    }
+  }
+  
+  return summaries;
+}
+
 // Helper function to split text into chunks with overlap
 function chunkTextByLines(text: string, linesPerChunk: number, overlapLines: number = 50): string[] {
   const lines = text.split('\n');
@@ -168,8 +242,13 @@ export async function processPDF(filepath: string, chunkSize: number = 500): Pro
       console.warn(`[PDF Processor] Processing large document with ${textChunks.length} chunks. This may take a while...`);
     }
     
-    // Generate embeddings
-    const embeddings = await generateEmbeddings(textChunks);
+    // Generate embeddings and summaries in parallel
+    console.log(`[PDF Processor] Generating embeddings and summaries...`);
+    const [embeddings, summaries] = await Promise.all([
+      generateEmbeddings(textChunks),
+      generateChunkSummaries(textChunks)
+    ]);
+    console.log(`[PDF Processor] Generated ${embeddings.length} embeddings and ${summaries.length} summaries`);
     
     // Create chunks with metadata
     const chunks = textChunks.map((content, index) => {
@@ -228,6 +307,8 @@ export async function processPDF(filepath: string, chunkSize: number = 500): Pro
         pageStart: chunk.metadata.pageStart,
         pageEnd: chunk.metadata.pageEnd,
         timestamp: new Date().toISOString(),
+        // LLM-generated summary
+        summary: summaries[index] || '',
         // Linked list structure
         prevChunk: index > 0 ? `${documentId}-chunk-${index - 1}` : null,
         nextChunk: index < chunks.length - 1 ? `${documentId}-chunk-${index + 1}` : null,
