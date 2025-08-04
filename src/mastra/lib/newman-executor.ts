@@ -190,9 +190,10 @@ export async function uploadVectorsWithNewman(
     await writeFile(envFile, JSON.stringify(envData));
     console.log(`[Newman Executor] Created environment file: ${envFile}`);
     
-    // Process in batches
-    const batchSize = 10;
+    // Process in batches with retry logic
+    const batchSize = 5; // Reduced batch size for better reliability
     const totalBatches = Math.ceil(vectors.length / batchSize);
+    const failedBatches: { batchIndex: number; vectors: any[]; error: string }[] = [];
     console.log(`[Newman Executor] Total vectors to upload: ${vectors.length} in ${totalBatches} batches`);
     for (let i = 0; i < vectors.length; i += batchSize) {
       const batch = vectors.slice(i, i + batchSize);
@@ -263,11 +264,8 @@ export async function uploadVectorsWithNewman(
         if (stderr) {
           console.error(`[Newman Executor] Newman upload stderr:`, stderr);
         }
-        uploaded += batch.length;
-        
+        // Don't increment uploaded yet - verify first
         const batchNum = Math.floor(i / batchSize) + 1;
-        console.log(`[Newman Executor] Batch ${batchNum}/${totalBatches}: ${batch.length} vectors uploaded successfully`);
-        console.log(`[Newman Executor] Progress: ${uploaded}/${vectors.length} vectors (${((uploaded / vectors.length) * 100).toFixed(1)}%)`);
         
         // Check if output file exists and read the result
         if (outputFile && existsSync(outputFile)) {
@@ -298,11 +296,20 @@ export async function uploadVectorsWithNewman(
               console.error(`[Newman Executor] Failed assertions: ${result.run?.stats?.assertions?.failed}`);
               console.error(`[Newman Executor] Failed requests: ${result.run?.stats?.requests?.failed}`);
               console.error(`[Newman Executor] Error response: ${responseBody}`);
-              uploaded -= batch.length; // Subtract if failed
+              
+              // Store failed batch for retry
+              failedBatches.push({
+                batchIndex: Math.floor(i / batchSize),
+                vectors: batch,
+                error: responseBody || 'Unknown error'
+              });
             } else {
               // Log success details
               console.log(`[Newman Executor] ✅ Upload verified for batch ${batchNum}`);
               console.log(`[Newman Executor] Response status: ${responseCode}`);
+              uploaded += batch.length;
+              console.log(`[Newman Executor] Progress: ${uploaded}/${vectors.length} vectors (${((uploaded / vectors.length) * 100).toFixed(1)}%)`);
+              
               if (execution?.response?.stream) {
                 const responseStr = execution.response.stream.toString();
                 console.log(`[Newman Executor] Response preview: ${responseStr.substring(0, 200)}`);
@@ -314,16 +321,105 @@ export async function uploadVectorsWithNewman(
         }
       } catch (error) {
         console.error(`[Newman Executor] Error uploading batch:`, error);
-        // Don't count this batch as uploaded
+        // Store failed batch for retry
+        failedBatches.push({
+          batchIndex: Math.floor(i / batchSize),
+          vectors: batch,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
       } finally {
         await unlink(collectionFile);
         if (outputFile && existsSync(outputFile)) await unlink(outputFile);
       }
     }
     
+    // Retry failed batches once
+    if (failedBatches.length > 0) {
+      console.log(`[Newman Executor] 🔄 Retrying ${failedBatches.length} failed batches...`);
+      
+      for (const failedBatch of failedBatches) {
+        console.log(`[Newman Executor] Retrying batch ${failedBatch.batchIndex + 1} (${failedBatch.vectors.length} vectors)`);
+        console.log(`[Newman Executor] Previous error: ${failedBatch.error}`);
+        
+        // Add delay before retry
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        try {
+          // Try uploading with even smaller batch if it's still failing
+          const subBatchSize = 2;
+          for (let j = 0; j < failedBatch.vectors.length; j += subBatchSize) {
+            const subBatch = failedBatch.vectors.slice(j, j + subBatchSize);
+            
+            const retryCollection = {
+              info: {
+                name: 'Retry Put Vectors',
+                schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json'
+              },
+              auth: {
+                type: 'awsv4',
+                awsv4: [
+                  { key: 'accessKey', value: '{{AWS_ACCESS_KEY_ID}}', type: 'string' },
+                  { key: 'secretKey', value: '{{AWS_SECRET_ACCESS_KEY}}', type: 'string' },
+                  { key: 'region', value: '{{AWS_REGION}}', type: 'string' },
+                  { key: 'service', value: 's3vectors', type: 'string' }
+                ]
+              },
+              item: [{
+                name: 'Retry Put Vectors',
+                request: {
+                  method: 'POST',
+                  header: [{ key: 'Content-Type', value: 'application/json' }],
+                  body: {
+                    mode: 'raw',
+                    raw: JSON.stringify({
+                      vectorBucketName: BUCKET_NAME,
+                      indexName: indexName,
+                      vectors: subBatch.map(v => ({
+                        key: v.key,
+                        data: { float32: v.embedding },
+                        metadata: v.metadata
+                      }))
+                    })
+                  },
+                  url: {
+                    raw: `https://s3vectors.${REGION}.api.aws/PutVectors`,
+                    protocol: 'https',
+                    host: ['s3vectors', REGION, 'api', 'aws'],
+                    path: ['PutVectors']
+                  }
+                }
+              }]
+            };
+            
+            const retryCollectionFile = `/tmp/newman-retry-collection-${Date.now()}.json`;
+            await writeFile(retryCollectionFile, JSON.stringify(retryCollection));
+            
+            const retryOutputFile = `/tmp/newman-retry-output-${Date.now()}.json`;
+            const retryCommand = `npx newman run "${retryCollectionFile}" --environment "${envFile}" --reporters cli,json --reporter-json-export "${retryOutputFile}"`;
+            
+            try {
+              const { stdout: retryOut } = await execAsync(retryCommand);
+              console.log(`[Newman Executor] Retry sub-batch succeeded: ${subBatch.length} vectors`);
+              uploaded += subBatch.length;
+            } catch (retryError) {
+              console.error(`[Newman Executor] Retry sub-batch failed:`, retryError);
+            } finally {
+              if (existsSync(retryCollectionFile)) await unlink(retryCollectionFile);
+              if (existsSync(retryOutputFile)) await unlink(retryOutputFile);
+            }
+          }
+        } catch (retryError) {
+          console.error(`[Newman Executor] Retry failed for batch ${failedBatch.batchIndex + 1}:`, retryError);
+        }
+      }
+    }
+    
     console.log(`[Newman Executor] Upload summary: ${uploaded}/${vectors.length} vectors successfully uploaded`);
     if (uploaded < vectors.length) {
       console.error(`[Newman Executor] ⚠️ WARNING: Only ${uploaded} out of ${vectors.length} vectors were uploaded successfully`);
+      console.error(`[Newman Executor] Failed vectors: ${vectors.length - uploaded}`);
+    } else {
+      console.log(`[Newman Executor] ✅ SUCCESS: All ${vectors.length} vectors uploaded successfully`);
     }
     return uploaded;
     
