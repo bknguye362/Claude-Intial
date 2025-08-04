@@ -143,8 +143,8 @@ export function filterByMetadata(
   // Apply filters
   let filtered = scoredResults;
   
-  // Section requirement - modified to be more lenient
-  if (options.requireSection || sectionInfo.isSection) {
+  // Section requirement - only apply if explicitly requested
+  if (options.requireSection) {
     filtered = filtered.filter(r => {
       const metadata = r.metadata || {};
       const content = metadata.content || '';
