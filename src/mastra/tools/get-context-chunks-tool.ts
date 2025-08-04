@@ -1,66 +1,97 @@
 import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
-import { getVectorByKeyWithNewman } from '../lib/newman-executor.js';
+import { queryVectorsWithNewman } from '../lib/newman-executor.js';
 
 export const getContextChunksTool = createTool({
   id: 'get-context-chunks',
   description: 'Get adjacent chunks using the linked list structure for better context',
-  parameters: z.object({
+  inputSchema: z.object({
     index: z.string().describe('The S3 Vectors index name'),
     chunkKeys: z.array(z.string()).describe('Array of chunk keys to get context for'),
     contextDepth: z.number().default(1).describe('How many chunks before/after to fetch (default: 1)'),
   }),
-  execute: async ({ index, chunkKeys, contextDepth = 1 }) => {
+  outputSchema: z.object({
+    success: z.boolean(),
+    totalChunks: z.number(),
+    groups: z.number(),
+    contextChunks: z.array(z.any()),
+    chunkGroups: z.array(z.array(z.any())),
+    message: z.string()
+  }),
+  execute: async ({ context }) => {
+    const { index, chunkKeys, contextDepth = 1 } = context;
     console.log(`[Get Context Chunks] Fetching context for ${chunkKeys.length} chunks with depth ${contextDepth}`);
     
     const contextResults = new Map<string, any>();
     const fetchedKeys = new Set<string>();
     
-    // Helper function to fetch a chunk
-    async function fetchChunk(key: string) {
-      if (fetchedKeys.has(key) || !key) return null;
+    // Helper function to fetch chunks by keys
+    async function fetchChunksByKeys(keys: string[]) {
+      const validKeys = keys.filter(k => k && !fetchedKeys.has(k));
+      if (validKeys.length === 0) return [];
       
       try {
-        const result = await getVectorByKeyWithNewman({
+        // Use a neutral vector to get all chunks, then filter by key
+        const result = await queryVectorsWithNewman(
           index,
-          key
-        });
+          Array(1536).fill(0.1),
+          1000 // Get many results to find our specific keys
+        );
         
-        if (result.success && result.vector) {
-          fetchedKeys.add(key);
-          contextResults.set(key, result.vector);
-          return result.vector;
+        if (result && result.length > 0) {
+          const foundChunks = result.filter((v: any) => validKeys.includes(v.key));
+          foundChunks.forEach((chunk: any) => {
+            fetchedKeys.add(chunk.key);
+            contextResults.set(chunk.key, chunk);
+          });
+          return foundChunks;
         }
       } catch (error) {
-        console.error(`[Get Context Chunks] Error fetching ${key}:`, error);
+        console.error(`[Get Context Chunks] Error fetching chunks:`, error);
       }
-      return null;
+      return [];
     }
     
-    // For each chunk, fetch its context
+    // First, fetch all the main chunks
+    await fetchChunksByKeys(chunkKeys);
+    
+    // Now, for each chunk, collect its linked chunks
+    const linkedChunksToFetch = new Set<string>();
+    
     for (const chunkKey of chunkKeys) {
-      // First fetch the main chunk if we don't have it
-      const mainChunk = await fetchChunk(chunkKey);
+      const mainChunk = contextResults.get(chunkKey);
       if (!mainChunk) continue;
       
-      // Track chunks to fetch for context
-      const toFetch: string[] = [];
-      
-      // Get previous chunks
+      // Collect previous chunks
       let currentKey = mainChunk.metadata?.prevChunk;
       for (let i = 0; i < contextDepth && currentKey; i++) {
-        toFetch.push(currentKey);
-        const chunk = await fetchChunk(currentKey);
-        currentKey = chunk?.metadata?.prevChunk;
+        linkedChunksToFetch.add(currentKey);
+        // We'll need to fetch this chunk first to get its prevChunk
+        const tempResult = contextResults.get(currentKey);
+        if (tempResult) {
+          currentKey = tempResult.metadata?.prevChunk;
+        } else {
+          break; // Will fetch in next batch
+        }
       }
       
-      // Get next chunks
+      // Collect next chunks
       currentKey = mainChunk.metadata?.nextChunk;
       for (let i = 0; i < contextDepth && currentKey; i++) {
-        toFetch.push(currentKey);
-        const chunk = await fetchChunk(currentKey);
-        currentKey = chunk?.metadata?.nextChunk;
+        linkedChunksToFetch.add(currentKey);
+        // We'll need to fetch this chunk first to get its nextChunk
+        const tempResult = contextResults.get(currentKey);
+        if (tempResult) {
+          currentKey = tempResult.metadata?.nextChunk;
+        } else {
+          break; // Will fetch in next batch
+        }
       }
+    }
+    
+    // Fetch all linked chunks
+    if (linkedChunksToFetch.size > 0) {
+      await fetchChunksByKeys(Array.from(linkedChunksToFetch));
     }
     
     // Sort results by document and chunk index

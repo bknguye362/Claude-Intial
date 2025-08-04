@@ -281,7 +281,10 @@ export const defaultQueryTool = createTool({
           chunkIndex: r.metadata?.chunkIndex,
           totalChunks: r.metadata?.totalChunks,
           timestamp: r.metadata?.timestamp
-        }
+        },
+        contextBefore: null as string | null,
+        contextAfter: null as string | null,
+        linkedChunks: null as { prev: string | null, next: string | null } | null
       }));
       
       // Check if chunks have linked list structure
