@@ -67,21 +67,9 @@ export const defaultQueryTool = createTool({
     console.log('[Default Query Tool] - S3_VECTORS_REGION:', process.env.S3_VECTORS_REGION || 'us-east-2');
     
     try {
-      // Check if this is a section-specific query
-      const sectionPattern = /section\s+(\d+\.?\d*)/i;
-      const sectionMatch = context.question.match(sectionPattern);
-      let enhancedQuery = context.question;
-      
-      if (sectionMatch) {
-        const sectionNumber = sectionMatch[1];
-        console.log(`[Default Query Tool] 🔍 Detected section query for: ${sectionNumber}`);
-        // Enhance query to include section number explicitly
-        enhancedQuery = `Section ${sectionNumber} ${context.question}`;
-      }
-      
       // Step 1: Generate embedding for the question
       console.log('[Default Query Tool] 1. Generating embedding for question...');
-      const embedding = await generateEmbedding(enhancedQuery);
+      const embedding = await generateEmbedding(context.question);
       console.log(`[Default Query Tool]    Embedding generated, length: ${embedding.length}`);
       console.log(`[Default Query Tool]    Generated embedding first 5: [${embedding.slice(0, 5).map(v => v.toFixed(6)).join(', ')}...]`);
       
