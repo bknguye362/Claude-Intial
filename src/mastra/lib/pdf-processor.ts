@@ -94,21 +94,32 @@ async function generateEmbedding(text: string): Promise<number[]> {
   }
 }
 
-// Helper function to generate embeddings for multiple texts
+// Helper function to generate embeddings for multiple texts with rate limiting
 async function generateEmbeddings(texts: string[]): Promise<number[][]> {
   console.log(`[PDF Processor] Generating embeddings for ${texts.length} chunks...`);
   
-  const batchSize = 5;
   const embeddings: number[][] = [];
   
-  for (let i = 0; i < texts.length; i += batchSize) {
-    const batch = texts.slice(i, i + batchSize);
-    const batchPromises = batch.map(text => generateEmbedding(text));
-    const batchEmbeddings = await Promise.all(batchPromises);
-    embeddings.push(...batchEmbeddings);
-    
-    if (i + batchSize < texts.length) {
-      await new Promise(resolve => setTimeout(resolve, 100));
+  // If using Azure OpenAI, process sequentially with rate limiting
+  if (AZURE_OPENAI_API_KEY) {
+    for (let i = 0; i < texts.length; i++) {
+      console.log(`[PDF Processor] Generating embedding ${i + 1}/${texts.length}`);
+      const embedding = await generateEmbedding(texts[i]);
+      embeddings.push(embedding);
+      
+      // Rate limit: 1 second between requests to avoid 429 errors
+      if (i < texts.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+  } else {
+    // For fallback method, can process in parallel
+    const batchSize = 5;
+    for (let i = 0; i < texts.length; i += batchSize) {
+      const batch = texts.slice(i, i + batchSize);
+      const batchPromises = batch.map(text => generateEmbedding(text));
+      const batchEmbeddings = await Promise.all(batchPromises);
+      embeddings.push(...batchEmbeddings);
     }
   }
   
@@ -171,22 +182,32 @@ async function generateChunkSummary(chunkContent: string): Promise<string> {
 async function generateChunkSummaries(chunks: string[]): Promise<string[]> {
   console.log(`[PDF Processor] Generating summaries for ${chunks.length} chunks...`);
   
-  const batchSize = 3; // Smaller batch size for LLM calls
   const summaries: string[] = [];
   
-  for (let i = 0; i < chunks.length; i += batchSize) {
-    const batch = chunks.slice(i, i + batchSize);
-    const batchPromises = batch.map(chunk => generateChunkSummary(chunk));
-    const batchSummaries = await Promise.all(batchPromises);
-    summaries.push(...batchSummaries);
-    
-    if (i + batchSize < chunks.length) {
-      await new Promise(resolve => setTimeout(resolve, 500)); // Longer delay for LLM calls
+  // If using Azure OpenAI, process sequentially with rate limiting
+  if (AZURE_OPENAI_API_KEY) {
+    for (let i = 0; i < chunks.length; i++) {
+      console.log(`[PDF Processor] Generating summary ${i + 1}/${chunks.length}`);
+      try {
+        const summary = await generateChunkSummary(chunks[i]);
+        summaries.push(summary);
+      } catch (error) {
+        console.error(`[PDF Processor] Error generating summary for chunk ${i}:`, error);
+        // Use fallback summary on error
+        const lines = chunks[i].split('\n').filter(l => l.trim());
+        summaries.push(lines.slice(0, 2).join(' ').substring(0, 200));
+      }
+      
+      // Rate limit: 1 second between requests to avoid 429 errors
+      if (i < chunks.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
     }
-    
-    // Progress logging
-    if ((i + batchSize) % 10 === 0 || i + batchSize >= chunks.length) {
-      console.log(`[PDF Processor] Summary progress: ${Math.min(i + batchSize, chunks.length)}/${chunks.length} chunks`);
+  } else {
+    // For fallback method, just use simple summaries
+    for (const chunk of chunks) {
+      const lines = chunk.split('\n').filter(l => l.trim());
+      summaries.push(lines.slice(0, 2).join(' ').substring(0, 200));
     }
   }
   
