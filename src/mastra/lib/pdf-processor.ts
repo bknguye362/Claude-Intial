@@ -107,9 +107,9 @@ async function generateEmbeddings(texts: string[]): Promise<number[][]> {
       const embedding = await generateEmbedding(texts[i]);
       embeddings.push(embedding);
       
-      // Rate limit: 1 second between requests to avoid 429 errors
+      // Rate limit: 2 seconds between requests to avoid 429 errors
       if (i < texts.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 2000));
       }
     }
   } else {
