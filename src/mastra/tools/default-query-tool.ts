@@ -110,7 +110,7 @@ export const defaultQueryTool = createTool({
         
         try {
           console.log(`[Default Query Tool]     Calling queryVectorsWithNewman with embedding first 5: [${embedding.slice(0, 5).map(v => v.toFixed(6)).join(', ')}...]`);
-          const results = await queryVectorsWithNewman(indexName, embedding, 10);
+          const results = await queryVectorsWithNewman(indexName, embedding, 30);
           console.log(`[Default Query Tool]     Found ${results.length} results`);
           
           if (results.length > 0) {
