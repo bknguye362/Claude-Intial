@@ -62,8 +62,11 @@ const pdf = async (dataBuffer: Buffer) => {
 // Helper function to generate embeddings
 async function generateEmbedding(text: string): Promise<number[]> {
   if (!AZURE_OPENAI_API_KEY) {
+    console.log('[PDF Processor] No API key, using fallback embedding method');
     const hash = text.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-    return Array(1536).fill(0).map((_, i) => Math.sin(hash + i) * 0.5 + 0.5);
+    const embedding = Array(1536).fill(0).map((_, i) => Math.sin(hash + i) * 0.5 + 0.5);
+    console.log('[PDF Processor] Fallback embedding generated. First 5 values:', embedding.slice(0, 5));
+    return embedding;
   }
 
   try {
@@ -86,11 +89,16 @@ async function generateEmbedding(text: string): Promise<number[]> {
     }
 
     const data: any = await response.json();
-    return data.data[0].embedding;
+    const embedding = data.data[0].embedding;
+    console.log('[PDF Processor] OpenAI embedding generated. First 5 values:', embedding.slice(0, 5));
+    return embedding;
   } catch (error) {
     console.error('[PDF Processor] Error generating embedding:', error);
+    console.log('[PDF Processor] Falling back to hash-based embedding');
     const hash = text.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-    return Array(1536).fill(0).map((_, i) => Math.sin(hash + i) * 0.5 + 0.5);
+    const embedding = Array(1536).fill(0).map((_, i) => Math.sin(hash + i) * 0.5 + 0.5);
+    console.log('[PDF Processor] Fallback embedding after error. First 5 values:', embedding.slice(0, 5));
+    return embedding;
   }
 }
 
