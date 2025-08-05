@@ -12,6 +12,11 @@ const AZURE_OPENAI_API_VERSION = process.env.AZURE_OPENAI_API_VERSION || '2023-1
 const EMBEDDINGS_DEPLOYMENT = 'text-embedding-ada-002';
 
 // Helper function to generate embeddings - identical to test file
+// Helper function to wait (for rate limiting)
+async function wait(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 async function generateEmbedding(text: string): Promise<number[]> {
   if (!AZURE_OPENAI_API_KEY) {
     console.log('[Default Query Tool] No API key for embeddings, using mock embeddings...');
@@ -19,32 +24,63 @@ async function generateEmbedding(text: string): Promise<number[]> {
     return Array(1536).fill(0).map((_, i) => Math.sin(hash + i) * 0.5 + 0.5);
   }
 
-  try {
-    const url = `${AZURE_OPENAI_ENDPOINT}/openai/deployments/${EMBEDDINGS_DEPLOYMENT}/embeddings?api-version=${AZURE_OPENAI_API_VERSION}`;
-    
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'api-key': AZURE_OPENAI_API_KEY
-      },
-      body: JSON.stringify({
-        input: text.slice(0, 8000),
-        model: 'text-embedding-ada-002'
-      })
-    });
+  // Implement retry logic with exponential backoff for rate limiting
+  let retries = 3;
+  let delay = 1000; // Start with 1 second delay
+  
+  while (retries > 0) {
+    try {
+      const url = `${AZURE_OPENAI_ENDPOINT}/openai/deployments/${EMBEDDINGS_DEPLOYMENT}/embeddings?api-version=${AZURE_OPENAI_API_VERSION}`;
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'api-key': AZURE_OPENAI_API_KEY
+        },
+        body: JSON.stringify({
+          input: text.slice(0, 8000),
+          model: 'text-embedding-ada-002'
+        })
+      });
 
-    if (!response.ok) {
-      throw new Error(`Embedding API error: ${response.status} ${response.statusText}`);
+      if (response.status === 429) {
+        // Rate limited - wait and retry
+        console.log(`[Default Query Tool] Rate limited (429). Waiting ${delay}ms before retry. Retries left: ${retries - 1}`);
+        await wait(delay);
+        delay *= 2; // Exponential backoff
+        retries--;
+        continue;
+      }
+
+      if (!response.ok) {
+        throw new Error(`Embedding API error: ${response.status} ${response.statusText}`);
+      }
+
+      const data: any = await response.json();
+      console.log('[Default Query Tool] OpenAI embedding generated successfully');
+      return data.data[0].embedding;
+    } catch (error) {
+      if (retries > 1) {
+        console.log(`[Default Query Tool] Error generating embedding, retrying in ${delay}ms...`);
+        await wait(delay);
+        delay *= 2;
+        retries--;
+        continue;
+      }
+      
+      // Final error - fall back to hash method
+      console.error('[Default Query Tool] Error generating embedding after retries:', error);
+      console.log('[Default Query Tool] Falling back to hash-based embedding');
+      const hash = text.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+      return Array(1536).fill(0).map((_, i) => Math.sin(hash + i) * 0.5 + 0.5);
     }
-
-    const data: any = await response.json();
-    return data.data[0].embedding;
-  } catch (error) {
-    console.error('[Default Query Tool] Error generating embedding:', error);
-    const hash = text.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-    return Array(1536).fill(0).map((_, i) => Math.sin(hash + i) * 0.5 + 0.5);
   }
+  
+  // If we exhausted all retries due to rate limiting, fall back
+  console.log('[Default Query Tool] Exhausted retries due to rate limiting, falling back to hash embedding');
+  const hash = text.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  return Array(1536).fill(0).map((_, i) => Math.sin(hash + i) * 0.5 + 0.5);
 }
 
 export const defaultQueryTool = createTool({
