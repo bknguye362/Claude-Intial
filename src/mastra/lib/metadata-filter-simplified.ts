@@ -22,29 +22,43 @@ export function detectSectionQuery(query: string): {
   isSection: boolean;
   sectionNumber?: string;
   sectionPattern?: RegExp;
+  sectionVariations?: string[];
 } {
   // Generic patterns for any document structure
   const patterns = [
-    /section\s+(\d+\.?\d*)/i,
-    /sec\s+(\d+\.?\d*)/i,
-    /chapter\s+(\d+\.?\d*)/i,
-    /part\s+(\d+\.?\d*)/i,
-    /article\s+(\d+\.?\d*)/i,
-    /paragraph\s+(\d+\.?\d*)/i,
-    /clause\s+(\d+\.?\d*)/i,
-    /item\s+(\d+\.?\d*)/i,
-    /(\d+\.?\d*)\s+(section|chapter|part|article)/i,
-    /§\s*(\d+\.?\d*)/,
+    /section\s+(\d+(?:\.\d+)*)/i,  // Matches section 21.5, section 21.5.1, etc.
+    /sec\s+(\d+(?:\.\d+)*)/i,
+    /chapter\s+(\d+(?:\.\d+)*)/i,
+    /part\s+(\d+(?:\.\d+)*)/i,
+    /article\s+(\d+(?:\.\d+)*)/i,
+    /paragraph\s+(\d+(?:\.\d+)*)/i,
+    /clause\s+(\d+(?:\.\d+)*)/i,
+    /item\s+(\d+(?:\.\d+)*)/i,
+    /(\d+(?:\.\d+)*)\s+(section|chapter|part|article)/i,  // Matches "21.5 section"
+    /§\s*(\d+(?:\.\d+)*)/,
+    // Add support for just numbers with dots (common in queries)
+    /^(\d+\.\d+(?:\.\d+)*)$/,  // Matches just "21.5" or "21.5.1"
   ];
   
   for (const pattern of patterns) {
     const match = query.match(pattern);
     if (match) {
-      const sectionNumber = match[1] + (match[2] ? `.${match[2]}` : '');
+      const sectionNumber = match[1];
+      console.log(`[Section Detection] Detected section query: ${sectionNumber}`);
+      
+      // Create variations of the section number for better matching
+      const sectionVariations = [
+        sectionNumber,  // e.g., "21.5"
+        `section ${sectionNumber}`,  // e.g., "section 21.5"
+        `Section ${sectionNumber}`,  // e.g., "Section 21.5"
+        sectionNumber.replace(/\./g, '-'),  // e.g., "21-5" (some PDFs use dashes)
+      ];
+      
       return {
         isSection: true,
         sectionNumber,
-        sectionPattern: new RegExp(`^${sectionNumber.replace('.', '\\.')}(\\.\\d+)?$`)
+        sectionPattern: new RegExp(`^${sectionNumber.replace(/\./g, '\\.')}(\\.\\d+)?$`),
+        sectionVariations  // Add variations for keyword matching
       };
     }
   }

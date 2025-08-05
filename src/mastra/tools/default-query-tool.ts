@@ -156,12 +156,23 @@ export const defaultQueryTool = createTool({
       const sectionInfo = detectSectionQuery(context.question);
       if (sectionInfo.isSection) {
         console.log(`[Default Query Tool] 🔍 Section query detected: ${sectionInfo.sectionNumber}`);
+        if (sectionInfo.sectionVariations) {
+          console.log(`[Default Query Tool] Section variations: ${sectionInfo.sectionVariations.join(', ')}`);
+        }
+      }
+      
+      // For section queries, enhance the query with section variations
+      let enhancedQuery = context.question;
+      if (sectionInfo.isSection && sectionInfo.sectionVariations) {
+        // Add section variations to help with keyword matching
+        enhancedQuery = context.question + ' ' + sectionInfo.sectionVariations.join(' ');
+        console.log(`[Default Query Tool] Enhanced query for section search: "${enhancedQuery}"`);
       }
       
       // Use hybrid search instead of simple distance filtering
       console.log('[Default Query Tool] 🎯 Using hybrid search (vector + keyword matching)...');
       const hybridResults = await hybridSearch(
-        context.question,
+        enhancedQuery,  // Use enhanced query for better section matching
         embedding,
         indices,
         {
