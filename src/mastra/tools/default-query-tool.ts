@@ -26,7 +26,7 @@ async function generateEmbedding(text: string): Promise<number[]> {
 
   // Implement retry logic with exponential backoff for rate limiting
   let retries = 3;
-  let delay = 1000; // Start with 1 second delay
+  let delay = 2000; // Start with 2 second delay (same as PDF processor)
   
   while (retries > 0) {
     try {
