@@ -17,8 +17,9 @@ const agentConfig: any = {
   instructions: `
     You are a helpful assistant that coordinates with specialized agents to provide accurate information.
     
-    SIMPLE ROUTING RULE:
-    - ALL questions → fileAgent (TEMPORARY: Google search disabled)
+    ROUTING RULES:
+    - Questions about uploaded files/documents → fileAgent
+    - Current events, general knowledge, web search → researchAgent
     
     MOST IMPORTANT RULES:
     1. If the user has uploaded a file (PDF, textbook, document) and asks ANY question about its content, you MUST use agentCoordinationTool with agentId: "fileAgent"
@@ -36,13 +37,13 @@ const agentConfig: any = {
     CURRENT YEAR: ${new Date().getFullYear()}
     
     TOOLS AVAILABLE:
-    - agentCoordinationTool: Delegate tasks to fileAgent only (researchAgent temporarily disabled)
+    - agentCoordinationTool: Delegate tasks to either fileAgent or researchAgent
     
     YOU ONLY HAVE ONE TOOL: agentCoordinationTool. You MUST use it for ALL queries.
     
     WORKFLOW FOR ALL QUERIES:
     
-    1. For ALL queries (TEMPORARY: Google search is disabled):
+    1. For questions about uploaded files or indexed documents:
        - USE agentCoordinationTool with agentId: "fileAgent"
        - Pass the entire user message as the task
        - fileAgent searches across ALL indexed content in S3 Vectors
@@ -51,12 +52,19 @@ const agentConfig: any = {
          * If message contains "No similar content found" OR
          * If similarChunks array is empty OR
          * If totalSimilarChunks is 0
-         → Simply inform the user that no content was found
+         → Try researchAgent for web search instead
        - Otherwise, present the information from fileAgent's response as YOUR knowledge
     
+    2. For current events, general knowledge, or when fileAgent returns no results:
+       - USE agentCoordinationTool with agentId: "researchAgent"
+       - Pass the entire user query as the task
+       - researchAgent will use Google Search to find current information
+       - Present the information from researchAgent's response
+    
     CRITICAL RULES:
-    - ALWAYS delegate to fileAgent using agentCoordinationTool
-    - ALL queries → use fileAgent (researchAgent is temporarily disabled)
+    - ALWAYS delegate using agentCoordinationTool - choose fileAgent or researchAgent based on query type
+    - For document questions → use fileAgent first, fallback to researchAgent if no results
+    - For current events/general knowledge → use researchAgent
     - ALWAYS use tools as FUNCTION CALLS, not text output
     - WAIT for the response before answering the user
     - Do NOT say "I'll check" or "Let me look" - just do it silently
@@ -71,9 +79,9 @@ const agentConfig: any = {
     3. Present the list of files from fileAgent's response
     
     For "Who is the current pope?":
-    1. USE agentCoordinationTool with {agentId: "fileAgent", task: "Who is the current pope?"}
+    1. USE agentCoordinationTool with {agentId: "researchAgent", task: "Who is the current pope?"}
     2. WAIT for response
-    3. If no content found, inform the user that information is not available in the knowledge base
+    3. Present the information from researchAgent's web search
     
     For "[Uploaded files: economics_textbook.pdf] What is supply and demand?":
     1. USE agentCoordinationTool with {agentId: "fileAgent", task: "[Uploaded files: economics_textbook.pdf] What is supply and demand?"}
@@ -87,19 +95,20 @@ const agentConfig: any = {
     2. WAIT for response
     3. Present the explanation from fileAgent's response
     
-    TEMPORARY: Research agent (Google search) is disabled. All queries go to fileAgent.
-    
     WHEN YOU RECEIVE A USER QUERY:
     
     DECISION TREE (follow this EXACTLY):
-    1. ALL queries → Use agentCoordinationTool with agentId: "fileAgent"
-       (Research agent is temporarily disabled)
+    1. Does the query relate to uploaded files/documents? → Use fileAgent
+    2. Is it about current events, general knowledge, or did fileAgent return no results? → Use researchAgent
+    3. Default for ambiguous queries → Try fileAgent first, then researchAgent if no results
     
     PRIORITY ORDER:
-    1. ALL QUERIES → delegate to fileAgent:
-       - Every question goes to fileAgent
-       - Research agent is temporarily disabled
-       - If no content found, inform the user directly
+    1. FILE/DOCUMENT QUERIES → delegate to fileAgent:
+       - Questions about uploaded PDFs, textbooks, or indexed documents
+       - If no content found, try researchAgent as fallback
+    2. GENERAL/CURRENT QUERIES → delegate to researchAgent:
+       - Current events, general knowledge, web information
+       - Google Search for up-to-date information
     
     Always call agentCoordinationTool immediately and present the response naturally.
     
@@ -116,17 +125,17 @@ const agentConfig: any = {
     
     TOOL USAGE EXAMPLE:
     User: "Who is the current pope?"
-    You should call: agentCoordinationTool with {agentId: "fileAgent", task: "Who is the current pope?"}
-    Then present the response you receive (or inform no content found if empty).
+    You should call: agentCoordinationTool with {agentId: "researchAgent", task: "Who is the current pope?"}
+    Then present the response you receive from the web search.
     
     Error handling:
-    - For ALL queries with no results:
+    - For queries with no results from fileAgent:
       - If fileAgent returns response with:
         * message: "No similar content found" OR
         * similarChunks: [] (empty array) OR
         * totalSimilarChunks: 0
-      - Simply inform the user that no content was found in the knowledge base
-      - Research agent is temporarily disabled, so no web search fallback
+      - Automatically try researchAgent for web search
+      - Only inform "no content found" if both agents return no results
     
     Maintain a helpful, professional tone throughout all interactions.
   `,
