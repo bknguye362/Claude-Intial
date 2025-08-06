@@ -4,6 +4,7 @@ import { uploadVectorsWithNewman, queryVectorsWithNewman, listIndicesWithNewman 
 import { ContextBuilder } from '../lib/context-builder.js';
 import { hybridSearch } from '../lib/hybrid-search.js';
 import { detectSectionQuery } from '../lib/metadata-filter-simplified.js';
+import { multiQuerySearch } from '../lib/multi-query-search.js';
 
 // Azure OpenAI configuration for embeddings
 const AZURE_OPENAI_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT || 'https://franklin-open-ai-test.openai.azure.com';
@@ -172,55 +173,109 @@ export const defaultQueryTool = createTool({
         }
       }
       
-      // Step 5: Use improved search methods
-      console.log('\n[Default Query Tool] 5. IMPROVED SEARCH WITH HYBRID APPROACH:');
-      console.log('[Default Query Tool] =====================================');
+      // Step 5: Check if we should use multi-query search
+      const shouldUseMultiQuery = 
+        context.question.toLowerCase().includes('last') ||
+        context.question.toLowerCase().includes('end') ||
+        context.question.toLowerCase().includes('final') ||
+        context.question.toLowerCase().includes('conclusion') ||
+        context.question.toLowerCase().includes('epilogue');
       
-      // Detect if this is a section query
-      const sectionInfo = detectSectionQuery(context.question);
-      if (sectionInfo.isSection) {
-        console.log(`[Default Query Tool] 🔍 Section query detected: ${sectionInfo.sectionNumber}`);
-        if (sectionInfo.sectionVariations) {
-          console.log(`[Default Query Tool] Section variations: ${sectionInfo.sectionVariations.join(', ')}`);
+      let finalResults: any[] = [];
+      let isMultiQueryResult = false;
+      
+      if (shouldUseMultiQuery) {
+        console.log('\n[Default Query Tool] 5. USING MULTI-QUERY SEARCH:');
+        console.log('[Default Query Tool] =====================================');
+        console.log('[Default Query Tool] Detected query about document ending - using multi-query approach');
+        
+        try {
+          const multiQueryResult = await multiQuerySearch(context.question, indices, {
+            maxQueries: 5,
+            topKPerQuery: 30,
+            finalTopK: 30
+          });
+          
+          console.log(`[Default Query Tool] Multi-query found ${multiQueryResult.stats.totalUnique} unique chunks`);
+          console.log(`[Default Query Tool] Used ${multiQueryResult.stats.queryCount} different query variations`);
+          
+          // Convert ranked results to format expected by rest of code
+          finalResults = multiQueryResult.rankedResults.map(r => ({
+            key: r.key,
+            metadata: r.metadata,
+            distance: r.distance,
+            index: r.index,
+            score: r.combinedScore,
+            hybridScore: r.combinedScore
+          }));
+          
+          isMultiQueryResult = true;
+          
+          // Log if we found final chunks
+          if (multiQueryResult.stats.finalChunksFound.length > 0) {
+            console.log(`[Default Query Tool] ✅ Found final chunks: ${multiQueryResult.stats.finalChunksFound.join(', ')}`);
+          }
+          
+        } catch (error) {
+          console.error('[Default Query Tool] Multi-query search failed, falling back to hybrid search:', error);
+          isMultiQueryResult = false;
         }
       }
       
-      // For section queries, enhance the query with section variations
-      let enhancedQuery = context.question;
-      if (sectionInfo.isSection && sectionInfo.sectionVariations) {
-        // Add section variations to help with keyword matching
-        enhancedQuery = context.question + ' ' + sectionInfo.sectionVariations.join(' ');
-        console.log(`[Default Query Tool] Enhanced query for section search: "${enhancedQuery}"`);
+      // If not using multi-query or if it failed, use hybrid search
+      if (!isMultiQueryResult) {
+        console.log('\n[Default Query Tool] 5. IMPROVED SEARCH WITH HYBRID APPROACH:');
+        console.log('[Default Query Tool] =====================================');
+        
+        // Detect if this is a section query
+        const sectionInfo = detectSectionQuery(context.question);
+        if (sectionInfo.isSection) {
+          console.log(`[Default Query Tool] 🔍 Section query detected: ${sectionInfo.sectionNumber}`);
+          if (sectionInfo.sectionVariations) {
+            console.log(`[Default Query Tool] Section variations: ${sectionInfo.sectionVariations.join(', ')}`);
+          }
+        }
+        
+        // For section queries, enhance the query with section variations
+        let enhancedQuery = context.question;
+        if (sectionInfo.isSection && sectionInfo.sectionVariations) {
+          // Add section variations to help with keyword matching
+          enhancedQuery = context.question + ' ' + sectionInfo.sectionVariations.join(' ');
+          console.log(`[Default Query Tool] Enhanced query for section search: "${enhancedQuery}"`);
+        }
+        
+        // Use hybrid search instead of simple distance filtering
+        console.log('[Default Query Tool] 🎯 Using hybrid search (vector + keyword matching)...');
+        const hybridResults = await hybridSearch(
+          enhancedQuery,  // Use enhanced query for better section matching
+          embedding,
+          indices,
+          {
+            maxDistance: 0.4,  // Even more lenient for keyword-heavy searches
+            topK: 30,          // Get more initial results for better keyword matching
+            weightVector: sectionInfo.isSection ? 0.3 : 0.6,  // Weight keywords even more for section queries
+            minKeywordScore: 0  // Don't require minimum keyword score
+          }
+        );
+        
+        // Skip metadata filtering - use hybrid results directly
+        console.log('[Default Query Tool] 📊 Skipping metadata filtering - using keyword-based search only...');
+        
+        // Remove blank content from hybrid results
+        const validResults = hybridResults.filter(result => {
+          const content = result.metadata?.chunkContent || result.metadata?.content || '';
+          if (!content || content.trim().length < 10) {
+            console.log(`[Default Query Tool] ⚠️ Excluding blank/short chunk: ${result.key}`);
+            return false;
+          }
+          return true;
+        });
+        
+        console.log(`[Default Query Tool] 📊 Found ${validResults.length} valid results after hybrid search and filtering`);
+        finalResults = validResults;
       }
       
-      // Use hybrid search instead of simple distance filtering
-      console.log('[Default Query Tool] 🎯 Using hybrid search (vector + keyword matching)...');
-      const hybridResults = await hybridSearch(
-        enhancedQuery,  // Use enhanced query for better section matching
-        embedding,
-        indices,
-        {
-          maxDistance: 0.4,  // Even more lenient for keyword-heavy searches
-          topK: 30,          // Get more initial results for better keyword matching
-          weightVector: sectionInfo.isSection ? 0.3 : 0.6,  // Weight keywords even more for section queries
-          minKeywordScore: 0  // Don't require minimum keyword score
-        }
-      );
-      
-      // Skip metadata filtering - use hybrid results directly
-      console.log('[Default Query Tool] 📊 Skipping metadata filtering - using keyword-based search only...');
-      
-      // Remove blank content from hybrid results
-      const validResults = hybridResults.filter(result => {
-        const content = result.metadata?.chunkContent || result.metadata?.content || '';
-        if (!content || content.trim().length < 10) {
-          console.log(`[Default Query Tool] ⚠️ Excluding blank/short chunk: ${result.key}`);
-          return false;
-        }
-        return true;
-      });
-      
-      console.log(`[Default Query Tool] 📊 Found ${validResults.length} valid results after hybrid search and filtering`);
+      // Now continue with the rest of the processing using finalResults
       
       // Filter chunks by summary relevance to the question
       console.log('\n[Default Query Tool] 🎯 CHECKING SUMMARY RELEVANCE TO QUESTION:');
@@ -267,7 +322,7 @@ export const defaultQueryTool = createTool({
       console.log(`[Default Query Tool] Key question terms: [${questionTerms.join(', ')}]`);
       
       // Filter chunks where summary is relevant to the question
-      const relevantResults = validResults.filter((result, idx) => {
+      const relevantResults = finalResults.filter((result, idx) => {
         const summary = (result.metadata?.chunkSummary || '').toLowerCase();
         const content = (result.metadata?.chunkContent || result.metadata?.content || '').toLowerCase();
         
@@ -296,13 +351,15 @@ export const defaultQueryTool = createTool({
           console.log(`[Default Query Tool]   Content matches ${contentRelevance}/${totalTerms} question terms (${(contentScore * 100).toFixed(1)}%)`);
         }
         
+        // For multi-query results, they're already well-ranked, so be more lenient
+        const isMultiQuery = isMultiQueryResult;
+        
         // Accept chunk if:
-        // 1. Any term matches in summary (even 1 match is significant), OR
-        // 2. At least 1 term matches in content (lowered threshold), OR  
-        // 3. It's a section-specific query (already filtered by hybrid search), OR
+        // 1. It's from multi-query (already ranked by relevance), OR
+        // 2. Any term matches in summary (even 1 match is significant), OR
+        // 3. At least 1 term matches in content (lowered threshold), OR  
         // 4. Vector distance is very low (< 0.18, indicating high similarity)
-        // Note: We rely more on summaries since content is truncated
-        const isRelevant = summaryRelevance > 0 || contentRelevance > 0 || sectionInfo.isSection || (result.distance && result.distance < 0.18);
+        const isRelevant = isMultiQuery || summaryRelevance > 0 || contentRelevance > 0 || (result.distance && result.distance < 0.18);
         
         if (idx < 20 && !isRelevant) {
           console.log(`[Default Query Tool]   ❌ FILTERED OUT - Low relevance to question`);
@@ -314,19 +371,19 @@ export const defaultQueryTool = createTool({
       });
       
       console.log(`\n[Default Query Tool] 📊 Summary relevance filtering results:`);
-      console.log(`[Default Query Tool]   Started with: ${validResults.length} chunks`);
+      console.log(`[Default Query Tool]   Started with: ${finalResults.length} chunks`);
       console.log(`[Default Query Tool]   After relevance filter: ${relevantResults.length} chunks`);
-      console.log(`[Default Query Tool]   Filtered out: ${validResults.length - relevantResults.length} irrelevant chunks`);
+      console.log(`[Default Query Tool]   Filtered out: ${finalResults.length - relevantResults.length} irrelevant chunks`);
       
       // If relevance filter was too aggressive, fall back to original results
-      let finalResults = relevantResults;
-      if (relevantResults.length === 0 && validResults.length > 0) {
+      let finalFilteredResults = relevantResults;
+      if (relevantResults.length === 0 && finalResults.length > 0) {
         console.log(`[Default Query Tool] ⚠️ Relevance filter too strict - falling back to top vector matches`);
-        finalResults = validResults;
+        finalFilteredResults = finalResults;
       }
       
       // LIMIT TO TOP 30 RESULTS (increased from 10 for better coverage)
-      const top30 = finalResults.slice(0, 30);
+      const top30 = finalFilteredResults.slice(0, 30);
       console.log(`[Default Query Tool] Limited to top ${top30.length} results`);
       
       if (top30.length > 0) {
@@ -353,7 +410,7 @@ export const defaultQueryTool = createTool({
           debug: {
             indicesSearched: indices.join(','),
             totalResultsFound: allResults.length,
-            resultsWithDistance: validResults.length
+            resultsWithDistance: finalFilteredResults.length
           }
         };
         
@@ -471,7 +528,7 @@ export const defaultQueryTool = createTool({
           indicesSearched: indices.join(','),
           totalIndicesSearched: indices.length,
           totalResultsBeforeFilter: allResults.length,
-          resultsWithDistance: validResults.length,
+          resultsWithDistance: finalFilteredResults.length,
           top30Count: top30.length,
           listingMethod: indices.length > 1 ? 'listIndicesWithNewman' : 'fallback',
           awsKeySet: !!process.env.AWS_ACCESS_KEY_ID,
