@@ -108,25 +108,36 @@ async function generateEmbeddings(texts: string[]): Promise<number[][]> {
   
   const embeddings: number[][] = [];
   
-  // If using Azure OpenAI, process with adaptive rate limiting
+  // If using Azure OpenAI, process with controlled parallelism
   if (AZURE_OPENAI_API_KEY) {
-    for (let i = 0; i < texts.length; i++) {
-      if (i % 10 === 0) {
-        console.log(`[PDF Processor] Generating embedding ${i + 1}/${texts.length}`);
-      }
-      const embedding = await generateEmbedding(texts[i]);
-      embeddings.push(embedding);
+    // Process in batches with limited concurrency
+    const maxConcurrent = 3; // Process 3 at a time
+    const batchDelay = 1500; // Delay between batches
+    
+    for (let i = 0; i < texts.length; i += maxConcurrent) {
+      const batch = texts.slice(i, i + maxConcurrent);
       
-      // Adaptive rate limiting based on chunk count
-      if (i < texts.length - 1) {
-        // For large documents (>100 chunks), use shorter delays
-        const delay = texts.length > 100 ? 1000 : 2000;
-        if (i % 10 === 9) {
-          // Every 10th request, add extra delay to avoid burst limits
-          await new Promise(resolve => setTimeout(resolve, delay * 2));
-        } else {
-          await new Promise(resolve => setTimeout(resolve, delay));
+      if (i % 30 === 0) {
+        console.log(`[PDF Processor] Generating embeddings ${i + 1}-${Math.min(i + maxConcurrent, texts.length)}/${texts.length}`);
+      }
+      
+      // Process batch in parallel
+      const batchPromises = batch.map(async (text) => {
+        try {
+          return await generateEmbedding(text);
+        } catch (error) {
+          console.error('[PDF Processor] Embedding error, using fallback:', error);
+          const hash = text.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+          return Array(1536).fill(0).map((_, j) => Math.sin(hash + j) * 0.5 + 0.5);
         }
+      });
+      
+      const batchEmbeddings = await Promise.all(batchPromises);
+      embeddings.push(...batchEmbeddings);
+      
+      // Delay between batches to respect rate limits
+      if (i + maxConcurrent < texts.length) {
+        await new Promise(resolve => setTimeout(resolve, batchDelay));
       }
     }
   } else {
@@ -201,30 +212,35 @@ async function generateChunkSummaries(chunks: string[]): Promise<string[]> {
   
   const summaries: string[] = [];
   
-  // If using Azure OpenAI, process with adaptive rate limiting
+  // If using Azure OpenAI, process with controlled parallelism
   if (AZURE_OPENAI_API_KEY) {
-    for (let i = 0; i < chunks.length; i++) {
-      if (i % 10 === 0) {
-        console.log(`[PDF Processor] Generating summary ${i + 1}/${chunks.length}`);
-      }
-      try {
-        const summary = await generateChunkSummary(chunks[i]);
-        summaries.push(summary);
-      } catch (error) {
-        console.error(`[PDF Processor] Error generating summary for chunk ${i}:`, error);
-        // Use fallback summary on error
-        const lines = chunks[i].split('\n').filter(l => l.trim());
-        summaries.push(lines.slice(0, 2).join(' ').substring(0, 200));
+    const maxConcurrent = 2; // Process 2 summaries at a time (less than embeddings)
+    const batchDelay = 1000; // Delay between batches
+    
+    for (let i = 0; i < chunks.length; i += maxConcurrent) {
+      const batch = chunks.slice(i, i + maxConcurrent);
+      
+      if (i % 20 === 0) {
+        console.log(`[PDF Processor] Generating summaries ${i + 1}-${Math.min(i + maxConcurrent, chunks.length)}/${chunks.length}`);
       }
       
-      // Adaptive rate limiting
-      if (i < chunks.length - 1) {
-        const delay = chunks.length > 100 ? 500 : 1000;
-        if (i % 10 === 9) {
-          await new Promise(resolve => setTimeout(resolve, delay * 2));
-        } else {
-          await new Promise(resolve => setTimeout(resolve, delay));
+      // Process batch in parallel
+      const batchPromises = batch.map(async (chunk) => {
+        try {
+          return await generateChunkSummary(chunk);
+        } catch (error) {
+          console.error('[PDF Processor] Summary error, using fallback');
+          const lines = chunk.split('\n').filter(l => l.trim());
+          return lines.slice(0, 2).join(' ').substring(0, 200);
         }
+      });
+      
+      const batchSummaries = await Promise.all(batchPromises);
+      summaries.push(...batchSummaries);
+      
+      // Delay between batches
+      if (i + maxConcurrent < chunks.length) {
+        await new Promise(resolve => setTimeout(resolve, batchDelay));
       }
     }
   } else {
