@@ -108,16 +108,25 @@ async function generateEmbeddings(texts: string[]): Promise<number[][]> {
   
   const embeddings: number[][] = [];
   
-  // If using Azure OpenAI, process sequentially with rate limiting
+  // If using Azure OpenAI, process with adaptive rate limiting
   if (AZURE_OPENAI_API_KEY) {
     for (let i = 0; i < texts.length; i++) {
-      console.log(`[PDF Processor] Generating embedding ${i + 1}/${texts.length}`);
+      if (i % 10 === 0) {
+        console.log(`[PDF Processor] Generating embedding ${i + 1}/${texts.length}`);
+      }
       const embedding = await generateEmbedding(texts[i]);
       embeddings.push(embedding);
       
-      // Rate limit: 2 seconds between requests to avoid 429 errors
+      // Adaptive rate limiting based on chunk count
       if (i < texts.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        // For large documents (>100 chunks), use shorter delays
+        const delay = texts.length > 100 ? 1000 : 2000;
+        if (i % 10 === 9) {
+          // Every 10th request, add extra delay to avoid burst limits
+          await new Promise(resolve => setTimeout(resolve, delay * 2));
+        } else {
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
       }
     }
   } else {
@@ -192,10 +201,12 @@ async function generateChunkSummaries(chunks: string[]): Promise<string[]> {
   
   const summaries: string[] = [];
   
-  // If using Azure OpenAI, process sequentially with rate limiting
+  // If using Azure OpenAI, process with adaptive rate limiting
   if (AZURE_OPENAI_API_KEY) {
     for (let i = 0; i < chunks.length; i++) {
-      console.log(`[PDF Processor] Generating summary ${i + 1}/${chunks.length}`);
+      if (i % 10 === 0) {
+        console.log(`[PDF Processor] Generating summary ${i + 1}/${chunks.length}`);
+      }
       try {
         const summary = await generateChunkSummary(chunks[i]);
         summaries.push(summary);
@@ -206,9 +217,14 @@ async function generateChunkSummaries(chunks: string[]): Promise<string[]> {
         summaries.push(lines.slice(0, 2).join(' ').substring(0, 200));
       }
       
-      // Rate limit: 1 second between requests to avoid 429 errors
+      // Adaptive rate limiting
       if (i < chunks.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        const delay = chunks.length > 100 ? 500 : 1000;
+        if (i % 10 === 9) {
+          await new Promise(resolve => setTimeout(resolve, delay * 2));
+        } else {
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
       }
     }
   } else {
@@ -223,31 +239,31 @@ async function generateChunkSummaries(chunks: string[]): Promise<string[]> {
 }
 
 
-// Helper function to split text into chunks with overlap
-function chunkTextByLines(text: string, linesPerChunk: number, overlapLines: number = 50): string[] {
-  const lines = text.split('\n');
+// Helper function to split text into character-based chunks with overlap
+function chunkTextByCharacters(text: string, chunkSize: number = 1200, overlapSize: number = 200): string[] {
   const chunks: string[] = [];
-  const stride = Math.max(1, linesPerChunk - overlapLines); // How many lines to advance each time
+  const stride = Math.max(1, chunkSize - overlapSize); // How many characters to advance each time
   
-  for (let i = 0; i < lines.length; i += stride) {
-    const chunk = lines.slice(i, i + linesPerChunk).join('\n').trim();
+  for (let i = 0; i < text.length; i += stride) {
+    const chunk = text.substring(i, i + chunkSize).trim();
     if (chunk) {
       chunks.push(chunk);
     }
-    // Stop if we've covered all lines
-    if (i + linesPerChunk >= lines.length) {
+    // Stop if we've covered all text
+    if (i + chunkSize >= text.length) {
       break;
     }
   }
   
+  console.log(`[PDF Processor] Created ${chunks.length} chunks of ~${chunkSize} characters each`);
   return chunks;
 }
 
 // Main function to process PDF
-export async function processPDF(filepath: string, chunkSize: number = 500): Promise<ProcessPDFResult> {
+export async function processPDF(filepath: string, chunkSize: number = 1200): Promise<ProcessPDFResult> {
   console.log(`[PDF Processor] ===== STARTING PDF PROCESSING =====`);
   console.log(`[PDF Processor] Processing PDF: ${filepath}`);
-  console.log(`[PDF Processor] Chunk size: ${chunkSize}`);
+  console.log(`[PDF Processor] Chunk size: ${chunkSize} characters`);
   
   try {
     // Read and parse PDF
@@ -266,9 +282,9 @@ export async function processPDF(filepath: string, chunkSize: number = 500): Pro
       characters: pdfData.text.length,
     };
     
-    // Split into chunks
+    // Split into character-based chunks
     console.log(`[PDF Processor] Text length: ${pdfData.text.length} characters`);
-    const textChunks = chunkTextByLines(pdfData.text, chunkSize);
+    const textChunks = chunkTextByCharacters(pdfData.text, chunkSize);
     console.log(`[PDF Processor] Split into ${textChunks.length} chunks`);
     console.log(`[PDF Processor] First chunk preview: ${textChunks[0]?.substring(0, 100)}...`);
     
@@ -338,20 +354,8 @@ export async function processPDF(filepath: string, chunkSize: number = 500): Pro
         pageStart: chunk.metadata.pageStart,
         pageEnd: chunk.metadata.pageEnd,
         totalChunks: chunks.length,
-        // Store a more meaningful excerpt: beginning + middle + end
-        chunkContent: (() => {
-          const content = chunk.content;
-          if (content.length <= 1000) return content;
-          
-          // For longer content, capture beginning, middle, and end
-          const excerptLength = 300; // ~900/3 chars each section
-          const beginning = content.substring(0, excerptLength);
-          const middleStart = Math.floor(content.length / 2) - Math.floor(excerptLength / 2);
-          const middle = content.substring(middleStart, middleStart + excerptLength);
-          const end = content.substring(content.length - excerptLength);
-          
-          return beginning + '...[mid]...' + middle + '...[end]...' + end;
-        })(),
+        // Store full chunk content up to 1000 chars (chunks are now ~1200 chars)
+        chunkContent: chunk.content.substring(0, 1000),
         chunkSummary: (summaries[index] || '').substring(0, 200) // LLM-generated summary limited to 200 chars
       }
     }));
