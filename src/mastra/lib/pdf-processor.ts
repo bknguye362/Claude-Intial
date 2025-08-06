@@ -309,6 +309,28 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
       console.warn(`[PDF Processor] Processing large document with ${textChunks.length} chunks. This may take a while...`);
     }
     
+    // Generate index name and create index immediately
+    const documentId = basename(filepath, '.pdf');
+    const cleanName = documentId
+      .toLowerCase()
+      .replace(/[^a-z0-9-_]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '');
+    
+    const dateStr = new Date().toISOString().split('T')[0];
+    const indexName = `file-${cleanName}-${dateStr}`;
+    
+    console.log(`[PDF Processor] Creating S3 Vectors index '${indexName}' IMMEDIATELY...`);
+    const dimension = 1536; // OpenAI embeddings dimension
+    const indexCreated = await createIndexWithNewman(indexName, dimension);
+    console.log(`[PDF Processor] Index creation result: ${indexCreated}`);
+    
+    if (!indexCreated) {
+      throw new Error(`Failed to create index '${indexName}'`);
+    }
+    
+    console.log(`[PDF Processor] ✅ Index '${indexName}' created! Processing will continue...`)
+    
     // Generate embeddings and summaries in parallel
     console.log(`[PDF Processor] Generating embeddings and summaries...`);
     const [embeddings, summaries] = await Promise.all([
@@ -338,28 +360,9 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
       };
     });
     
-    // Generate index name
-    const documentId = basename(filepath, '.pdf');
-    const cleanName = documentId
-      .toLowerCase()
-      .replace(/[^a-z0-9-_]/g, '-')
-      .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '');
-    
-    const dateStr = new Date().toISOString().split('T')[0];
-    const indexName = `file-${cleanName}-${dateStr}`;
-    
-    console.log(`[PDF Processor] Creating S3 Vectors index '${indexName}'`);
-    console.log(`[PDF Processor] Using dimension: ${embeddings[0]?.length || 1536}`);
-    
-    // Create index and upload vectors
-    const dimension = embeddings[0]?.length || 1536;
-    const indexCreated = await createIndexWithNewman(indexName, dimension);
-    console.log(`[PDF Processor] Index creation result: ${indexCreated}`);
-    
-    if (!indexCreated) {
-      throw new Error(`Failed to create index '${indexName}'`);
-    }
+    // Index was already created at the beginning
+    console.log(`[PDF Processor] Using existing index '${indexName}' for vector upload`);
+    console.log(`[PDF Processor] Ready to upload ${chunks.length} vectors with embeddings`)
     
     // Prepare vectors for upload with linked list structure
     const vectors = chunks.map((chunk, index) => ({
