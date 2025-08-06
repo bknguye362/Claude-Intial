@@ -255,23 +255,83 @@ async function generateChunkSummaries(chunks: string[]): Promise<string[]> {
 }
 
 
-// Helper function to split text into character-based chunks with overlap
-function chunkTextByCharacters(text: string, chunkSize: number = 1000, overlapSize: number = 200): string[] {
-  const chunks: string[] = [];
-  const stride = Math.max(1, chunkSize - overlapSize); // How many characters to advance each time
+// Helper function to find the end of a sentence
+function findSentenceEnd(text: string, startPos: number, maxPos: number): number {
+  // Look for sentence endings: . ! ? followed by space or newline or end of text
+  const sentenceEndPattern = /[.!?](?:\s|$)/g;
   
-  for (let i = 0; i < text.length; i += stride) {
-    const chunk = text.substring(i, i + chunkSize).trim();
-    if (chunk) {
-      chunks.push(chunk);
-    }
-    // Stop if we've covered all text
-    if (i + chunkSize >= text.length) {
+  // Start searching from startPos
+  sentenceEndPattern.lastIndex = startPos;
+  
+  let match;
+  let lastGoodEnd = maxPos; // Default to maxPos if no sentence end found
+  
+  while ((match = sentenceEndPattern.exec(text)) !== null) {
+    if (match.index <= maxPos) {
+      // Found a sentence end within our chunk size limit
+      lastGoodEnd = match.index + match[0].length;
+    } else {
+      // We've gone past our max position
       break;
     }
   }
   
-  console.log(`[PDF Processor] Created ${chunks.length} chunks of ~${chunkSize} characters each`);
+  // If we couldn't find any sentence end, at least try to end at a word boundary
+  if (lastGoodEnd === maxPos && maxPos < text.length) {
+    // Look backwards from maxPos to find a space
+    for (let i = maxPos; i > startPos && i > maxPos - 50; i--) {
+      if (text[i] === ' ' || text[i] === '\n') {
+        lastGoodEnd = i;
+        break;
+      }
+    }
+  }
+  
+  return lastGoodEnd;
+}
+
+// Helper function to split text into character-based chunks with overlap
+function chunkTextByCharacters(text: string, chunkSize: number = 1000, overlapSize: number = 200): string[] {
+  const chunks: string[] = [];
+  let currentPos = 0;
+  
+  while (currentPos < text.length) {
+    // Calculate the ideal end position for this chunk
+    let idealEnd = currentPos + chunkSize;
+    
+    // If this would be the last chunk, take everything remaining
+    if (idealEnd >= text.length) {
+      const chunk = text.substring(currentPos).trim();
+      if (chunk) {
+        chunks.push(chunk);
+      }
+      break;
+    }
+    
+    // Find a good sentence boundary near the ideal end position
+    // Allow up to 100 extra characters to complete a sentence
+    const actualEnd = findSentenceEnd(text, currentPos, Math.min(idealEnd + 100, text.length));
+    
+    // Extract the chunk
+    const chunk = text.substring(currentPos, actualEnd).trim();
+    if (chunk) {
+      chunks.push(chunk);
+    }
+    
+    // Move to the next chunk position with overlap
+    // Calculate stride based on actual chunk size to maintain consistent overlap
+    const actualChunkSize = actualEnd - currentPos;
+    const stride = Math.max(1, actualChunkSize - overlapSize);
+    currentPos += stride;
+    
+    // Prevent infinite loops
+    if (stride <= 0) {
+      currentPos = actualEnd;
+    }
+  }
+  
+  console.log(`[PDF Processor] Created ${chunks.length} chunks with sentence boundaries`);
+  console.log(`[PDF Processor] Average chunk size: ${Math.round(text.length / chunks.length)} characters`);
   return chunks;
 }
 

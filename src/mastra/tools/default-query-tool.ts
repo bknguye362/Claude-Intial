@@ -325,13 +325,13 @@ export const defaultQueryTool = createTool({
         finalResults = validResults;
       }
       
-      // LIMIT TO TOP 10 RESULTS
-      const top10 = finalResults.slice(0, 10);
-      console.log(`[Default Query Tool] Limited to top ${top10.length} results`);
+      // LIMIT TO TOP 30 RESULTS (increased from 10 for better coverage)
+      const top30 = finalResults.slice(0, 30);
+      console.log(`[Default Query Tool] Limited to top ${top30.length} results`);
       
-      if (top10.length > 0) {
-        console.log(`[Default Query Tool] 📊 Selected ${top10.length} results after relevance filtering`);
-        console.log(`[Default Query Tool] Distance range: ${top10[0].distance?.toFixed(4)} to ${top10[top10.length-1].distance?.toFixed(4)}`);
+      if (top30.length > 0) {
+        console.log(`[Default Query Tool] 📊 Selected ${top30.length} results after relevance filtering`);
+        console.log(`[Default Query Tool] Distance range: ${top30[0].distance?.toFixed(4)} to ${top30[top30.length-1].distance?.toFixed(4)}`);
       } else {
         console.log(`[Default Query Tool] ⚠️ No results found after relevance filtering`);
         
@@ -363,7 +363,7 @@ export const defaultQueryTool = createTool({
       
       // Show which indices contributed results
       const indexContributions = new Map<string, number>();
-      top10.forEach(r => {
+      top30.forEach(r => {
         if (r.index) {
           indexContributions.set(r.index, (indexContributions.get(r.index) || 0) + 1);
         }
@@ -373,7 +373,7 @@ export const defaultQueryTool = createTool({
       // Group results by document for better contextualization
       const resultsByDocument = new Map<string, any[]>();
       
-      top10.forEach((result, i) => {
+      top30.forEach((result, i) => {
         const docId = result.metadata?.documentId || result.metadata?.filename || result.index || 'unknown';
         if (!resultsByDocument.has(docId)) {
           resultsByDocument.set(docId, []);
@@ -400,7 +400,7 @@ export const defaultQueryTool = createTool({
       console.log(`[Default Query Tool] Results from ${resultsByDocument.size} different documents`);
       
       // Build contextualized chunks for ContextBuilder
-      const contextualizedChunks = top10.map(r => ({
+      const contextualizedChunks = top30.map(r => ({
         key: r.key,
         score: r.score || r.hybridScore || 0,
         distance: r.distance,
@@ -421,7 +421,7 @@ export const defaultQueryTool = createTool({
       }));
       
       // Check if chunks have linked list structure
-      const hasLinkedStructure = top10.some(r => 
+      const hasLinkedStructure = top30.some(r => 
         r.metadata?.prevChunk || r.metadata?.nextChunk
       );
       
@@ -472,7 +472,7 @@ export const defaultQueryTool = createTool({
           totalIndicesSearched: indices.length,
           totalResultsBeforeFilter: allResults.length,
           resultsWithDistance: validResults.length,
-          top10Count: top10.length,
+          top30Count: top30.length,
           listingMethod: indices.length > 1 ? 'listIndicesWithNewman' : 'fallback',
           awsKeySet: !!process.env.AWS_ACCESS_KEY_ID,
           bucketName: process.env.S3_VECTORS_BUCKET || 'chatbotvectors362',

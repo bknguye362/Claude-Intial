@@ -168,7 +168,7 @@ export async function hybridSearch(
       return passesDistance || passesKeyword;
     })
     .sort((a, b) => (b.hybridScore || 0) - (a.hybridScore || 0))
-    .slice(0, 10); // Final top 10
+    .slice(0, 30); // Final top 30 (increased from 10)
   
   console.log(`[Hybrid Search] Found ${filteredResults.length} results after filtering`);
   
