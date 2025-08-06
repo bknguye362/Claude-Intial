@@ -240,7 +240,7 @@ async function generateChunkSummaries(chunks: string[]): Promise<string[]> {
 
 
 // Helper function to split text into character-based chunks with overlap
-function chunkTextByCharacters(text: string, chunkSize: number = 1200, overlapSize: number = 200): string[] {
+function chunkTextByCharacters(text: string, chunkSize: number = 1000, overlapSize: number = 200): string[] {
   const chunks: string[] = [];
   const stride = Math.max(1, chunkSize - overlapSize); // How many characters to advance each time
   
@@ -260,7 +260,7 @@ function chunkTextByCharacters(text: string, chunkSize: number = 1200, overlapSi
 }
 
 // Main function to process PDF
-export async function processPDF(filepath: string, chunkSize: number = 1200): Promise<ProcessPDFResult> {
+export async function processPDF(filepath: string, chunkSize: number = 1000): Promise<ProcessPDFResult> {
   console.log(`[PDF Processor] ===== STARTING PDF PROCESSING =====`);
   console.log(`[PDF Processor] Processing PDF: ${filepath}`);
   console.log(`[PDF Processor] Chunk size: ${chunkSize} characters`);
@@ -354,8 +354,8 @@ export async function processPDF(filepath: string, chunkSize: number = 1200): Pr
         pageStart: chunk.metadata.pageStart,
         pageEnd: chunk.metadata.pageEnd,
         totalChunks: chunks.length,
-        // Store full chunk content up to 1000 chars (chunks are now ~1200 chars)
-        chunkContent: chunk.content.substring(0, 1000),
+        // Store full chunk content (chunks are now 1000 chars)
+        chunkContent: chunk.content,
         chunkSummary: (summaries[index] || '').substring(0, 200) // LLM-generated summary limited to 200 chars
       }
     }));
