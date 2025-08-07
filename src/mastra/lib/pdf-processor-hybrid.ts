@@ -115,6 +115,24 @@ export async function processHybridPDF(
     const fileSizeMB = stats.size / (1024 * 1024);
     console.log(`[Hybrid Processor] File size: ${fileSizeMB.toFixed(2)}MB`);
     
+    // Detect file type
+    const fileExtension = filepath.toLowerCase().split('.').pop();
+    const isDOCX = fileExtension === 'docx';
+    const isTXT = fileExtension === 'txt';
+    const isPDF = fileExtension === 'pdf';
+    
+    console.log(`[Hybrid Processor] File type detected: ${fileExtension?.toUpperCase()}`);
+    
+    // For DOCX or TXT files, use the line-based processor which has full support
+    if (isDOCX || isTXT) {
+      console.log(`[Hybrid Processor] ${fileExtension?.toUpperCase()} file detected, using line-based processor...`);
+      const result = await processLineBasedPDF(filepath);
+      return {
+        ...result,
+        method: 'line-based (auto-selected for ' + fileExtension?.toUpperCase() + ')'
+      };
+    }
+    
     // For very large files (>50MB), warn but still try LLM unless it would definitely timeout
     if (fileSizeMB > 50) {
       console.log(`[Hybrid Processor] ⚠️ Very large file detected (${fileSizeMB.toFixed(2)}MB)`);
@@ -131,7 +149,12 @@ export async function processHybridPDF(
       }
     }
     
-    // Load PDF parser
+    // Load PDF parser (only for PDF files)
+    if (!isPDF) {
+      console.error(`[Hybrid Processor] Unsupported file type: ${fileExtension}`);
+      throw new Error(`Unsupported file type: ${fileExtension}. This processor should have handled non-PDF files earlier.`);
+    }
+    
     const pdfParse = require('pdf-parse');
     const dataBuffer = await readFile(filepath);
     const pdfData = await pdfParse(dataBuffer);
