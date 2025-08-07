@@ -5,6 +5,7 @@ import { readFile } from 'fs/promises';
 import { basename } from 'path';
 import { createRequire } from 'module';
 import { createIndexWithNewman, uploadVectorsWithNewman } from './newman-executor.js';
+import { dynamicChunk, convertToProcessorChunks } from './dynamic-chunker.js';
 
 const require = createRequire(import.meta.url);
 
@@ -358,10 +359,17 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
       characters: pdfData.text.length,
     };
     
-    // Split into character-based chunks
+    // Use dynamic paragraph-aware chunking
     console.log(`[PDF Processor] Text length: ${pdfData.text.length} characters`);
-    const textChunks = chunkTextByCharacters(pdfData.text, chunkSize);
+    console.log(`[PDF Processor] Using dynamic paragraph-aware chunking...`);
+    
+    const dynamicChunks = dynamicChunk(pdfData.text, chunkSize, 100); // 100 char overlap
+    const textChunks = convertToProcessorChunks(dynamicChunks);
+    
     console.log(`[PDF Processor] Split into ${textChunks.length} chunks`);
+    console.log(`[PDF Processor] Chunk distribution:`);
+    console.log(`[PDF Processor]   - Header chunks: ${dynamicChunks.filter(c => c.metadata.isHeader).length}`);
+    console.log(`[PDF Processor]   - Average paragraphs per chunk: ${(dynamicChunks.reduce((sum, c) => sum + c.metadata.paragraphCount, 0) / dynamicChunks.length).toFixed(1)}`);
     console.log(`[PDF Processor] First chunk preview: ${textChunks[0]?.substring(0, 100)}...`);
     
     // Remove chunk limit - process all chunks but warn if very large
@@ -399,7 +407,7 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
     ]);
     console.log(`[PDF Processor] Generated ${embeddings.length} embeddings and ${summaries.length} summaries`);
     
-    // Create chunks with metadata
+    // Create chunks with metadata including dynamic chunk info
     const chunks = textChunks.map((content, index) => {
       const chunkPosition = index / textChunks.length;
       const pageStart = Math.floor(chunkPosition * pdfData.numpages) + 1;
@@ -407,6 +415,9 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
         Math.ceil((index + 1) / textChunks.length * pdfData.numpages),
         pdfData.numpages
       );
+      
+      // Get metadata from dynamic chunks if available
+      const dynamicMeta = dynamicChunks[index]?.metadata;
       
       return {
         content,
@@ -416,6 +427,9 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
           pageEnd,
           chunkIndex: index,
           totalChunks: textChunks.length,
+          isHeader: dynamicMeta?.isHeader || false,
+          headerLevel: dynamicMeta?.headerLevel,
+          paragraphCount: dynamicMeta?.paragraphCount || 1
         }
       };
     });
@@ -424,7 +438,7 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
     console.log(`[PDF Processor] Using existing index '${indexName}' for vector upload`);
     console.log(`[PDF Processor] Ready to upload ${chunks.length} vectors with embeddings`)
     
-    // Prepare vectors for upload with linked list structure
+    // Prepare vectors for upload with metadata
     const vectors = chunks.map((chunk, index) => ({
       key: `${documentId}-chunk-${index}`,
       embedding: chunk.embedding,
@@ -435,7 +449,9 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
         totalChunks: chunks.length,
         // Store full chunk content (chunks are now 1000 chars)
         chunkContent: chunk.content,
-        chunkSummary: (summaries[index] || '').substring(0, 200) // LLM-generated summary limited to 200 chars
+        chunkSummary: (summaries[index] || '').substring(0, 200), // LLM-generated summary limited to 200 chars
+        // Add document name for multi-document filtering
+        docName: basename(filepath, '.pdf').substring(0, 50) // Limited to 50 chars
       }
     }));
     
