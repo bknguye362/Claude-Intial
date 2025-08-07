@@ -36,18 +36,19 @@ async function handleRequest(body: any) {
         size: file.size
       });
       
-      // Check if it's a PDF or TXT file
+      // Check if it's a PDF, TXT, or DOCX file
       const filePath = file.filePath || file.location || file.path;
       const isPDF = filePath && filePath.toLowerCase().endsWith('.pdf');
       const isTXT = filePath && filePath.toLowerCase().endsWith('.txt');
+      const isDOCX = filePath && filePath.toLowerCase().endsWith('.docx');
       
-      if (isPDF || isTXT) {
-        const fileType = isPDF ? 'PDF' : 'TXT';
+      if (isPDF || isTXT || isDOCX) {
+        const fileType = isPDF ? 'PDF' : isTXT ? 'TXT' : 'DOCX';
         console.log(`[API Endpoint] 🎯 ${fileType} detected: ${file.originalName}`);
         console.log(`[API Endpoint] 🔄 Automatically processing ${fileType}...`);
         
         try {
-          const result = await processPDF(filePath); // processPDF handles both PDF and TXT
+          const result = await processPDF(filePath); // processPDF handles PDF, TXT, and DOCX
           if (result.success) {
             console.log(`[API Endpoint] ✅ ${fileType} processed successfully!`);
             console.log(`[API Endpoint] 📊 Created index: ${result.indexName}`);

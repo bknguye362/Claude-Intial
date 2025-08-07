@@ -189,13 +189,13 @@ agentSelect.addEventListener('change', () => {
 
 // File handling functions
 function selectFile(file) {
-    if (file && (file.type === 'application/pdf' || file.type === 'text/plain')) {
+    if (file && (file.type === 'application/pdf' || file.type === 'text/plain' || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')) {
         selectedFile = file;
         fileName.textContent = file.name;
         filePreview.style.display = 'block';
         fileButton.classList.add('has-file');
     } else {
-        alert('Please select a PDF or TXT file');
+        alert('Please select a PDF, TXT, or DOCX file');
     }
 }
 

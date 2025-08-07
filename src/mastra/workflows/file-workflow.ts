@@ -42,7 +42,7 @@ const analyzeFileUpload = createStep({
     message: z.string(),
     hasFile: z.boolean(),
     filePath: z.string().optional(),
-    fileType: z.enum(['pdf', 'txt', 'unknown']).optional(),
+    fileType: z.enum(['pdf', 'txt', 'docx', 'unknown']).optional(),
     fileName: z.string().optional(),
     actualUserMessage: z.string(),
     hasQuestion: z.boolean(),
@@ -84,10 +84,11 @@ const analyzeFileUpload = createStep({
       actualUserMessage = message.replace(/\[FILE_AGENT_TASK\][^)]+\)\s*/, '').trim();
     }
     
-    const hasFile = !!(pdfPath && (pdfPath.toLowerCase().endsWith('.pdf') || pdfPath.toLowerCase().endsWith('.txt')));
+    const hasFile = !!(pdfPath && (pdfPath.toLowerCase().endsWith('.pdf') || pdfPath.toLowerCase().endsWith('.txt') || pdfPath.toLowerCase().endsWith('.docx')));
     const fileType = pdfPath ? 
       (pdfPath.toLowerCase().endsWith('.pdf') ? 'pdf' : 
-       pdfPath.toLowerCase().endsWith('.txt') ? 'txt' : 'unknown') as 'pdf' | 'txt' | 'unknown' : undefined;
+       pdfPath.toLowerCase().endsWith('.txt') ? 'txt' : 
+       pdfPath.toLowerCase().endsWith('.docx') ? 'docx' : 'unknown') as 'pdf' | 'txt' | 'docx' | 'unknown' : undefined;
     const hasQuestion = !!(actualUserMessage && isQuestion(actualUserMessage));
     
     console.log('[File Workflow - AnalyzeFile] Analysis results:', {
@@ -119,7 +120,7 @@ const processPdfIfNeeded = createStep({
     message: z.string(),
     hasFile: z.boolean(),
     filePath: z.string().optional(),
-    fileType: z.enum(['pdf', 'txt', 'unknown']).optional(),
+    fileType: z.enum(['pdf', 'txt', 'docx', 'unknown']).optional(),
     fileName: z.string().optional(),
     actualUserMessage: z.string(),
     hasQuestion: z.boolean(),
@@ -128,7 +129,7 @@ const processPdfIfNeeded = createStep({
     message: z.string(),
     hasFile: z.boolean(),
     filePath: z.string().optional(),
-    fileType: z.enum(['pdf', 'txt', 'unknown']).optional(),
+    fileType: z.enum(['pdf', 'txt', 'docx', 'unknown']).optional(),
     fileName: z.string().optional(),
     actualUserMessage: z.string(),
     hasQuestion: z.boolean(),
@@ -197,7 +198,7 @@ const generateFileResponse = createStep({
     message: z.string(),
     hasFile: z.boolean(),
     filePath: z.string().optional(),
-    fileType: z.enum(['pdf', 'txt', 'unknown']).optional(),
+    fileType: z.enum(['pdf', 'txt', 'docx', 'unknown']).optional(),
     fileName: z.string().optional(),
     actualUserMessage: z.string(),
     hasQuestion: z.boolean(),

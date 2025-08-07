@@ -1,4 +1,4 @@
-// Document Processing Function for automatic workflow processing (PDF and TXT files)
+// Document Processing Function for automatic workflow processing (PDF, TXT, and DOCX files)
 // This is not a tool - it's a direct function called by the workflow
 
 import { readFile } from 'fs/promises';
@@ -34,8 +34,9 @@ const AZURE_OPENAI_API_VERSION = process.env.AZURE_OPENAI_API_VERSION || '2023-1
 const EMBEDDINGS_DEPLOYMENT = 'text-embedding-ada-002';
 const LLM_DEPLOYMENT = process.env.AZURE_OPENAI_LLM_DEPLOYMENT || 'gpt-4.1-test';
 
-// PDF parsing setup
+// Document parsing setup
 let pdfParse: any = null;
+let mammoth: any = null;
 
 async function loadPdfParse() {
   try {
@@ -43,6 +44,16 @@ async function loadPdfParse() {
     return pdfParseModule;
   } catch (error) {
     console.error('[PDF Processor] Failed to load pdf-parse:', error);
+    return null;
+  }
+}
+
+async function loadMammoth() {
+  try {
+    const mammothModule = require('mammoth');
+    return mammothModule;
+  } catch (error) {
+    console.error('[PDF Processor] Failed to load mammoth:', error);
     return null;
   }
 }
@@ -58,6 +69,23 @@ const pdf = async (dataBuffer: Buffer) => {
   }
   
   return pdfParse(dataBuffer);
+};
+
+// Initialize DOCX parser
+const docx = async (dataBuffer: Buffer) => {
+  if (!mammoth) {
+    mammoth = await loadMammoth();
+  }
+  
+  if (!mammoth) {
+    throw new Error('DOCX parser not available - please check if mammoth is installed');
+  }
+  
+  const result = await mammoth.extractRawText({ buffer: dataBuffer });
+  return {
+    text: result.value,
+    numpages: Math.ceil(result.value.length / 3000) // Estimate pages
+  };
 };
 
 // Helper function to generate embeddings
@@ -336,7 +364,7 @@ function chunkTextByCharacters(text: string, chunkSize: number = 1000, overlapSi
   return chunks;
 }
 
-// Main function to process PDF or TXT files
+// Main function to process PDF, TXT, or DOCX files
 export async function processPDF(filepath: string, chunkSize: number = 1000): Promise<ProcessPDFResult> {
   console.log(`[PDF Processor] ===== STARTING FILE PROCESSING =====`);
   console.log(`[PDF Processor] Processing file: ${filepath}`);
@@ -346,18 +374,19 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
   const fileExtension = filepath.toLowerCase().split('.').pop();
   const isPDF = fileExtension === 'pdf';
   const isTXT = fileExtension === 'txt';
+  const isDOCX = fileExtension === 'docx';
   
-  if (!isPDF && !isTXT) {
+  if (!isPDF && !isTXT && !isDOCX) {
     console.error(`[PDF Processor] Unsupported file type: .${fileExtension}`);
     return {
       success: false,
       filename: basename(filepath),
-      message: `Unsupported file type: .${fileExtension}. Only PDF and TXT files are supported.`,
+      message: `Unsupported file type: .${fileExtension}. Only PDF, TXT, and DOCX files are supported.`,
       error: 'UNSUPPORTED_FILE_TYPE'
     };
   }
   
-  console.log(`[PDF Processor] File type detected: ${isPDF ? 'PDF' : 'TXT'}`);
+  console.log(`[PDF Processor] File type detected: ${isPDF ? 'PDF' : isTXT ? 'TXT' : 'DOCX'}`);
   
   try {
     // Read file
@@ -372,7 +401,7 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
       console.log(`[PDF Processor] Parsing PDF...`);
       pdfData = await pdf(dataBuffer);
       console.log(`[PDF Processor] PDF parsed successfully`);
-    } else {
+    } else if (isTXT) {
       // For TXT files, create a compatible structure
       console.log(`[PDF Processor] Processing TXT file...`);
       const textContent = dataBuffer.toString('utf-8');
@@ -381,6 +410,11 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
         numpages: Math.ceil(textContent.length / 3000) // Estimate pages (3000 chars per page)
       };
       console.log(`[PDF Processor] TXT file processed successfully`);
+    } else {
+      // For DOCX files, use mammoth to extract text
+      console.log(`[PDF Processor] Parsing DOCX...`);
+      pdfData = await docx(dataBuffer);
+      console.log(`[PDF Processor] DOCX parsed successfully`);
     }
     
     const metadata = {
@@ -388,7 +422,7 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
       author: (pdfData as any).info?.Author || 'Unknown',
       pages: pdfData.numpages || 1,
       characters: pdfData.text.length,
-      fileType: isPDF ? 'PDF' : 'TXT'
+      fileType: isPDF ? 'PDF' : isTXT ? 'TXT' : 'DOCX'
     };
     
     // Use dynamic paragraph-aware chunking
@@ -410,7 +444,7 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
     }
     
     // Generate index name and create index immediately
-    const fileExt = isPDF ? '.pdf' : '.txt';
+    const fileExt = isPDF ? '.pdf' : isTXT ? '.txt' : '.docx';
     const documentId = basename(filepath, fileExt);
     const cleanName = documentId
       .toLowerCase()
@@ -500,7 +534,7 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
       filename: basename(filepath),
       totalChunks: chunks.length,
       indexName,
-      message: `Successfully processed ${isPDF ? 'PDF' : 'TXT'} file '${basename(filepath)}' into ${chunks.length} chunks and created index '${indexName}'.`
+      message: `Successfully processed ${isPDF ? 'PDF' : isTXT ? 'TXT' : 'DOCX'} file '${basename(filepath)}' into ${chunks.length} chunks and created index '${indexName}'.`
     };
     
   } catch (error) {
@@ -520,9 +554,10 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
 export { processPDF as processDocument };
 
 // Helper function to detect file type
-export function getFileType(filepath: string): 'pdf' | 'txt' | 'unknown' {
+export function getFileType(filepath: string): 'pdf' | 'txt' | 'docx' | 'unknown' {
   const extension = filepath.toLowerCase().split('.').pop();
   if (extension === 'pdf') return 'pdf';
   if (extension === 'txt') return 'txt';
+  if (extension === 'docx') return 'docx';
   return 'unknown';
 }
