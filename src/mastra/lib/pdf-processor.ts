@@ -443,10 +443,11 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
     // Create chunks with metadata including dynamic chunk info
     const chunks = textChunks.map((content, index) => {
       const chunkPosition = index / textChunks.length;
-      const pageStart = Math.floor(chunkPosition * pdfData.numpages) + 1;
+      const numPages = pdfData.numpages || 1;
+      const pageStart = Math.floor(chunkPosition * numPages) + 1;
       const pageEnd = Math.min(
-        Math.ceil((index + 1) / textChunks.length * pdfData.numpages),
-        pdfData.numpages
+        Math.ceil((index + 1) / textChunks.length * numPages),
+        numPages
       );
       
       // Get metadata from dynamic chunks if available

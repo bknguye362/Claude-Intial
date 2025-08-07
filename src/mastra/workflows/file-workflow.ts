@@ -224,18 +224,19 @@ const generateFileResponse = createStep({
     let context = '';
     
     // Build context based on what was detected
-    if (inputData.hasPdf && inputData.pdfProcessed) {
-      // PDF has already been processed by the workflow
+    if (inputData.hasFile && inputData.fileProcessed) {
+      // File has already been processed by the workflow
+      const fileTypeStr = inputData.fileType === 'pdf' ? 'PDF' : inputData.fileType === 'txt' ? 'TXT' : 'document';
       if (inputData.processingMethod === 'streaming' && inputData.statusId) {
         // Streaming processing started - immediate response
-        context = `A large PDF file (${inputData.fileName}) has been submitted for processing. `;
+        context = `A large ${fileTypeStr} file (${inputData.fileName}) has been submitted for processing. `;
         context += `Processing has started in the background with status ID: ${inputData.statusId}. `;
         context += `The document is being processed in batches to avoid timeouts. `;
         context += `You can check the processing status later using the status ID. `;
         context += `Once processing is complete, the document will be searchable with index: ${inputData.indexName}. `;
       } else {
         // Regular processing completed
-        context = `A PDF file (${inputData.fileName}) has been automatically processed and indexed as: ${inputData.indexName}. `;
+        context = `A ${fileTypeStr} file (${inputData.fileName}) has been automatically processed and indexed as: ${inputData.indexName}. `;
         context += `The document is now searchable. `;
         
         if (inputData.hasQuestion || inputData.actualUserMessage) {
@@ -244,9 +245,10 @@ const generateFileResponse = createStep({
           context += `Please use defaultQueryTool to provide a comprehensive summary of this document. `;
         }
       }
-    } else if (inputData.hasPdf && !inputData.pdfProcessed) {
-      // PDF processing failed
-      context = `A PDF file (${inputData.fileName}) was uploaded but could not be processed. Please inform the user of this issue. `;
+    } else if (inputData.hasFile && !inputData.fileProcessed) {
+      // File processing failed
+      const fileTypeStr = inputData.fileType === 'pdf' ? 'PDF' : inputData.fileType === 'txt' ? 'TXT' : 'document';
+      context = `A ${fileTypeStr} file (${inputData.fileName}) was uploaded but could not be processed. Please inform the user of this issue. `;
     } else if (inputData.hasQuestion) {
       context = `The user has asked a question. Use defaultQueryTool to find relevant information and answer: "${inputData.actualUserMessage}". `;
     }
