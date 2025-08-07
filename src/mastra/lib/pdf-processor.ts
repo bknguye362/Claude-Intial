@@ -9,6 +9,22 @@ import { dynamicChunk, convertToProcessorChunks } from './dynamic-chunker.js';
 
 const require = createRequire(import.meta.url);
 
+// Load parsers at module initialization
+let pdfParse: any;
+let mammoth: any;
+
+try {
+  pdfParse = require('pdf-parse');
+} catch (error) {
+  console.error('[PDF Processor] pdf-parse not available:', error);
+}
+
+try {
+  mammoth = require('mammoth');
+} catch (error) {
+  console.error('[PDF Processor] mammoth not available:', error);
+}
+
 // Type definitions
 interface PDFChunk {
   index: number;
@@ -34,36 +50,10 @@ const AZURE_OPENAI_API_VERSION = process.env.AZURE_OPENAI_API_VERSION || '2023-1
 const EMBEDDINGS_DEPLOYMENT = 'text-embedding-ada-002';
 const LLM_DEPLOYMENT = process.env.AZURE_OPENAI_LLM_DEPLOYMENT || 'gpt-4.1-test';
 
-// Document parsing setup
-let pdfParse: any = null;
-let mammoth: any = null;
+// Document parsing helpers
 
-async function loadPdfParse() {
-  try {
-    const pdfParseModule = require('pdf-parse');
-    return pdfParseModule;
-  } catch (error) {
-    console.error('[PDF Processor] Failed to load pdf-parse:', error);
-    return null;
-  }
-}
-
-async function loadMammoth() {
-  try {
-    const mammothModule = require('mammoth');
-    return mammothModule;
-  } catch (error) {
-    console.error('[PDF Processor] Failed to load mammoth:', error);
-    return null;
-  }
-}
-
-// Initialize PDF parser
+// Parse PDF
 const pdf = async (dataBuffer: Buffer) => {
-  if (!pdfParse) {
-    pdfParse = await loadPdfParse();
-  }
-  
   if (!pdfParse) {
     throw new Error('PDF parser not available - please check if pdf-parse is installed');
   }
@@ -71,12 +61,8 @@ const pdf = async (dataBuffer: Buffer) => {
   return pdfParse(dataBuffer);
 };
 
-// Initialize DOCX parser
+// Parse DOCX
 const docx = async (dataBuffer: Buffer) => {
-  if (!mammoth) {
-    mammoth = await loadMammoth();
-  }
-  
   if (!mammoth) {
     throw new Error('DOCX parser not available - please check if mammoth is installed');
   }
