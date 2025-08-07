@@ -10,7 +10,8 @@
     "postinstall": "npm run build",
     "start": "node dist/server.js",
     "dev": "tsx server.ts",
-    "manage-indices": "tsx manage-indices.ts"
+    "manage-indices": "tsx manage-indices.ts",
+    "verify-chunking": "source .env && tsx verify-semantic-chunking.ts"
   },
   "keywords": [],
   "author": "",

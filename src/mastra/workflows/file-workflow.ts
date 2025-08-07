@@ -40,8 +40,9 @@ const analyzeFileUpload = createStep({
   }),
   outputSchema: z.object({
     message: z.string(),
-    hasPdf: z.boolean(),
-    pdfPath: z.string().optional(),
+    hasFile: z.boolean(),
+    filePath: z.string().optional(),
+    fileType: z.enum(['pdf', 'txt', 'unknown']).optional(),
     fileName: z.string().optional(),
     actualUserMessage: z.string(),
     hasQuestion: z.boolean(),
@@ -83,12 +84,16 @@ const analyzeFileUpload = createStep({
       actualUserMessage = message.replace(/\[FILE_AGENT_TASK\][^)]+\)\s*/, '').trim();
     }
     
-    const hasPdf = !!(pdfPath && pdfPath.toLowerCase().endsWith('.pdf'));
+    const hasFile = !!(pdfPath && (pdfPath.toLowerCase().endsWith('.pdf') || pdfPath.toLowerCase().endsWith('.txt')));
+    const fileType = pdfPath ? 
+      (pdfPath.toLowerCase().endsWith('.pdf') ? 'pdf' : 
+       pdfPath.toLowerCase().endsWith('.txt') ? 'txt' : 'unknown') as 'pdf' | 'txt' | 'unknown' : undefined;
     const hasQuestion = !!(actualUserMessage && isQuestion(actualUserMessage));
     
     console.log('[File Workflow - AnalyzeFile] Analysis results:', {
-      hasPdf,
-      pdfPath,
+      hasFile,
+      fileType,
+      filePath: pdfPath,
       fileName,
       actualUserMessage: actualUserMessage || '(empty)',
       hasQuestion
@@ -96,8 +101,9 @@ const analyzeFileUpload = createStep({
     
     return {
       message: inputData.message,
-      hasPdf,
-      pdfPath: pdfPath || undefined,
+      hasFile,
+      filePath: pdfPath || undefined,
+      fileType,
       fileName: fileName || undefined,
       actualUserMessage,
       hasQuestion,
@@ -105,74 +111,77 @@ const analyzeFileUpload = createStep({
   },
 });
 
-// Step 2: Process PDF if detected
+// Step 2: Process file if detected
 const processPdfIfNeeded = createStep({
   id: 'process-pdf-if-needed',
-  description: 'Automatically processes PDF files before agent runs',
+  description: 'Automatically processes PDF/TXT files before agent runs',
   inputSchema: z.object({
     message: z.string(),
-    hasPdf: z.boolean(),
-    pdfPath: z.string().optional(),
+    hasFile: z.boolean(),
+    filePath: z.string().optional(),
+    fileType: z.enum(['pdf', 'txt', 'unknown']).optional(),
     fileName: z.string().optional(),
     actualUserMessage: z.string(),
     hasQuestion: z.boolean(),
   }),
   outputSchema: z.object({
     message: z.string(),
-    hasPdf: z.boolean(),
-    pdfPath: z.string().optional(),
+    hasFile: z.boolean(),
+    filePath: z.string().optional(),
+    fileType: z.enum(['pdf', 'txt', 'unknown']).optional(),
     fileName: z.string().optional(),
     actualUserMessage: z.string(),
     hasQuestion: z.boolean(),
-    pdfProcessed: z.boolean(),
+    fileProcessed: z.boolean(),
     indexName: z.string().optional(),
     statusId: z.string().optional(),
     processingMethod: z.string().optional(),
   }),
   execute: async ({ inputData }) => {
-    console.log('[File Workflow - ProcessPDF] ===== STEP EXECUTED =====');
-    console.log('[File Workflow - ProcessPDF] Input data:', {
-      hasPdf: inputData.hasPdf,
-      pdfPath: inputData.pdfPath,
+    console.log('[File Workflow - ProcessFile] ===== STEP EXECUTED =====');
+    console.log('[File Workflow - ProcessFile] Input data:', {
+      hasFile: inputData.hasFile,
+      fileType: inputData.fileType,
+      filePath: inputData.filePath,
       fileName: inputData.fileName
     });
     
-    let pdfProcessed = false;
+    let fileProcessed = false;
     let indexName: string | undefined;
     let statusId: string | undefined;
     let processingMethod: string | undefined;
     
-    if (inputData.hasPdf && inputData.pdfPath) {
-      console.log('[File Workflow - ProcessPDF] PDF detected, processing automatically...');
-      console.log('[File Workflow - ProcessPDF] PDF Path:', inputData.pdfPath);
+    if (inputData.hasFile && inputData.filePath) {
+      console.log(`[File Workflow - ProcessFile] ${inputData.fileType?.toUpperCase() || 'File'} detected, processing automatically...`);
+      console.log('[File Workflow - ProcessFile] File Path:', inputData.filePath);
       
       try {
-        // Call the hybrid PDF processor
-        const result = await processPDF(inputData.pdfPath, {
+        // Call the hybrid processor (supports both PDF and TXT)
+        const result = await processPDF(inputData.filePath, {
           forceMethod: 'auto',  // Let it choose based on document type
           maxCost: 20.0        // Increased budget since we're always using LLM
         });
         
         if (result.success) {
-          pdfProcessed = true;
+          fileProcessed = true;
           indexName = result.indexName;
           statusId = result.statusId;
           processingMethod = result.method;
-          console.log(`[File Workflow - ProcessPDF] PDF processed successfully. Index: ${indexName}, Method: ${processingMethod}`);
+          console.log(`[File Workflow - ProcessFile] ${inputData.fileType?.toUpperCase() || 'File'} processed successfully. Index: ${indexName}, Method: ${processingMethod}`);
           if (statusId) {
-            console.log(`[File Workflow - ProcessPDF] Background processing started. Status ID: ${statusId}`);
+            console.log(`[File Workflow - ProcessFile] Background processing started. Status ID: ${statusId}`);
           }
         } else {
-          console.error('[File Workflow - ProcessPDF] PDF processing failed:', result.error);
+          console.error('[File Workflow - ProcessFile] File processing failed:', result.error);
         }
       } catch (error) {
-        console.error('[File Workflow - ProcessPDF] Error processing PDF:', error);
+        console.error('[File Workflow - ProcessFile] Error processing file:', error);
       }
     }
     
     return {
       ...inputData,
-      pdfProcessed,
+      fileProcessed,
       indexName,
       statusId,
       processingMethod,
@@ -186,12 +195,13 @@ const generateFileResponse = createStep({
   description: 'Generates response using the file agent',
   inputSchema: z.object({
     message: z.string(),
-    hasPdf: z.boolean(),
-    pdfPath: z.string().optional(),
+    hasFile: z.boolean(),
+    filePath: z.string().optional(),
+    fileType: z.enum(['pdf', 'txt', 'unknown']).optional(),
     fileName: z.string().optional(),
     actualUserMessage: z.string(),
     hasQuestion: z.boolean(),
-    pdfProcessed: z.boolean(),
+    fileProcessed: z.boolean(),
     indexName: z.string().optional(),
     statusId: z.string().optional(),
     processingMethod: z.string().optional(),

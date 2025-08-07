@@ -1,4 +1,4 @@
-// PDF Processing Function for automatic workflow processing
+// Document Processing Function for automatic workflow processing (PDF and TXT files)
 // This is not a tool - it's a direct function called by the workflow
 
 import { readFile } from 'fs/promises';
@@ -336,27 +336,59 @@ function chunkTextByCharacters(text: string, chunkSize: number = 1000, overlapSi
   return chunks;
 }
 
-// Main function to process PDF
+// Main function to process PDF or TXT files
 export async function processPDF(filepath: string, chunkSize: number = 1000): Promise<ProcessPDFResult> {
-  console.log(`[PDF Processor] ===== STARTING PDF PROCESSING =====`);
-  console.log(`[PDF Processor] Processing PDF: ${filepath}`);
+  console.log(`[PDF Processor] ===== STARTING FILE PROCESSING =====`);
+  console.log(`[PDF Processor] Processing file: ${filepath}`);
   console.log(`[PDF Processor] Chunk size: ${chunkSize} characters`);
   
+  // Detect file type based on extension
+  const fileExtension = filepath.toLowerCase().split('.').pop();
+  const isPDF = fileExtension === 'pdf';
+  const isTXT = fileExtension === 'txt';
+  
+  if (!isPDF && !isTXT) {
+    console.error(`[PDF Processor] Unsupported file type: .${fileExtension}`);
+    return {
+      success: false,
+      filename: basename(filepath),
+      message: `Unsupported file type: .${fileExtension}. Only PDF and TXT files are supported.`,
+      error: 'UNSUPPORTED_FILE_TYPE'
+    };
+  }
+  
+  console.log(`[PDF Processor] File type detected: ${isPDF ? 'PDF' : 'TXT'}`);
+  
   try {
-    // Read and parse PDF
+    // Read file
     console.log(`[PDF Processor] Reading file from: ${filepath}`);
     const dataBuffer = await readFile(filepath);
     console.log(`[PDF Processor] File read successfully, buffer size: ${dataBuffer.length} bytes`);
     
-    console.log(`[PDF Processor] Parsing PDF...`);
-    const pdfData = await pdf(dataBuffer);
-    console.log(`[PDF Processor] PDF parsed successfully`);
+    // Parse file based on type
+    let pdfData: { text: string; numpages?: number };
+    
+    if (isPDF) {
+      console.log(`[PDF Processor] Parsing PDF...`);
+      pdfData = await pdf(dataBuffer);
+      console.log(`[PDF Processor] PDF parsed successfully`);
+    } else {
+      // For TXT files, create a compatible structure
+      console.log(`[PDF Processor] Processing TXT file...`);
+      const textContent = dataBuffer.toString('utf-8');
+      pdfData = {
+        text: textContent,
+        numpages: Math.ceil(textContent.length / 3000) // Estimate pages (3000 chars per page)
+      };
+      console.log(`[PDF Processor] TXT file processed successfully`);
+    }
     
     const metadata = {
-      title: pdfData.info?.Title,
-      author: pdfData.info?.Author,
-      pages: pdfData.numpages,
+      title: (pdfData as any).info?.Title || basename(filepath),
+      author: (pdfData as any).info?.Author || 'Unknown',
+      pages: pdfData.numpages || 1,
       characters: pdfData.text.length,
+      fileType: isPDF ? 'PDF' : 'TXT'
     };
     
     // Use dynamic paragraph-aware chunking
@@ -378,7 +410,8 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
     }
     
     // Generate index name and create index immediately
-    const documentId = basename(filepath, '.pdf');
+    const fileExt = isPDF ? '.pdf' : '.txt';
+    const documentId = basename(filepath, fileExt);
     const cleanName = documentId
       .toLowerCase()
       .replace(/[^a-z0-9-_]/g, '-')
@@ -451,7 +484,7 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
         chunkContent: chunk.content,
         chunkSummary: (summaries[index] || '').substring(0, 200), // LLM-generated summary limited to 200 chars
         // Add document name for multi-document filtering
-        docName: basename(filepath, '.pdf').substring(0, 50) // Limited to 50 chars
+        docName: basename(filepath, fileExt).substring(0, 50) // Limited to 50 chars
       }
     }));
     
@@ -459,25 +492,36 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
     const uploadedCount = await uploadVectorsWithNewman(indexName, vectors);
     
     console.log(`[PDF Processor] Upload complete. Uploaded ${uploadedCount} vectors to index '${indexName}'`);
-    console.log(`[PDF Processor] ===== PDF PROCESSING COMPLETE =====`);
+    console.log(`[PDF Processor] ===== FILE PROCESSING COMPLETE =====`);
     
     return {
       success: true,
       filename: basename(filepath),
       totalChunks: chunks.length,
       indexName,
-      message: `Successfully processed PDF '${basename(filepath)}' into ${chunks.length} chunks and created index '${indexName}'.`
+      message: `Successfully processed ${isPDF ? 'PDF' : 'TXT'} file '${basename(filepath)}' into ${chunks.length} chunks and created index '${indexName}'.`
     };
     
   } catch (error) {
-    console.error('[PDF Processor] ===== ERROR IN PDF PROCESSING =====');
+    console.error('[PDF Processor] ===== ERROR IN FILE PROCESSING =====');
     console.error('[PDF Processor] Error:', error);
     console.error('[PDF Processor] Stack trace:', error instanceof Error ? error.stack : 'No stack trace');
     return {
       success: false,
       filename: basename(filepath),
-      message: 'Failed to process PDF',
+      message: `Failed to process ${fileExtension?.toUpperCase() || 'file'}`,
       error: error instanceof Error ? error.message : 'Unknown error'
     };
   }
+}
+
+// Alias for backward compatibility and clarity
+export { processPDF as processDocument };
+
+// Helper function to detect file type
+export function getFileType(filepath: string): 'pdf' | 'txt' | 'unknown' {
+  const extension = filepath.toLowerCase().split('.').pop();
+  if (extension === 'pdf') return 'pdf';
+  if (extension === 'txt') return 'txt';
+  return 'unknown';
 }
