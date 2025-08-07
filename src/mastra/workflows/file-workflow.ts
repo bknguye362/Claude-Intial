@@ -1,9 +1,7 @@
 import { createStep, createWorkflow } from '@mastra/core/workflows';
 import { z } from 'zod';
-// Using hybrid processor that intelligently chooses the best method
-// import { processPDF } from '../lib/pdf-processor.js';
-// import { processSemanticPDF as processPDF } from '../lib/pdf-processor-semantic.js';
-import { processHybridPDF as processPDF } from '../lib/pdf-processor-hybrid.js';
+// Using the standard PDF processor that supports PDF, TXT, and DOCX files
+import { processPDF } from '../lib/pdf-processor.js';
 
 // Check if input is a question
 function isQuestion(input: string): boolean {
@@ -135,8 +133,6 @@ const processPdfIfNeeded = createStep({
     hasQuestion: z.boolean(),
     fileProcessed: z.boolean(),
     indexName: z.string().optional(),
-    statusId: z.string().optional(),
-    processingMethod: z.string().optional(),
   }),
   execute: async ({ inputData }) => {
     console.log('[File Workflow - ProcessFile] ===== STEP EXECUTED =====');
@@ -149,29 +145,19 @@ const processPdfIfNeeded = createStep({
     
     let fileProcessed = false;
     let indexName: string | undefined;
-    let statusId: string | undefined;
-    let processingMethod: string | undefined;
     
     if (inputData.hasFile && inputData.filePath) {
       console.log(`[File Workflow - ProcessFile] ${inputData.fileType?.toUpperCase() || 'File'} detected, processing automatically...`);
       console.log('[File Workflow - ProcessFile] File Path:', inputData.filePath);
       
       try {
-        // Call the hybrid processor (supports both PDF and TXT)
-        const result = await processPDF(inputData.filePath, {
-          forceMethod: 'auto',  // Let it choose based on document type
-          maxCost: 20.0        // Increased budget since we're always using LLM
-        });
+        // Call the standard processor (supports PDF, TXT, and DOCX)
+        const result = await processPDF(inputData.filePath);
         
         if (result.success) {
           fileProcessed = true;
           indexName = result.indexName;
-          statusId = result.statusId;
-          processingMethod = result.method;
-          console.log(`[File Workflow - ProcessFile] ${inputData.fileType?.toUpperCase() || 'File'} processed successfully. Index: ${indexName}, Method: ${processingMethod}`);
-          if (statusId) {
-            console.log(`[File Workflow - ProcessFile] Background processing started. Status ID: ${statusId}`);
-          }
+          console.log(`[File Workflow - ProcessFile] ${inputData.fileType?.toUpperCase() || 'File'} processed successfully. Index: ${indexName}`);
         } else {
           console.error('[File Workflow - ProcessFile] File processing failed:', result.error);
         }
@@ -184,8 +170,6 @@ const processPdfIfNeeded = createStep({
       ...inputData,
       fileProcessed,
       indexName,
-      statusId,
-      processingMethod,
     };
   },
 });
@@ -204,8 +188,6 @@ const generateFileResponse = createStep({
     hasQuestion: z.boolean(),
     fileProcessed: z.boolean(),
     indexName: z.string().optional(),
-    statusId: z.string().optional(),
-    processingMethod: z.string().optional(),
   }),
   outputSchema: z.object({
     response: z.string(),
@@ -227,24 +209,16 @@ const generateFileResponse = createStep({
     // Build context based on what was detected
     if (inputData.hasFile && inputData.fileProcessed) {
       // File has already been processed by the workflow
-      const fileTypeStr = inputData.fileType === 'pdf' ? 'PDF' : inputData.fileType === 'txt' ? 'TXT' : 'document';
-      if (inputData.processingMethod === 'streaming' && inputData.statusId) {
-        // Streaming processing started - immediate response
-        context = `A large ${fileTypeStr} file (${inputData.fileName}) has been submitted for processing. `;
-        context += `Processing has started in the background with status ID: ${inputData.statusId}. `;
-        context += `The document is being processed in batches to avoid timeouts. `;
-        context += `You can check the processing status later using the status ID. `;
-        context += `Once processing is complete, the document will be searchable with index: ${inputData.indexName}. `;
+      const fileTypeStr = inputData.fileType === 'pdf' ? 'PDF' : inputData.fileType === 'txt' ? 'TXT' : inputData.fileType === 'docx' ? 'DOCX' : 'document';
+      
+      // Regular processing completed (no more streaming/hybrid modes)
+      context = `A ${fileTypeStr} file (${inputData.fileName}) has been automatically processed and indexed as: ${inputData.indexName}. `;
+      context += `The document is now searchable. `;
+      
+      if (inputData.hasQuestion || inputData.actualUserMessage) {
+        context += `Please use defaultQueryTool to answer: "${inputData.actualUserMessage}" `;
       } else {
-        // Regular processing completed
-        context = `A ${fileTypeStr} file (${inputData.fileName}) has been automatically processed and indexed as: ${inputData.indexName}. `;
-        context += `The document is now searchable. `;
-        
-        if (inputData.hasQuestion || inputData.actualUserMessage) {
-          context += `Please use defaultQueryTool to answer: "${inputData.actualUserMessage}" `;
-        } else {
-          context += `Please use defaultQueryTool to provide a comprehensive summary of this document. `;
-        }
+        context += `Please use defaultQueryTool to provide a comprehensive summary of this document. `;
       }
     } else if (inputData.hasFile && !inputData.fileProcessed) {
       // File processing failed
