@@ -206,10 +206,11 @@ const server = createServer(async (req, res) => {
       
       // Process uploaded files
       for (const file of files) {
-        if (file.contentType === 'application/pdf' || file.contentType === 'text/plain') {
+        if (file.contentType === 'application/pdf' || file.contentType === 'text/plain' || file.contentType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
           // Save file with appropriate extension
           const fileId = randomBytes(16).toString('hex');
-          const extension = file.contentType === 'application/pdf' ? '.pdf' : '.txt';
+          const extension = file.contentType === 'application/pdf' ? '.pdf' : 
+                           file.contentType === 'text/plain' ? '.txt' : '.docx';
           const filename = `${fileId}${extension}`;
           
           // Always save locally
