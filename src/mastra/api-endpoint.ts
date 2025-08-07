@@ -36,26 +36,30 @@ async function handleRequest(body: any) {
         size: file.size
       });
       
-      // Check if it's a PDF
+      // Check if it's a PDF or TXT file
       const filePath = file.filePath || file.location || file.path;
-      if (filePath && filePath.toLowerCase().endsWith('.pdf')) {
-        console.log(`[API Endpoint] 🎯 PDF detected: ${file.originalName}`);
-        console.log(`[API Endpoint] 🔄 Automatically processing PDF...`);
+      const isPDF = filePath && filePath.toLowerCase().endsWith('.pdf');
+      const isTXT = filePath && filePath.toLowerCase().endsWith('.txt');
+      
+      if (isPDF || isTXT) {
+        const fileType = isPDF ? 'PDF' : 'TXT';
+        console.log(`[API Endpoint] 🎯 ${fileType} detected: ${file.originalName}`);
+        console.log(`[API Endpoint] 🔄 Automatically processing ${fileType}...`);
         
         try {
-          const result = await processPDF(filePath);
+          const result = await processPDF(filePath); // processPDF handles both PDF and TXT
           if (result.success) {
-            console.log(`[API Endpoint] ✅ PDF processed successfully!`);
+            console.log(`[API Endpoint] ✅ ${fileType} processed successfully!`);
             console.log(`[API Endpoint] 📊 Created index: ${result.indexName}`);
             console.log(`[API Endpoint] 📄 Total chunks: ${result.totalChunks}`);
-            processedPdfInfo += `\n[PDF PROCESSED: ${file.originalName} → Index: ${result.indexName}, Chunks: ${result.totalChunks}]`;
+            processedPdfInfo += `\n[${fileType} PROCESSED: ${file.originalName} → Index: ${result.indexName}, Chunks: ${result.totalChunks}]`;
           } else {
-            console.error(`[API Endpoint] ❌ PDF processing failed:`, result.error);
-            processedPdfInfo += `\n[PDF PROCESSING FAILED: ${file.originalName} - ${result.error}]`;
+            console.error(`[API Endpoint] ❌ ${fileType} processing failed:`, result.error);
+            processedPdfInfo += `\n[${fileType} PROCESSING FAILED: ${file.originalName} - ${result.error}]`;
           }
         } catch (error) {
-          console.error(`[API Endpoint] ❌ Error processing PDF:`, error);
-          processedPdfInfo += `\n[PDF PROCESSING ERROR: ${file.originalName}]`;
+          console.error(`[API Endpoint] ❌ Error processing ${fileType}:`, error);
+          processedPdfInfo += `\n[${fileType} PROCESSING ERROR: ${file.originalName}]`;
         }
       }
     }
