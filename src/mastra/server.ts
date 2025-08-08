@@ -250,15 +250,12 @@ const server = createServer(async (req, res) => {
       console.log('[Server] With uploaded files:', uploadedFiles.map(f => f.originalName));
     }
     
-    // Set up keep-alive to prevent Heroku timeout
-    const keepAliveInterval = setInterval(() => {
-      res.write(' '); // Send a space to keep connection alive
-    }, 15000); // Send every 15 seconds
-
-    // Set headers for streaming response
+    // For now, don't use keep-alive spaces as they corrupt JSON
+    // Instead, we'll rely on the timeout handling
+    
+    // Set headers for JSON response
     res.writeHead(200, { 
       'Content-Type': 'application/json',
-      'Transfer-Encoding': 'chunked',
       'X-Accel-Buffering': 'no', // Disable proxy buffering
       'Cache-Control': 'no-cache'
     });
@@ -273,8 +270,6 @@ const server = createServer(async (req, res) => {
         handleRequest(requestData),
         timeoutPromise
       ]);
-
-      clearInterval(keepAliveInterval);
       
       // Log response details
       const responseContent = result?.choices?.[0]?.message?.content || '';
@@ -287,7 +282,6 @@ const server = createServer(async (req, res) => {
       
       res.end(JSON.stringify(result));
     } catch (timeoutError) {
-      clearInterval(keepAliveInterval);
       console.error('[Server] Request timed out:', timeoutError);
       
       // Send partial response indicating timeout
