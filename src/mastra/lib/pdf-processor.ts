@@ -2,27 +2,53 @@
 // This is not a tool - it's a direct function called by the workflow
 
 import { readFile } from 'fs/promises';
-import { basename } from 'path';
+import { basename, dirname, join } from 'path';
 import { createRequire } from 'module';
+import { fileURLToPath } from 'url';
 import { createIndexWithNewman, uploadVectorsWithNewman } from './newman-executor.js';
 import { dynamicChunk, convertToProcessorChunks } from './dynamic-chunker.js';
 
-const require = createRequire(import.meta.url);
+// Create require function that looks in multiple locations
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
-// Load parsers at module initialization
+// Try multiple paths to find node_modules
+const possiblePaths = [
+  import.meta.url,  // Current file location
+  join(__dirname, '../../..'),  // Three levels up from dist/lib
+  '/app',  // Heroku root
+  process.cwd()  // Current working directory
+];
+
+let require: any;
 let pdfParse: any;
 let mammoth: any;
 
-try {
-  pdfParse = require('pdf-parse');
-} catch (error) {
-  console.error('[PDF Processor] pdf-parse not available:', error);
+// Try each path until we find node_modules
+for (const basePath of possiblePaths) {
+  try {
+    const testRequire = basePath.startsWith('file://') 
+      ? createRequire(basePath)
+      : createRequire(`file://${basePath}/dummy.js`);
+    
+    // Try to load mammoth as a test
+    mammoth = testRequire('mammoth');
+    pdfParse = testRequire('pdf-parse');
+    require = testRequire;
+    console.log(`[PDF Processor] Successfully loaded modules from: ${basePath}`);
+    break;
+  } catch (error: any) {
+    console.log(`[PDF Processor] Failed to load from ${basePath}: ${error.message}`);
+    continue;
+  }
 }
 
-try {
-  mammoth = require('mammoth');
-} catch (error) {
-  console.error('[PDF Processor] mammoth not available:', error);
+if (!mammoth) {
+  console.error('[PDF Processor] WARNING: mammoth not available - DOCX files cannot be processed');
+}
+
+if (!pdfParse) {
+  console.error('[PDF Processor] WARNING: pdf-parse not available - PDF files cannot be processed');
 }
 
 // Type definitions
