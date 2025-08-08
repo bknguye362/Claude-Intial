@@ -46,7 +46,109 @@ function showTypingIndicator() {
     return typingDiv;
 }
 
-// Send message to API
+// Send message to API with streaming support
+async function sendMessageStream() {
+    const message = chatInput.value.trim();
+    if (!message && !selectedFile) return;
+    
+    // Disable input while sending
+    chatInput.disabled = true;
+    sendButton.disabled = true;
+    fileButton.disabled = true;
+    
+    // Add user message
+    if (message) {
+        addMessage(message + (selectedFile ? ` [Attached: ${selectedFile.name}]` : ''), true);
+    } else if (selectedFile) {
+        addMessage(`[Attached: ${selectedFile.name}]`, true);
+    }
+    
+    // Clear input
+    chatInput.value = '';
+    
+    // Create a message div for streaming updates
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'message assistant';
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'message-content';
+    contentDiv.textContent = 'Processing your request...';
+    messageDiv.appendChild(contentDiv);
+    chatMessages.appendChild(messageDiv);
+    scrollToBottom();
+    
+    try {
+        const agentId = agentSelect.value;
+        
+        // Use EventSource for Server-Sent Events
+        const response = await fetch('/chat-stream', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                message: message || '',
+                agentId: agentId
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+            
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    const data = JSON.parse(line.slice(6));
+                    
+                    if (data.type === 'status') {
+                        // Update status message
+                        contentDiv.textContent = data.message;
+                        scrollToBottom();
+                    } else if (data.type === 'result') {
+                        // Final result received
+                        if (data.data?.choices?.[0]?.message?.content) {
+                            contentDiv.textContent = data.data.choices[0].message.content;
+                            scrollToBottom();
+                        }
+                    } else if (data.type === 'error') {
+                        contentDiv.textContent = `Error: ${data.message}`;
+                        messageDiv.className = 'message error';
+                        scrollToBottom();
+                    }
+                }
+            }
+        }
+        
+        // Clear file after sending
+        if (selectedFile) {
+            clearFile();
+        }
+        
+    } catch (error) {
+        console.error('Error:', error);
+        contentDiv.textContent = `Error: ${error.message || 'Failed to get response. Please try again.'}`;
+        messageDiv.className = 'message error';
+    } finally {
+        // Re-enable input
+        chatInput.disabled = false;
+        sendButton.disabled = false;
+        fileButton.disabled = false;
+        chatInput.focus();
+    }
+}
+
+// Original send message function (fallback for non-streaming)
 async function sendMessage() {
     const message = chatInput.value.trim();
     if (!message && !selectedFile) return;
@@ -166,13 +268,26 @@ async function sendMessage() {
     }
 }
 
-// Event listeners
-sendButton.addEventListener('click', sendMessage);
+// Check if we should use streaming (default to true)
+let useStreaming = true;
+
+// Event listeners - use streaming by default
+sendButton.addEventListener('click', () => {
+    if (useStreaming) {
+        sendMessageStream();
+    } else {
+        sendMessage();
+    }
+});
 
 chatInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
-        sendMessage();
+        if (useStreaming) {
+            sendMessageStream();
+        } else {
+            sendMessage();
+        }
     }
 });
 

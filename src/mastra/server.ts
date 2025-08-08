@@ -172,6 +172,117 @@ const server = createServer(async (req, res) => {
     }
   }
 
+  // Test endpoint for debugging client response display
+  if (req.method === 'POST' && req.url === '/test-response') {
+    const testResponse = {
+      choices: [{
+        message: {
+          role: 'assistant',
+          content: 'This is a test response from the server. If you can see this message, the client is correctly displaying responses from the server.'
+        },
+        finish_reason: 'stop',
+        index: 0
+      }],
+      model: 'test-model',
+      timestamp: new Date().toISOString()
+    };
+    
+    res.writeHead(200, { 
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-cache'
+    });
+    res.end(JSON.stringify(testResponse));
+    return;
+  }
+
+  // Server-Sent Events endpoint for streaming responses
+  if (req.method === 'POST' && req.url === '/chat-stream') {
+    // Set SSE headers
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*',
+      'X-Accel-Buffering': 'no' // Disable Nginx buffering
+    });
+
+    // Parse request body
+    let body = '';
+    await new Promise<void>((resolve, reject) => {
+      req.on('data', chunk => {
+        body += chunk.toString();
+      });
+      req.on('end', () => resolve());
+      req.on('error', reject);
+    });
+
+    const requestData = JSON.parse(body);
+    console.log('[Server SSE] Processing stream request:', requestData.message);
+
+    // Send initial processing message
+    const sendSSEMessage = (data: any) => {
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
+
+    // Send initial message immediately
+    sendSSEMessage({
+      type: 'status',
+      message: 'Processing your request...',
+      timestamp: new Date().toISOString()
+    });
+
+    // Set up periodic status updates to prevent timeout
+    const statusInterval = setInterval(() => {
+      if (!res.writableEnded && res.writable) {
+        sendSSEMessage({
+          type: 'status',
+          message: 'Still processing... Please wait.',
+          timestamp: new Date().toISOString()
+        });
+      }
+    }, 10000); // Send status every 10 seconds
+
+    try {
+      // Process the request
+      const result: any = await handleRequest(requestData);
+      
+      // Clear the status interval
+      clearInterval(statusInterval);
+      
+      // Send the final result
+      if (!res.writableEnded && res.writable) {
+        sendSSEMessage({
+          type: 'result',
+          data: result,
+          timestamp: new Date().toISOString()
+        });
+        
+        // Send done signal
+        sendSSEMessage({
+          type: 'done',
+          timestamp: new Date().toISOString()
+        });
+        
+        res.end();
+      }
+    } catch (error) {
+      // Clear the status interval
+      clearInterval(statusInterval);
+      
+      // Send error message
+      if (!res.writableEnded && res.writable) {
+        sendSSEMessage({
+          type: 'error',
+          message: error instanceof Error ? error.message : 'Unknown error occurred',
+          timestamp: new Date().toISOString()
+        });
+        res.end();
+      }
+    }
+    
+    return;
+  }
+
   // Only accept POST requests to /chat
   if (req.method !== 'POST' || req.url !== '/chat') {
     res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -250,16 +361,6 @@ const server = createServer(async (req, res) => {
       console.log('[Server] With uploaded files:', uploadedFiles.map(f => f.originalName));
     }
     
-    // For now, don't use keep-alive spaces as they corrupt JSON
-    // Instead, we'll rely on the timeout handling
-    
-    // Set headers for JSON response
-    res.writeHead(200, { 
-      'Content-Type': 'application/json',
-      'X-Accel-Buffering': 'no', // Disable proxy buffering
-      'Cache-Control': 'no-cache'
-    });
-
     try {
       // Add timeout for the request (25 seconds to stay under Heroku's 30s limit)
       const timeoutPromise = new Promise((_, reject) => 
@@ -271,31 +372,51 @@ const server = createServer(async (req, res) => {
         timeoutPromise
       ]);
       
-      // Log response details
-      const responseContent = result?.choices?.[0]?.message?.content || '';
-      if (responseContent.length > 200) {
-        console.log('[Server] Response length:', responseContent.length, 'characters');
-        console.log('[Server] Result preview:', JSON.stringify(result).substring(0, 200) + '...');
+      // Check if the response is still writable before logging and sending
+      if (!res.writableEnded && res.writable) {
+        // Log response details
+        const responseContent = result?.choices?.[0]?.message?.content || '';
+        if (responseContent.length > 200) {
+          console.log('[Server] Response length:', responseContent.length, 'characters');
+          console.log('[Server] Result preview:', JSON.stringify(result).substring(0, 200) + '...');
+        } else {
+          console.log('[Server] Result from handleRequest:', JSON.stringify(result));
+        }
+        
+        // Set headers and send response
+        res.writeHead(200, { 
+          'Content-Type': 'application/json',
+          'X-Accel-Buffering': 'no',
+          'Cache-Control': 'no-cache'
+        });
+        res.end(JSON.stringify(result));
       } else {
-        console.log('[Server] Result from handleRequest:', JSON.stringify(result));
+        console.log('[Server] Response already ended, client may have disconnected');
       }
-      
-      res.end(JSON.stringify(result));
     } catch (timeoutError) {
       console.error('[Server] Request timed out:', timeoutError);
       
-      // Send partial response indicating timeout
-      const timeoutResponse = {
-        choices: [{
-          message: {
-            role: 'assistant',
-            content: 'The request is taking longer than expected. This might be due to processing large documents or complex queries. Please try:\n1. Breaking your question into smaller parts\n2. Being more specific about what you\'re looking for\n3. Waiting a moment and trying again'
-          }
-        }],
-        timeout: true
-      };
-      
-      res.end(JSON.stringify(timeoutResponse));
+      // Check if response is still writable
+      if (!res.writableEnded && res.writable) {
+        // Send partial response indicating timeout
+        const timeoutResponse = {
+          choices: [{
+            message: {
+              role: 'assistant',
+              content: 'The request is taking longer than expected. This might be due to processing large documents or complex queries. Please try:\n1. Breaking your question into smaller parts\n2. Being more specific about what you\'re looking for\n3. Waiting a moment and trying again'
+            }
+          }],
+          timeout: true
+        };
+        
+        res.writeHead(200, { 
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache'
+        });
+        res.end(JSON.stringify(timeoutResponse));
+      } else {
+        console.log('[Server] Cannot send timeout response, client disconnected');
+      }
     }
   } catch (error) {
     console.error('Error processing request:', error);
