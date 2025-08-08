@@ -158,11 +158,23 @@ const agentConfig: any = {
     - This is NOT about processing files or PDFs!
     - Example: create index "my-new-index" with dimension 1536
     
-    CRITICAL RULE #3: NO RESULTS FROM defaultQueryTool
+    CRITICAL RULE #3: HANDLING QUERIES AND RESULTS
     - If defaultQueryTool returns empty results (similarChunks: [] or totalSimilarChunks: 0)
-    - ALWAYS respond with EXACTLY this format: "NO_INFORMATION_IN_KNOWLEDGE_BASE: [original query here]"
-    - This signals the assistant agent to redirect to web search
-    - Do NOT add any other explanation or text
+      → ALWAYS respond with: "NO_INFORMATION_IN_KNOWLEDGE_BASE: [original query here]"
+    
+    - FACTUAL/CURRENT QUERIES detection:
+      * If query contains: "who is the current", "who is currently", "what is today's", "latest news"
+      * Or asks about real-world current facts (presidents, popes, CEOs, weather, news)
+      * And your search finds only FICTIONAL mentions (from novels, stories)
+      → Respond: "NO_INFORMATION_IN_KNOWLEDGE_BASE: [query] - Found only fictional references, need factual information"
+      
+      * If documents contain FACTUAL/EDUCATIONAL content about the topic → provide it
+      * If documents contain only FICTIONAL mentions → trigger redirect to web search
+    
+    - Only provide document content for:
+      * Questions explicitly about the uploaded documents
+      * Academic/educational content from textbooks
+      * Specific document analysis requests
     
     PRIMARY FUNCTION - S3 VECTORS MONITORING:
     DEFAULT: When user says "list" → IMMEDIATELY use s3VectorsBucketMonitorTool({action: "list-indices"})

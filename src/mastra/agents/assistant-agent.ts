@@ -53,6 +53,14 @@ const agentConfig: any = {
          → USE agentCoordinationTool with agentId: "researchAgent" 
          → Pass the same query as the task
          → Present the web search results to the user
+       
+       - SPECIAL HANDLING for queries needing CURRENT/FACTUAL information:
+         If query asks about: "who is the current", "who is currently", "latest", "today's", "real"
+         AND fileAgent returns content (not NO_INFORMATION):
+         → Check if the content seems fictional (mentions novels, stories, characters)
+         → If yes, ALSO delegate to researchAgent for factual information
+         → Present both: document content AND current facts from web
+       
        - Otherwise:
          → Present the information from fileAgent's response to the user
     
