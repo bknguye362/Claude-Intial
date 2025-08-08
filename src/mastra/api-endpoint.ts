@@ -48,7 +48,8 @@ async function handleRequest(body: any) {
         console.log(`[API Endpoint] 🔄 Automatically processing ${fileType}...`);
         
         try {
-          const result = await processPDF(filePath); // processPDF handles PDF, TXT, and DOCX
+          // Use smaller chunk size (500) for faster processing to avoid timeouts
+          const result = await processPDF(filePath, 500); // Smaller chunks = faster processing
           if (result.success) {
             console.log(`[API Endpoint] ✅ ${fileType} processed successfully!`);
             console.log(`[API Endpoint] 📊 Created index: ${result.indexName}`);

@@ -250,19 +250,59 @@ const server = createServer(async (req, res) => {
       console.log('[Server] With uploaded files:', uploadedFiles.map(f => f.originalName));
     }
     
-    const result = await handleRequest(requestData);
-    
-    // Log response details
-    const responseContent = result?.choices?.[0]?.message?.content || '';
-    if (responseContent.length > 200) {
-      console.log('[Server] Response length:', responseContent.length, 'characters');
-      console.log('[Server] Result preview:', JSON.stringify(result).substring(0, 200) + '...');
-    } else {
-      console.log('[Server] Result from handleRequest:', JSON.stringify(result));
+    // Set up keep-alive to prevent Heroku timeout
+    const keepAliveInterval = setInterval(() => {
+      res.write(' '); // Send a space to keep connection alive
+    }, 15000); // Send every 15 seconds
+
+    // Set headers for streaming response
+    res.writeHead(200, { 
+      'Content-Type': 'application/json',
+      'Transfer-Encoding': 'chunked',
+      'X-Accel-Buffering': 'no', // Disable proxy buffering
+      'Cache-Control': 'no-cache'
+    });
+
+    try {
+      // Add timeout for the request (25 seconds to stay under Heroku's 30s limit)
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Request timeout - processing taking too long')), 25000)
+      );
+
+      const result: any = await Promise.race([
+        handleRequest(requestData),
+        timeoutPromise
+      ]);
+
+      clearInterval(keepAliveInterval);
+      
+      // Log response details
+      const responseContent = result?.choices?.[0]?.message?.content || '';
+      if (responseContent.length > 200) {
+        console.log('[Server] Response length:', responseContent.length, 'characters');
+        console.log('[Server] Result preview:', JSON.stringify(result).substring(0, 200) + '...');
+      } else {
+        console.log('[Server] Result from handleRequest:', JSON.stringify(result));
+      }
+      
+      res.end(JSON.stringify(result));
+    } catch (timeoutError) {
+      clearInterval(keepAliveInterval);
+      console.error('[Server] Request timed out:', timeoutError);
+      
+      // Send partial response indicating timeout
+      const timeoutResponse = {
+        choices: [{
+          message: {
+            role: 'assistant',
+            content: 'The request is taking longer than expected. This might be due to processing large documents or complex queries. Please try:\n1. Breaking your question into smaller parts\n2. Being more specific about what you\'re looking for\n3. Waiting a moment and trying again'
+          }
+        }],
+        timeout: true
+      };
+      
+      res.end(JSON.stringify(timeoutResponse));
     }
-    
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(result));
   } catch (error) {
     console.error('Error processing request:', error);
     res.writeHead(500, { 'Content-Type': 'application/json' });
