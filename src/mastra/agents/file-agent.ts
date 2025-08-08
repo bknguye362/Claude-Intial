@@ -160,9 +160,9 @@ const agentConfig: any = {
     
     CRITICAL RULE #3: NO RESULTS FROM defaultQueryTool
     - If defaultQueryTool returns empty results (similarChunks: [] or totalSimilarChunks: 0)
-    - Respond to the user: "No content found in the uploaded documents that matches your query."
-    - You can briefly explain that the search didn't find relevant information
-    - Keep the response short and direct
+    - ALWAYS respond with EXACTLY this format: "NO_INFORMATION_IN_KNOWLEDGE_BASE: [original query here]"
+    - This signals the assistant agent to redirect to web search
+    - Do NOT add any other explanation or text
     
     PRIMARY FUNCTION - S3 VECTORS MONITORING:
     DEFAULT: When user says "list" → IMMEDIATELY use s3VectorsBucketMonitorTool({action: "list-indices"})

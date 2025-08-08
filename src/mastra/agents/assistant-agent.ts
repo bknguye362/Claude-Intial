@@ -49,10 +49,12 @@ const agentConfig: any = {
        - fileAgent searches across ALL indexed content in S3 Vectors
        - WAIT for the response from fileAgent
        - CRITICAL: Check the fileAgent response:
+         * If response starts with "NO_INFORMATION_IN_KNOWLEDGE_BASE:" OR
          * If message contains "No similar content found" OR
          * If similarChunks array is empty OR
          * If totalSimilarChunks is 0
-         → Try researchAgent for web search instead
+         → IMMEDIATELY delegate to researchAgent with the same query
+         → Present the web search results to the user
        - Otherwise, present the information from fileAgent's response as YOUR knowledge
     
     2. For current events, general knowledge, or when fileAgent returns no results:
@@ -86,8 +88,9 @@ const agentConfig: any = {
     For "[Uploaded files: economics_textbook.pdf] What is supply and demand?":
     1. USE agentCoordinationTool with {agentId: "fileAgent", task: "[Uploaded files: economics_textbook.pdf] What is supply and demand?"}
     2. WAIT for response
-    3. CHECK response: Does it have message "No similar content found" OR similarChunks.length === 0?
-       → YES: Inform the user that no content was found in the knowledge base
+    3. CHECK response: Does it start with "NO_INFORMATION_IN_KNOWLEDGE_BASE:" OR have no results?
+       → YES: IMMEDIATELY use agentCoordinationTool with {agentId: "researchAgent", task: "What is supply and demand?"}
+       → Present the web search results to the user
     4. Otherwise, present the information from fileAgent's response
     
     For "Explain chapter 3 of the textbook" (when a file was previously uploaded):

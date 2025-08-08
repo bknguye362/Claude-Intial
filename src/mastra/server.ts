@@ -114,14 +114,7 @@ const server = createServer(async (req, res) => {
   if (req.method === 'GET' && req.url) {
     let filePath = req.url;
     
-    // PDF status endpoint
-    const statusMatch = filePath.match(/^\/pdf-status\/(.+)$/);
-    if (statusMatch) {
-      const { checkPDFStatus } = await import('./api/pdf-status.js');
-      const reqWithParams = req as any;
-      reqWithParams.params = { statusId: statusMatch[1] };
-      return checkPDFStatus(reqWithParams, res);
-    }
+    // PDF status endpoint - removed (streaming processor no longer used)
     
     // Health check endpoint
     if (filePath === '/health') {
@@ -285,7 +278,6 @@ server.listen(PORT, () => {
   console.log(`🚀 Server running at http://localhost:${PORT}`);
   console.log(`🌐 Web interface available at http://localhost:${PORT}`);
   console.log(`📝 POST /chat - Send messages to the assistant`);
-  console.log(`📊 GET /pdf-status/:statusId - Check PDF processing status`);
   console.log(`🔑 Azure OpenAI API Key: ${(process.env.AZURE_OPENAI_API_KEY || process.env.AZURE_API_KEY) ? 'Set ✓' : 'Missing ✗'}`);
   console.log(`🔑 OpenAI API Key: ${process.env.OPENAI_API_KEY ? 'Set ✓' : 'Missing ✗'}`);
   console.log(`🌐 Azure Endpoint: ${process.env.AZURE_OPENAI_ENDPOINT || 'Using default'}`);
