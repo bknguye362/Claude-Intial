@@ -83,6 +83,7 @@ export const agentCoordinationTool = createTool({
     response: z.string(),
     agentId: z.string(),
     error: z.string().optional(),
+    hasValidInformation: z.boolean().optional().describe('Flag indicating if valid information was found'),
   }),
   execute: async ({ context }) => {
     console.log(`[Agent Coordination] ========= TOOL EXECUTED =========`);
@@ -210,9 +211,40 @@ export const agentCoordinationTool = createTool({
       console.log(`[Agent Coordination] Full response length: ${fullResponse.length} characters`);
       console.log(`[Agent Coordination] Response preview: ${fullResponse.substring(0, 200)}...`);
       
+      // Check if the response indicates no information was found
+      let hasValidInformation = true;
+      
+      if (context.agentId === 'fileAgent') {
+        // Check for various "no information" indicators
+        const noInfoIndicators = [
+          'NO_INFORMATION_IN_KNOWLEDGE_BASE',
+          'No similar content found',
+          'No content found',
+          'no relevant information',
+          'no matching content',
+          'couldn\'t find any information',
+          'no results found',
+          'no documents match',
+          'empty results'
+        ];
+        
+        const responseText = fullResponse.toLowerCase();
+        hasValidInformation = !noInfoIndicators.some(indicator => 
+          responseText.includes(indicator.toLowerCase())
+        );
+        
+        // Also check for empty or very short responses
+        if (fullResponse.trim().length < 50) {
+          hasValidInformation = false;
+        }
+        
+        console.log(`[Agent Coordination] File agent hasValidInformation: ${hasValidInformation}`);
+      }
+      
       return {
         response: fullResponse,
         agentId: context.agentId,
+        hasValidInformation,
       };
     } catch (error) {
       console.error(`[Agent Coordination] Error delegating to ${context.agentId}:`, error);
@@ -235,6 +267,7 @@ export const agentCoordinationTool = createTool({
         response: errorMessage,
         agentId: context.agentId,
         error: errorMessage,
+        hasValidInformation: false, // Error means no valid information
       };
     }
   },

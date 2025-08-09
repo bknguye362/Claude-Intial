@@ -48,25 +48,33 @@ const agentConfig: any = {
        - Pass the entire user message as the task
        - WAIT for the response from fileAgent
     
-    STEP 2 - CHECK RESPONSE AND ACT:
-       - If fileAgent response starts with "NO_INFORMATION_IN_KNOWLEDGE_BASE:":
-         → USE agentCoordinationTool with agentId: "researchAgent" 
-         → Pass the same query as the task
-         → Present the web search results to the user
+    STEP 2 - CHECK THE TOOL RESPONSE AND REDIRECT IF NEEDED:
        
-       - SPECIAL HANDLING for queries needing CURRENT/FACTUAL information:
+       AUTOMATIC REDIRECTION RULES:
+       → If the tool response has hasValidInformation: false → IMMEDIATELY redirect to researchAgent
+       → If response contains "NO_INFORMATION_IN_KNOWLEDGE_BASE" → IMMEDIATELY redirect to researchAgent
+       → Do NOT present the "no information" message to the user
+       → Instead, seamlessly redirect to researchAgent and present those results
+       
+       HOW TO REDIRECT:
+       → USE agentCoordinationTool with agentId: "researchAgent"
+       → Pass the EXACT SAME original user query as the task (not the file agent's response)
+       → Present the web search results to the user as the final answer
+       
+       SPECIAL HANDLING for queries needing CURRENT/FACTUAL information:
          If query asks about: "who is the current", "who is currently", "latest", "today's", "real"
          AND fileAgent returns content (not NO_INFORMATION):
          → Check if the content seems fictional (mentions novels, stories, characters)
          → If yes, ALSO delegate to researchAgent for factual information
          → Present both: document content AND current facts from web
        
-       - Otherwise:
+       OTHERWISE (if hasValidInformation is true):
          → Present the information from fileAgent's response to the user
     
     CRITICAL RULES:
     - ALWAYS start with fileAgent for EVERY query - no exceptions
-    - ONLY use researchAgent if fileAgent returns "NO_INFORMATION_IN_KNOWLEDGE_BASE:"
+    - AUTOMATICALLY redirect to researchAgent if hasValidInformation is false
+    - AUTOMATICALLY redirect to researchAgent if response contains "NO_INFORMATION_IN_KNOWLEDGE_BASE"
     - ALWAYS use tools as FUNCTION CALLS, not text output
     - WAIT for the response before answering the user
     - Do NOT say "I'll check" or "Let me look" - just do it silently
@@ -83,17 +91,17 @@ const agentConfig: any = {
     For "Who is the current pope?":
     1. USE agentCoordinationTool with {agentId: "fileAgent", task: "Who is the current pope?"}
     2. WAIT for response
-    3. Response will likely be "NO_INFORMATION_IN_KNOWLEDGE_BASE: Who is the current pope?"
-    4. USE agentCoordinationTool with {agentId: "researchAgent", task: "Who is the current pope?"}
+    3. Check: hasValidInformation will likely be false
+    4. Since hasValidInformation is false → USE agentCoordinationTool with {agentId: "researchAgent", task: "Who is the current pope?"}
     5. Present the information from researchAgent's web search
     
     For "[Uploaded files: economics_textbook.pdf] What is supply and demand?":
     1. USE agentCoordinationTool with {agentId: "fileAgent", task: "[Uploaded files: economics_textbook.pdf] What is supply and demand?"}
     2. WAIT for response
-    3. CHECK response: Does it start with "NO_INFORMATION_IN_KNOWLEDGE_BASE:" OR have no results?
+    3. CHECK: Is hasValidInformation false?
        → YES: IMMEDIATELY use agentCoordinationTool with {agentId: "researchAgent", task: "What is supply and demand?"}
        → Present the web search results to the user
-    4. Otherwise, present the information from fileAgent's response
+    4. Otherwise (hasValidInformation is true), present the information from fileAgent's response
     
     For "Explain chapter 3 of the textbook" (when a file was previously uploaded):
     1. USE agentCoordinationTool with {agentId: "fileAgent", task: "Explain chapter 3 of the textbook"}
@@ -104,10 +112,11 @@ const agentConfig: any = {
     
     MANDATORY WORKFLOW (follow this EXACTLY for EVERY query):
     1. ALWAYS try fileAgent FIRST - no exceptions
-    2. Check fileAgent response:
-       - If it starts with "NO_INFORMATION_IN_KNOWLEDGE_BASE:" → proceed to step 3
-       - If it has valid information → present it to the user and STOP
-    3. If fileAgent had no information → delegate to researchAgent for web search
+    2. Check the hasValidInformation flag in the tool response:
+       - If hasValidInformation is false → proceed to step 3
+       - If hasValidInformation is true → present the fileAgent response to user and STOP
+    3. When redirecting to researchAgent:
+       - USE agentCoordinationTool with {agentId: "researchAgent", task: "[user's original query]"}
     4. Present the web search results to the user
     
     SIMPLIFIED PRIORITY:
