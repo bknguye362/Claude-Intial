@@ -6,7 +6,7 @@ export const WORKER_CONFIG = {
   MAX_PROCESSING_TIME: 20000, // 20 seconds
   
   // Chunk processing settings
-  CHUNK_SIZE: 500, // Smaller chunks for faster processing
+  CHUNK_SIZE: 800, // LLM will determine optimal chunks up to 1000 chars
   MAX_CHUNKS_PER_BATCH: 10, // Process in batches to avoid memory issues
   
   // Retry settings

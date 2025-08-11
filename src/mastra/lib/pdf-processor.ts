@@ -195,20 +195,178 @@ async function generateEmbeddings(texts: string[]): Promise<number[][]> {
   return embeddings;
 }
 
-// Helper function to generate summary for a chunk using LLM
-async function generateChunkSummary(chunkContent: string): Promise<string> {
+// Helper function for LLM-driven intelligent chunking
+async function generateLLMChunks(fullText: string): Promise<{ chunks: string[], summaries: string[] }> {
+  if (!AZURE_OPENAI_API_KEY) {
+    console.log('[PDF Processor] No API key, falling back to rule-based chunking');
+    const chunks = chunkTextByCharacters(fullText, 800, 200);
+    const summaries = chunks.map(chunk => {
+      const lines = chunk.split('\n').filter(l => l.trim());
+      return lines.slice(0, 2).join(' ').substring(0, 200);
+    });
+    return { chunks, summaries };
+  }
+
+  try {
+    console.log('[PDF Processor] === Starting LLM-driven chunking ===');
+    console.log(`[PDF Processor] Document length: ${fullText.length} characters`);
+    
+    // First, get a document overview by feeding manageable portions to LLM
+    const overviewChunks = chunkTextByCharacters(fullText, 4000, 500); // Larger chunks for overview
+    console.log(`[PDF Processor] Split into ${overviewChunks.length} overview segments for LLM analysis`);
+    
+    // Step 1: Get document structure understanding
+    const url = `${AZURE_OPENAI_ENDPOINT}/openai/deployments/${LLM_DEPLOYMENT}/chat/completions?api-version=${AZURE_OPENAI_API_VERSION}`;
+    
+    console.log('[PDF Processor] Step 1: Analyzing document structure...');
+    const structureResponse = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'api-key': AZURE_OPENAI_API_KEY
+      },
+      body: JSON.stringify({
+        messages: [
+          {
+            role: 'system',
+            content: 'You are an expert at analyzing document structure and identifying natural semantic boundaries for chunking.'
+          },
+          {
+            role: 'user',
+            content: `Analyze this document and identify the main sections, topics, and natural breaking points. Here are samples from throughout the document:\n\n${overviewChunks.slice(0, 3).join('\n\n[...]\n\n').substring(0, 8000)}\n\nProvide a brief outline of the document's structure and main topics.`
+          }
+        ],
+        max_tokens: 500,
+        temperature: 0.3
+      })
+    });
+
+    if (!structureResponse.ok) {
+      throw new Error(`Structure analysis failed: ${structureResponse.status}`);
+    }
+
+    const structureData: any = await structureResponse.json();
+    const documentStructure = structureData.choices[0].message.content.trim();
+    console.log('[PDF Processor] Document structure identified:', documentStructure.substring(0, 200));
+
+    // Step 2: Generate intelligent chunks based on document understanding
+    console.log('[PDF Processor] Step 2: Creating intelligent chunks...');
+    const chunks: string[] = [];
+    const summaries: string[] = [];
+    
+    // Process the document in segments, asking LLM to identify optimal chunk boundaries
+    let currentPosition = 0;
+    while (currentPosition < fullText.length) {
+      // Extract a segment for processing (2000 chars to give LLM context)
+      const segmentEnd = Math.min(currentPosition + 2000, fullText.length);
+      const segment = fullText.substring(currentPosition, segmentEnd);
+      
+      // Ask LLM to find the best chunk boundary
+      const chunkResponse = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'api-key': AZURE_OPENAI_API_KEY
+        },
+        body: JSON.stringify({
+          messages: [
+            {
+              role: 'system',
+              content: `You are creating semantic chunks from a document. The document structure is: ${documentStructure.substring(0, 500)}`
+            },
+            {
+              role: 'user',
+              content: `Given this text segment, identify the best point to create a chunk (max 1000 chars) that preserves semantic meaning and completeness. Return JSON with:
+              1. "chunkEnd": character position where the chunk should end (between 600-1000)
+              2. "summary": 2-3 sentence summary explaining what this chunk contains and how it fits in the document context
+              
+              Text segment:
+              ${segment}
+              
+              Return valid JSON only.`
+            }
+          ],
+          max_tokens: 300,
+          temperature: 0.2
+        })
+      });
+
+      if (chunkResponse.ok) {
+        const chunkData: any = await chunkResponse.json();
+        const content = chunkData.choices[0].message.content.trim();
+        
+        try {
+          // Parse the JSON response
+          const parsed = JSON.parse(content);
+          const chunkEnd = Math.min(parsed.chunkEnd || 800, 1000);
+          const actualEnd = currentPosition + chunkEnd;
+          
+          // Find sentence boundary near the suggested end
+          const chunkText = fullText.substring(currentPosition, actualEnd);
+          const finalEnd = findSentenceEnd(fullText, currentPosition, actualEnd);
+          const finalChunk = fullText.substring(currentPosition, finalEnd).trim();
+          
+          if (finalChunk) {
+            chunks.push(finalChunk);
+            summaries.push(parsed.summary || `Chunk ${chunks.length}: Contains content from position ${currentPosition} to ${finalEnd}`);
+            console.log(`[PDF Processor] Created chunk ${chunks.length}: ${finalChunk.substring(0, 50)}... (${finalChunk.length} chars)`);
+          }
+          
+          currentPosition = finalEnd;
+        } catch (parseError) {
+          // Fallback to rule-based chunking for this segment
+          console.log('[PDF Processor] JSON parse failed, using fallback for this segment');
+          const fallbackEnd = findSentenceEnd(fullText, currentPosition, Math.min(currentPosition + 800, fullText.length));
+          const fallbackChunk = fullText.substring(currentPosition, fallbackEnd).trim();
+          
+          if (fallbackChunk) {
+            chunks.push(fallbackChunk);
+            summaries.push(`Section ${chunks.length} of the document`);
+          }
+          currentPosition = fallbackEnd;
+        }
+      } else {
+        // API call failed, use fallback
+        const fallbackEnd = findSentenceEnd(fullText, currentPosition, Math.min(currentPosition + 800, fullText.length));
+        const fallbackChunk = fullText.substring(currentPosition, fallbackEnd).trim();
+        
+        if (fallbackChunk) {
+          chunks.push(fallbackChunk);
+          summaries.push(`Section ${chunks.length} of the document`);
+        }
+        currentPosition = fallbackEnd;
+      }
+
+      // Rate limiting
+      if (currentPosition < fullText.length) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+
+    console.log(`[PDF Processor] LLM-driven chunking complete: ${chunks.length} chunks created`);
+    return { chunks, summaries };
+
+  } catch (error) {
+    console.error('[PDF Processor] Error in LLM-driven chunking:', error);
+    console.log('[PDF Processor] Falling back to rule-based chunking');
+    const chunks = chunkTextByCharacters(fullText, 800, 200);
+    const summaries = chunks.map(chunk => {
+      const lines = chunk.split('\n').filter(l => l.trim());
+      return lines.slice(0, 2).join(' ').substring(0, 200);
+    });
+    return { chunks, summaries };
+  }
+}
+
+// Helper function to generate summary for a chunk using LLM (with document context)
+async function generateChunkSummary(chunkContent: string, chunkIndex: number, totalChunks: number, documentContext?: string): Promise<string> {
   if (!AZURE_OPENAI_API_KEY) {
     console.log('[PDF Processor] No API key, using fallback summary');
-    // Return a simple summary if no API key
     const lines = chunkContent.split('\n').filter(l => l.trim());
     return lines.slice(0, 2).join(' ').substring(0, 200);
   }
 
   try {
-    // Log chunk being sent to LLM
-    console.log('[PDF Processor] Sending chunk to LLM for summary. First 200 chars:', chunkContent.substring(0, 200));
-    console.log('[PDF Processor] Chunk length:', chunkContent.length, 'chars');
-    
     const url = `${AZURE_OPENAI_ENDPOINT}/openai/deployments/${LLM_DEPLOYMENT}/chat/completions?api-version=${AZURE_OPENAI_API_VERSION}`;
     
     const response = await fetch(url, {
@@ -221,11 +379,11 @@ async function generateChunkSummary(chunkContent: string): Promise<string> {
         messages: [
           {
             role: 'system',
-            content: 'You are a helpful assistant that creates concise summaries of text chunks. Focus on the key concepts, topics, and information present in the chunk. Keep summaries under 150 words.'
+            content: `You are creating contextual summaries for document chunks. ${documentContext ? `Document context: ${documentContext}` : ''} This is chunk ${chunkIndex + 1} of ${totalChunks}.`
           },
           {
             role: 'user',
-            content: `Please summarize the following text chunk:\n\n${chunkContent.substring(0, 3000)}`
+            content: `Summarize this chunk and explain how it fits into the overall document context:\n\n${chunkContent.substring(0, 3000)}`
           }
         ],
         max_tokens: 200,
@@ -241,7 +399,6 @@ async function generateChunkSummary(chunkContent: string): Promise<string> {
     return data.choices[0].message.content.trim();
   } catch (error) {
     console.error('[PDF Processor] Error generating summary:', error);
-    // Fallback to simple summary
     const lines = chunkContent.split('\n').filter(l => l.trim());
     return lines.slice(0, 2).join(' ').substring(0, 200);
   }
@@ -437,18 +594,16 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
       fileType: isPDF ? 'PDF' : isTXT ? 'TXT' : 'DOCX'
     };
     
-    // Use dynamic paragraph-aware chunking
+    // Use LLM-driven intelligent chunking
     console.log(`[PDF Processor] Text length: ${pdfData.text.length} characters`);
-    console.log(`[PDF Processor] Using dynamic paragraph-aware chunking...`);
+    console.log(`[PDF Processor] Using LLM-driven intelligent chunking...`);
     
-    const dynamicChunks = dynamicChunk(pdfData.text, chunkSize, 100); // 100 char overlap
-    const textChunks = convertToProcessorChunks(dynamicChunks);
+    // Generate chunks and summaries using LLM
+    const { chunks: textChunks, summaries: llmSummaries } = await generateLLMChunks(pdfData.text);
     
-    console.log(`[PDF Processor] Split into ${textChunks.length} chunks`);
-    console.log(`[PDF Processor] Chunk distribution:`);
-    console.log(`[PDF Processor]   - Header chunks: ${dynamicChunks.filter(c => c.metadata.isHeader).length}`);
-    console.log(`[PDF Processor]   - Average paragraphs per chunk: ${(dynamicChunks.reduce((sum, c) => sum + c.metadata.paragraphCount, 0) / dynamicChunks.length).toFixed(1)}`);
+    console.log(`[PDF Processor] LLM created ${textChunks.length} semantic chunks`);
     console.log(`[PDF Processor] First chunk preview: ${textChunks[0]?.substring(0, 100)}...`);
+    console.log(`[PDF Processor] First chunk summary: ${llmSummaries[0]?.substring(0, 150)}...`);
     
     // Remove chunk limit - process all chunks but warn if very large
     if (textChunks.length > 2000) {
@@ -478,15 +633,13 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
     
     console.log(`[PDF Processor] ✅ Index '${indexName}' created! Processing will continue...`)
     
-    // Generate embeddings and summaries in parallel
-    console.log(`[PDF Processor] Generating embeddings and summaries...`);
-    const [embeddings, summaries] = await Promise.all([
-      generateEmbeddings(textChunks),
-      generateChunkSummaries(textChunks)
-    ]);
-    console.log(`[PDF Processor] Generated ${embeddings.length} embeddings and ${summaries.length} summaries`);
+    // Generate embeddings (summaries already generated by LLM chunking)
+    console.log(`[PDF Processor] Generating embeddings...`);
+    const embeddings = await generateEmbeddings(textChunks);
+    console.log(`[PDF Processor] Generated ${embeddings.length} embeddings`);
+    console.log(`[PDF Processor] Using ${llmSummaries.length} LLM-generated contextual summaries`);
     
-    // Create chunks with metadata including dynamic chunk info
+    // Create chunks with metadata including LLM-generated summaries
     const chunks = textChunks.map((content, index) => {
       const chunkPosition = index / textChunks.length;
       const numPages = pdfData.numpages || 1;
@@ -496,9 +649,6 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
         numPages
       );
       
-      // Get metadata from dynamic chunks if available
-      const dynamicMeta = dynamicChunks[index]?.metadata;
-      
       return {
         content,
         embedding: embeddings[index],
@@ -507,9 +657,7 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
           pageEnd,
           chunkIndex: index,
           totalChunks: textChunks.length,
-          isHeader: dynamicMeta?.isHeader || false,
-          headerLevel: dynamicMeta?.headerLevel,
-          paragraphCount: dynamicMeta?.paragraphCount || 1
+          contextualSummary: llmSummaries[index] // Use LLM-generated summary with document context
         }
       };
     });
@@ -527,9 +675,10 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
         pageStart: chunk.metadata.pageStart,
         pageEnd: chunk.metadata.pageEnd,
         totalChunks: chunks.length,
-        // Store full chunk content (chunks are now 1000 chars)
+        // Store full chunk content (chunks are now up to 1000 chars)
         chunkContent: chunk.content,
-        chunkSummary: (summaries[index] || '').substring(0, 200), // LLM-generated summary limited to 200 chars
+        // LLM-generated contextual summary showing how chunk fits in document
+        chunkSummary: (chunk.metadata.contextualSummary || '').substring(0, 300),
         // Add document name for multi-document filtering
         docName: basename(filepath, fileExt).substring(0, 50) // Limited to 50 chars
       }
