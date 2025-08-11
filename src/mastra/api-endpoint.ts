@@ -143,6 +143,10 @@ async function handleRequest(body: any) {
       if (agentToolChoice) {
         streamOptions.toolChoice = agentToolChoice;
         console.log(`[API Endpoint] Using agent's toolChoice:`, streamOptions.toolChoice);
+      } else if (agentId === 'assistantAgent') {
+        // Force assistant agent to use tools
+        streamOptions.toolChoice = 'required';
+        console.log(`[API Endpoint] Forcing assistantAgent to use tools: required`);
       } else {
         streamOptions.toolChoice = 'auto';
         console.log(`[API Endpoint] Using default toolChoice: auto`);
@@ -199,6 +203,20 @@ async function handleRequest(body: any) {
     
     console.log(`[API Endpoint] Stream complete. Total chunks: ${chunkCount}`);
     console.log(`[API Endpoint] Final response length: ${response.length} characters`);
+    
+    // Check if assistant agent answered directly without using tools
+    if (agentId === 'assistantAgent') {
+      const lowerResponse = response.toLowerCase();
+      // Check if it's answering about factual info without using tools
+      if ((lowerResponse.includes('pope francis') || 
+           lowerResponse.includes('current pope') ||
+           lowerResponse.includes('president') ||
+           lowerResponse.includes('prime minister')) &&
+          !requestLogs.some(log => log.message.includes('[Agent Coordination]'))) {
+        console.error(`[API Endpoint] WARNING: Assistant agent answered directly without using tools!`);
+        console.error(`[API Endpoint] This should not happen - assistant should always delegate`);
+      }
+    }
     
     // Check if response appears to be cut off
     const lastChar = response.slice(-1);
