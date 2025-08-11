@@ -423,9 +423,10 @@ async function generateChunkSummaries(chunks: string[]): Promise<string[]> {
       }
       
       // Process batch in parallel
-      const batchPromises = batch.map(async (chunk) => {
+      const batchPromises = batch.map(async (chunk, batchIndex) => {
         try {
-          return await generateChunkSummary(chunk);
+          const actualIndex = i + batchIndex;
+          return await generateChunkSummary(chunk, actualIndex, chunks.length);
         } catch (error) {
           console.error('[PDF Processor] Summary error, using fallback');
           const lines = chunk.split('\n').filter(l => l.trim());
