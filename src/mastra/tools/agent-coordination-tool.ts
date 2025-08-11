@@ -239,6 +239,47 @@ export const agentCoordinationTool = createTool({
         }
         
         console.log(`[Agent Coordination] File agent hasValidInformation: ${hasValidInformation}`);
+        
+        // AUTOMATIC REDIRECTION: If file agent has no valid information, immediately query research agent
+        if (!hasValidInformation) {
+          console.log(`[Agent Coordination] NO VALID INFO - Auto-redirecting to researchAgent`);
+          console.log(`[Agent Coordination] Original query: "${context.task}"`);
+          
+          try {
+            // Get the research agent
+            const researchAgent = mastra.getAgent('researchAgent');
+            
+            if (researchAgent) {
+              console.log(`[Agent Coordination] Calling research agent with original query`);
+              
+              // Call research agent with the original task
+              const researchStream = await researchAgent.stream([
+                {
+                  role: 'user' as const,
+                  content: context.task, // Use original task, not file agent's response
+                },
+              ]);
+              
+              // Collect research agent's response
+              let researchResponse = '';
+              for await (const chunk of researchStream.textStream) {
+                researchResponse += chunk;
+              }
+              
+              console.log(`[Agent Coordination] Research agent response: ${researchResponse.substring(0, 200)}...`);
+              
+              // Return research agent's response instead of file agent's "no info" response
+              return {
+                response: researchResponse,
+                agentId: 'researchAgent', // Mark as coming from research agent
+                hasValidInformation: true, // Research agent provided information
+              };
+            }
+          } catch (error) {
+            console.error(`[Agent Coordination] Error auto-redirecting to research:`, error);
+            // Fall through to return original response if redirect fails
+          }
+        }
       }
       
       return {
