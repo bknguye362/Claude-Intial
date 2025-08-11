@@ -54,10 +54,56 @@ async function handleRequest(body: any) {
     return { error: 'Message is required' };
   }
   
-  // SPECIAL ROUTING: For assistant agent, manually check file agent first
+  // SPECIAL ROUTING: For assistant agent, check query type first
   if (agentId === 'assistantAgent') {
-    console.log('[API Endpoint] Assistant agent detected - manually checking file agent first');
+    console.log('[API Endpoint] Assistant agent detected - analyzing query type');
     
+    // Check if this is a current affairs/factual query that ALWAYS needs web search
+    const lowerMessage = body.message.toLowerCase();
+    const isCurrentAffairsQuery = (
+      lowerMessage.includes('current') ||
+      lowerMessage.includes('who is the') ||
+      lowerMessage.includes('latest') ||
+      lowerMessage.includes('today') ||
+      lowerMessage.includes('pope') ||
+      lowerMessage.includes('president') ||
+      lowerMessage.includes('prime minister') ||
+      lowerMessage.includes('news') ||
+      lowerMessage.includes('recently')
+    );
+    
+    if (isCurrentAffairsQuery) {
+      console.log('[API Endpoint] CURRENT AFFAIRS QUERY - bypassing file agent, going directly to research');
+      
+      // For current affairs, ALWAYS use research agent for up-to-date information
+      const researchAgent = mastra.getAgent('researchAgent');
+      if (researchAgent) {
+        console.log('[API Endpoint] Calling research agent for current information');
+        const researchStream = await researchAgent.stream(body.message);
+        let researchResponse = '';
+        for await (const chunk of researchStream.textStream) {
+          researchResponse += chunk;
+        }
+        
+        console.log('[API Endpoint] Research agent response received:', researchResponse.substring(0, 100));
+        
+        return {
+          choices: [{
+            message: {
+              role: 'assistant',
+              content: researchResponse
+            },
+            finish_reason: 'stop',
+            index: 0
+          }],
+          model: 'research-agent-current-affairs',
+          timestamp: new Date().toISOString()
+        };
+      }
+    }
+    
+    // For non-current affairs, check file agent first
+    console.log('[API Endpoint] Non-current affairs query - checking file agent');
     const fileResult = await tryFileAgentFirst(body.message);
     
     if (fileResult.hasInfo) {
