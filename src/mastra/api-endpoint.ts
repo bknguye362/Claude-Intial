@@ -6,6 +6,43 @@ import { processPDF } from './lib/pdf-processor.js';
 // Simple HTTP server example for the assistant chatbot
 const PORT = 3000;
 
+// Helper function to check if file agent has information
+async function tryFileAgentFirst(message: string): Promise<{ hasInfo: boolean, response: string }> {
+  try {
+    const fileAgent = mastra.getAgent('fileAgent');
+    if (!fileAgent) {
+      return { hasInfo: false, response: '' };
+    }
+    
+    console.log(`[API Endpoint Helper] Trying file agent first with message: "${message}"`);
+    const fileStream = await fileAgent.stream(message);
+    
+    let fileResponse = '';
+    for await (const chunk of fileStream.textStream) {
+      fileResponse += chunk;
+    }
+    
+    // Check if file agent found information
+    const noInfoIndicators = [
+      'NO_INFORMATION_IN_KNOWLEDGE_BASE',
+      'No similar content found',
+      'No content found',
+      'no relevant information',
+      'no matching content'
+    ];
+    
+    const hasInfo = !noInfoIndicators.some(indicator => 
+      fileResponse.toLowerCase().includes(indicator.toLowerCase())
+    ) && fileResponse.trim().length > 50;
+    
+    console.log(`[API Endpoint Helper] File agent hasInfo: ${hasInfo}`);
+    return { hasInfo, response: fileResponse };
+  } catch (error) {
+    console.error(`[API Endpoint Helper] Error trying file agent:`, error);
+    return { hasInfo: false, response: '' };
+  }
+}
+
 async function handleRequest(body: any) {
   // Use agentId from request body, default to assistantAgent
   const agentId = body.agentId || 'assistantAgent';
@@ -17,6 +54,55 @@ async function handleRequest(body: any) {
     return { error: 'Message is required' };
   }
   
+  // SPECIAL ROUTING: For assistant agent, manually check file agent first
+  if (agentId === 'assistantAgent') {
+    console.log('[API Endpoint] Assistant agent detected - manually checking file agent first');
+    
+    const fileResult = await tryFileAgentFirst(body.message);
+    
+    if (fileResult.hasInfo) {
+      console.log('[API Endpoint] File agent has information - returning file agent response');
+      // Return file agent's response directly
+      return {
+        choices: [{
+          message: {
+            role: 'assistant',
+            content: fileResult.response
+          },
+          finish_reason: 'stop',
+          index: 0
+        }],
+        model: 'file-agent-direct',
+        timestamp: new Date().toISOString()
+      };
+    } else {
+      console.log('[API Endpoint] File agent has NO information - redirecting to research agent');
+      
+      // Try research agent
+      const researchAgent = mastra.getAgent('researchAgent');
+      if (researchAgent) {
+        const researchStream = await researchAgent.stream(body.message);
+        let researchResponse = '';
+        for await (const chunk of researchStream.textStream) {
+          researchResponse += chunk;
+        }
+        
+        return {
+          choices: [{
+            message: {
+              role: 'assistant',
+              content: researchResponse
+            },
+            finish_reason: 'stop',
+            index: 0
+          }],
+          model: 'research-agent-redirect',
+          timestamp: new Date().toISOString()
+        };
+      }
+    }
+  }
+
   const agent = mastra.getAgent(agentId);
 
   // Handle uploaded files if present
@@ -204,17 +290,50 @@ async function handleRequest(body: any) {
     console.log(`[API Endpoint] Stream complete. Total chunks: ${chunkCount}`);
     console.log(`[API Endpoint] Final response length: ${response.length} characters`);
     
-    // Check if assistant agent answered directly without using tools
+    // INTERCEPT: If assistant agent answered directly without tools, redirect to research
     if (agentId === 'assistantAgent') {
       const lowerResponse = response.toLowerCase();
+      const usedCoordinationTool = requestLogs.some(log => log.message.includes('[Agent Coordination]'));
+      
       // Check if it's answering about factual info without using tools
       if ((lowerResponse.includes('pope francis') || 
            lowerResponse.includes('current pope') ||
            lowerResponse.includes('president') ||
-           lowerResponse.includes('prime minister')) &&
-          !requestLogs.some(log => log.message.includes('[Agent Coordination]'))) {
-        console.error(`[API Endpoint] WARNING: Assistant agent answered directly without using tools!`);
-        console.error(`[API Endpoint] This should not happen - assistant should always delegate`);
+           lowerResponse.includes('prime minister') ||
+           lowerResponse.includes('who is') ||
+           lowerResponse.includes('what is')) &&
+          !usedCoordinationTool) {
+        
+        console.error(`[API Endpoint] WARNING: Assistant answered directly - intercepting and redirecting!`);
+        console.log(`[API Endpoint] Original query: "${body.message}"`);
+        console.log(`[API Endpoint] Forcing redirect to research agent...`);
+        
+        try {
+          // Get the research agent directly
+          const researchAgent = mastra.getAgent('researchAgent');
+          
+          if (researchAgent) {
+            console.log(`[API Endpoint] Calling research agent with original query`);
+            
+            // Call research agent with the original message
+            const researchStream = await researchAgent.stream(body.message);
+            
+            // Collect research response
+            let researchResponse = '';
+            for await (const chunk of researchStream.textStream) {
+              researchResponse += chunk;
+            }
+            
+            console.log(`[API Endpoint] Research agent provided response: ${researchResponse.substring(0, 200)}...`);
+            
+            // Replace the assistant's direct answer with research results
+            response = researchResponse;
+            console.log(`[API Endpoint] Replaced assistant's answer with research results`);
+          }
+        } catch (error) {
+          console.error(`[API Endpoint] Error redirecting to research:`, error);
+          // Keep original response if redirect fails
+        }
       }
     }
     
