@@ -103,14 +103,13 @@ async function generateEmbedding(text: string): Promise<number[]> {
   }
 }
 
-// LLM-based chunking strategy
+// LLM-based two-pass chunking strategy
 async function generateLLMChunks(fullText: string, maxChunkSize: number = 1000): Promise<{ chunks: string[], summaries: string[] }> {
-  console.log('[PDF Processor] Starting LLM-based chunking strategy');
+  console.log('[PDF Processor] Starting LLM-based two-pass chunking strategy');
   console.log(`[PDF Processor] Document length: ${fullText.length} characters`);
   
   if (!AZURE_OPENAI_API_KEY) {
-    console.log('[PDF Processor] No API key for LLM chunking, falling back to line-based chunking');
-    // Fall back to simple chunking if no API key
+    console.log('[PDF Processor] No API key for LLM chunking, falling back to simple chunking');
     const chunks: string[] = [];
     for (let i = 0; i < fullText.length; i += maxChunkSize) {
       chunks.push(fullText.slice(i, i + maxChunkSize));
@@ -121,181 +120,40 @@ async function generateLLMChunks(fullText: string, maxChunkSize: number = 1000):
   try {
     const url = `${AZURE_OPENAI_ENDPOINT}/openai/deployments/${LLM_DEPLOYMENT}/chat/completions?api-version=${AZURE_OPENAI_API_VERSION}`;
     
-    // Step 1: First create initial chunks to feed to the LLM
-    console.log('[PDF Processor] Step 1: Creating initial chunks for LLM analysis...');
-    const initialChunks: string[] = [];
+    // PASS 1: Create raw chunks and analyze each for summaries and boundaries
+    console.log('[PDF Processor] PASS 1: Creating raw chunks for analysis...');
+    const rawChunks: string[] = [];
+    const chunkStartPositions: number[] = [];
+    
     for (let i = 0; i < fullText.length; i += maxChunkSize) {
-      initialChunks.push(fullText.slice(i, i + maxChunkSize));
+      rawChunks.push(fullText.slice(i, Math.min(i + maxChunkSize, fullText.length)));
+      chunkStartPositions.push(i);
     }
-    console.log(`[PDF Processor] Created ${initialChunks.length} initial chunks of ~${maxChunkSize} chars each`);
+    console.log(`[PDF Processor] Created ${rawChunks.length} raw chunks of ~${maxChunkSize} chars each`);
     
-    // Step 2: Feed ALL chunks to LLM for analysis
-    console.log('[PDF Processor] Step 2: Feeding all chunks to LLM for document analysis...');
-    const chunkMessages: string[] = [];
+    // Analyze each chunk for summaries and boundary suggestions
+    console.log('[PDF Processor] Analyzing chunks for summaries and boundaries...');
+    const chunkAnalyses: Array<{
+      summary: string;
+      shouldMergeWithNext: boolean;
+      topic: string;
+    }> = [];
     
-    // Process chunks in batches to avoid token limits
-    const batchSize = 10; // Process 10 chunks at a time
-    for (let i = 0; i < initialChunks.length; i += batchSize) {
-      const batch = initialChunks.slice(i, Math.min(i + batchSize, initialChunks.length));
-      const batchMessage = batch.map((chunk, idx) => 
-        `CHUNK ${i + idx + 1}: ${chunk.slice(0, 200)}...`
-      ).join('\n\n');
+    // Process chunks in batches
+    const batchSize = 5;
+    for (let i = 0; i < rawChunks.length; i += batchSize) {
+      const batch = rawChunks.slice(i, Math.min(i + batchSize, rawChunks.length));
+      console.log(`[PDF Processor] Analyzing chunks ${i + 1}-${Math.min(i + batchSize, rawChunks.length)} of ${rawChunks.length}`);
       
-      console.log(`[PDF Processor] Processing batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(initialChunks.length/batchSize)}`);
-      
-      const analysisResponse = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'api-key': AZURE_OPENAI_API_KEY
-        },
-        body: JSON.stringify({
-          messages: [
-            {
-              role: 'system',
-              content: 'You are analyzing a document in chunks. Identify the main topics, themes, and natural section boundaries in these chunks.'
-            },
-            {
-              role: 'user',
-              content: `Analyze these document chunks and note their topics:\n\n${batchMessage}`
-            }
-          ],
-          max_tokens: 300,
-          temperature: 0.3
-        })
-      });
-      
-      if (analysisResponse.ok) {
-        const analysisData: any = await analysisResponse.json();
-        chunkMessages.push(analysisData.choices[0].message.content);
-      }
-      
-      // Rate limiting
-      await new Promise(resolve => setTimeout(resolve, 500));
-    }
-    
-    // Step 3: Get chunking guidelines from LLM based on full document analysis
-    console.log('[PDF Processor] Step 3: Getting chunking guidelines from LLM...');
-    const guidelinesResponse = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'api-key': AZURE_OPENAI_API_KEY
-      },
-      body: JSON.stringify({
-        messages: [
-          {
-            role: 'system',
-            content: `Based on the document analysis, provide specific chunking guidelines. The document has ${initialChunks.length} initial chunks of ${maxChunkSize} chars each. Suggest how to better organize these into semantic chunks while keeping each chunk under ${maxChunkSize} characters.`
-          },
-          {
-            role: 'user',
-            content: `Document analysis from all chunks:\n\n${chunkMessages.join('\n\n---\n\n')}\n\nProvide chunking guidelines: Which chunks should be combined or split? What are the natural boundaries?`
-          }
-        ],
-        max_tokens: 500,
-        temperature: 0.3
-      })
-    });
-
-    let guidelines = 'Use natural paragraph boundaries.';
-    if (guidelinesResponse.ok) {
-      const guidelinesData: any = await guidelinesResponse.json();
-      guidelines = guidelinesData.choices[0].message.content;
-      console.log('[PDF Processor] Chunking guidelines:', guidelines.slice(0, 300) + '...');
-    }
-    
-    // Step 4: Create semantic chunks based on the guidelines
-    console.log('[PDF Processor] Step 4: Creating semantic chunks based on LLM guidelines...');
-    const chunks: string[] = [];
-    const summaries: string[] = [];
-    
-    // Ask LLM to create the final chunks based on its analysis
-    console.log('[PDF Processor] Asking LLM to define chunk boundaries...');
-    const chunkingResponse = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'api-key': AZURE_OPENAI_API_KEY
-      },
-      body: JSON.stringify({
-        messages: [
-          {
-            role: 'system',
-            content: `Based on your analysis and guidelines, provide a list of chunk boundaries. Each chunk should be ${maxChunkSize} characters or less. Return a JSON array of objects with 'start' and 'end' indices, like: [{"start": 0, "end": 950, "topic": "Introduction"}, ...]`
-          },
-          {
-            role: 'user',
-            content: `Document length: ${fullText.length} chars\nInitial chunks: ${initialChunks.length}\nGuidelines: ${guidelines}\n\nProvide optimal chunk boundaries as JSON.`
-          }
-        ],
-        max_tokens: 1000,
-        temperature: 0
-      })
-    });
-    
-    let chunkBoundaries: Array<{start: number, end: number, topic?: string}> = [];
-    
-    if (chunkingResponse.ok) {
-      const chunkingData: any = await chunkingResponse.json();
-      const response = chunkingData.choices[0].message.content;
-      
-      // Try to parse JSON from response
-      try {
-        const jsonMatch = response.match(/\[[\s\S]*\]/);
-        if (jsonMatch) {
-          chunkBoundaries = JSON.parse(jsonMatch[0]);
-          console.log(`[PDF Processor] LLM provided ${chunkBoundaries.length} chunk boundaries`);
-        }
-      } catch (e) {
-        console.log('[PDF Processor] Could not parse LLM chunk boundaries, using fallback');
-      }
-    }
-    
-    // If LLM didn't provide valid boundaries, create them based on natural breaks
-    if (chunkBoundaries.length === 0) {
-      console.log('[PDF Processor] Creating chunks based on natural boundaries...');
-      let currentPos = 0;
-      
-      while (currentPos < fullText.length) {
-        // Look for natural break points
-        let endPos = Math.min(currentPos + maxChunkSize, fullText.length);
+      const batchPromises = batch.map(async (chunk, batchIdx) => {
+        const chunkIndex = i + batchIdx;
+        const isLastChunk = chunkIndex === rawChunks.length - 1;
         
-        // If not at the end, find a good break point
-        if (endPos < fullText.length) {
-          const segment = fullText.slice(currentPos, endPos);
-          
-          // Try to find paragraph break
-          const lastDoubleNewline = segment.lastIndexOf('\n\n');
-          if (lastDoubleNewline > maxChunkSize * 0.5) {
-            endPos = currentPos + lastDoubleNewline;
-          } else {
-            // Try to find sentence break
-            const lastPeriod = segment.lastIndexOf('. ');
-            if (lastPeriod > maxChunkSize * 0.5) {
-              endPos = currentPos + lastPeriod + 1;
-            }
-          }
-        }
+        // Include context from adjacent chunks
+        const prevContext = chunkIndex > 0 ? rawChunks[chunkIndex - 1].slice(-100) : '';
+        const nextContext = !isLastChunk ? rawChunks[chunkIndex + 1].slice(0, 100) : '';
         
-        chunkBoundaries.push({
-          start: currentPos,
-          end: endPos,
-          topic: `Section ${chunkBoundaries.length + 1}`
-        });
-        
-        currentPos = endPos;
-      }
-    }
-    
-    // Create chunks from boundaries
-    for (const boundary of chunkBoundaries) {
-      const chunkText = fullText.slice(boundary.start, boundary.end).trim();
-      if (chunkText.length > 0) {
-        chunks.push(chunkText);
-        
-        // Generate summary for this chunk
-        const summaryResponse = await fetch(url, {
+        const response = await fetch(url, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -305,35 +163,102 @@ async function generateLLMChunks(fullText: string, maxChunkSize: number = 1000):
             messages: [
               {
                 role: 'system',
-                content: 'Provide a one-sentence summary of this text chunk.'
+                content: `Analyze this text chunk and provide:\n1. A one-sentence summary\n2. The main topic\n3. Whether it should merge with the next chunk (true if content continues)\n\nReturn JSON: {"summary": "...", "topic": "...", "shouldMergeWithNext": true/false}`
               },
               {
                 role: 'user',
-                content: `${boundary.topic ? `Topic: ${boundary.topic}\n` : ''}Text: ${chunkText.slice(0, 1500)}`
+                content: `${prevContext ? `[Previous ends]: ...${prevContext}\n\n` : ''}[CHUNK ${chunkIndex + 1}]:\n${chunk}\n\n${nextContext ? `[Next begins]: ${nextContext}...` : '[Last chunk]'}`
               }
             ],
-            max_tokens: 100,
+            max_tokens: 200,
             temperature: 0.3
           })
         });
         
-        if (summaryResponse.ok) {
-          const summaryData: any = await summaryResponse.json();
-          summaries.push(summaryData.choices[0].message.content);
-        } else {
-          summaries.push(boundary.topic || '');
+        if (response.ok) {
+          const data: any = await response.json();
+          const content = data.choices[0].message.content;
+          try {
+            const parsed = JSON.parse(content.match(/\{[\s\S]*\}/)?.[0] || '{}');
+            return {
+              summary: parsed.summary || '',
+              topic: parsed.topic || `Section ${chunkIndex + 1}`,
+              shouldMergeWithNext: parsed.shouldMergeWithNext === true
+            };
+          } catch {
+            return { summary: '', topic: `Section ${chunkIndex + 1}`, shouldMergeWithNext: false };
+          }
         }
-        
-        // Rate limiting
-        if (chunks.length % 10 === 0) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          console.log(`[PDF Processor] Created ${chunks.length} chunks so far...`);
-        }
-      }
+        return { summary: '', topic: `Section ${chunkIndex + 1}`, shouldMergeWithNext: false };
+      });
+      
+      const batchResults = await Promise.all(batchPromises);
+      chunkAnalyses.push(...batchResults);
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
     
-    console.log(`[PDF Processor] LLM chunking complete: ${chunks.length} semantic chunks created`);
-    return { chunks, summaries };
+    console.log(`[PDF Processor] Analysis complete: ${chunkAnalyses.filter(a => a.shouldMergeWithNext).length} chunks suggest merging`);
+    
+    // PASS 2: Recombine text based on LLM's boundary suggestions
+    console.log('[PDF Processor] PASS 2: Creating semantic chunks based on boundaries...');
+    const semanticChunks: string[] = [];
+    const semanticSummaries: string[] = [];
+    
+    let i = 0;
+    while (i < rawChunks.length) {
+      // Start a new semantic chunk
+      const startIdx = i;
+      const startPos = chunkStartPositions[i];
+      let endIdx = i;
+      let mergedSummaries: string[] = [chunkAnalyses[i].summary].filter(s => s);
+      let mergedTopics: string[] = [chunkAnalyses[i].topic];
+      
+      // Keep merging while LLM suggests it and within reasonable limits
+      while (
+        chunkAnalyses[endIdx]?.shouldMergeWithNext && 
+        endIdx < rawChunks.length - 1 &&
+        endIdx - startIdx < 2  // Max merge 3 raw chunks
+      ) {
+        endIdx++;
+        if (chunkAnalyses[endIdx].summary) {
+          mergedSummaries.push(chunkAnalyses[endIdx].summary);
+        }
+        if (chunkAnalyses[endIdx].topic && !mergedTopics.includes(chunkAnalyses[endIdx].topic)) {
+          mergedTopics.push(chunkAnalyses[endIdx].topic);
+        }
+      }
+      
+      // Extract the semantic chunk from the full text
+      const endPos = endIdx === rawChunks.length - 1 
+        ? fullText.length 
+        : chunkStartPositions[endIdx + 1];
+      
+      const semanticChunkText = fullText.slice(startPos, endPos).trim();
+      
+      if (semanticChunkText) {
+        semanticChunks.push(semanticChunkText);
+        
+        // Create combined summary
+        const combinedSummary = mergedSummaries.length > 1
+          ? `${mergedTopics[0]}: ${mergedSummaries.join(' ')}`.slice(0, 200)
+          : mergedSummaries[0] || mergedTopics[0];
+        
+        semanticSummaries.push(combinedSummary);
+        
+        console.log(`[PDF Processor] Created semantic chunk ${semanticChunks.length}: ${semanticChunkText.length} chars (merged ${endIdx - startIdx + 1} raw chunks)`);
+      }
+      
+      // Move to next unprocessed chunk
+      i = endIdx + 1;
+    }
+    
+    
+    console.log(`[PDF Processor] Two-pass chunking complete:`);
+    console.log(`[PDF Processor]   - Raw chunks: ${rawChunks.length}`);
+    console.log(`[PDF Processor]   - Semantic chunks: ${semanticChunks.length}`);
+    console.log(`[PDF Processor]   - Average semantic chunk size: ${Math.round(fullText.length / semanticChunks.length)} chars`);
+    
+    return { chunks: semanticChunks, summaries: semanticSummaries };
     
   } catch (error) {
     console.error('[PDF Processor] Error in LLM chunking:', error);
