@@ -260,7 +260,15 @@ Return JSON: {"summary": "...", "topic": "...", "shouldMergeWithNext": true/fals
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
     
-    console.log(`[PDF Processor] Analysis complete: ${chunkAnalyses.filter(a => a.shouldMergeWithNext).length} chunks suggest merging`);
+    console.log(`[PDF Processor] Analysis complete: ${chunkAnalyses.filter(a => a.shouldMergeWithNext).length} of ${chunkAnalyses.length} chunks suggest merging`);
+    
+    // Debug: Show merge decisions
+    console.log('[PDF Processor] Merge decisions:');
+    chunkAnalyses.forEach((analysis, idx) => {
+      if (analysis.shouldMergeWithNext || idx < 5) { // Show first 5 and all merges
+        console.log(`  Chunk ${idx + 1}: ${analysis.shouldMergeWithNext ? 'MERGE' : 'NO MERGE'} - Topic: "${analysis.topic}" - Length: ${rawChunks[idx]?.length || 0} chars`);
+      }
+    });
     
     // PASS 2: Recombine text based on LLM's boundary suggestions
     console.log('[PDF Processor] PASS 2: Creating semantic chunks based on boundaries...');
@@ -277,16 +285,19 @@ Return JSON: {"summary": "...", "topic": "...", "shouldMergeWithNext": true/fals
       let mergedTopics: string[] = [chunkAnalyses[i].topic];
       
       // Calculate current chunk size
-      const currentEndPos = endIdx === rawChunks.length - 1 
+      let currentEndPos = endIdx === rawChunks.length - 1 
         ? fullText.length 
         : chunkStartPositions[endIdx + 1];
-      const currentLength = currentEndPos - startPos;
+      let currentLength = currentEndPos - startPos;
+      
+      console.log(`[PDF Processor] Processing semantic chunk starting at raw chunk ${startIdx + 1}`);
       
       // Keep merging while appropriate
       while (
         endIdx < rawChunks.length - 1 &&
         (chunkAnalyses[endIdx]?.shouldMergeWithNext || currentLength < 200) // Force merge if too small
       ) {
+        console.log(`  - Raw chunk ${endIdx + 1}: shouldMerge=${chunkAnalyses[endIdx]?.shouldMergeWithNext}, currentLength=${currentLength}`);
         // Check if merging would exceed max chunk size
         const nextEndPos = endIdx + 1 === rawChunks.length - 1 
           ? fullText.length 
@@ -295,15 +306,18 @@ Return JSON: {"summary": "...", "topic": "...", "shouldMergeWithNext": true/fals
         
         // Stop if merging would make chunk too large (unless current is too small)
         if (mergedLength > maxChunkSize * 1.2 && currentLength >= 200) {
+          console.log(`  - Stopping merge: would exceed size (${mergedLength} > ${maxChunkSize * 1.2})`);
           break;
         }
         endIdx++;
+        currentLength = mergedLength; // Update current length after merging
         if (chunkAnalyses[endIdx].summary) {
           mergedSummaries.push(chunkAnalyses[endIdx].summary);
         }
         if (chunkAnalyses[endIdx].topic && !mergedTopics.includes(chunkAnalyses[endIdx].topic)) {
           mergedTopics.push(chunkAnalyses[endIdx].topic);
         }
+        console.log(`  - Merged with chunk ${endIdx + 1}, new length: ${currentLength}`);
       }
       
       // Extract the semantic chunk from the full text
@@ -344,7 +358,13 @@ Return JSON: {"summary": "...", "topic": "...", "shouldMergeWithNext": true/fals
         
         semanticSummaries.push(combinedSummary);
         
-        console.log(`[PDF Processor] Created semantic chunk ${semanticChunks.length}: ${semanticChunkText.length} chars (merged ${endIdx - startIdx + 1} raw chunks)`);
+        console.log(`[PDF Processor] Created semantic chunk ${semanticChunks.length}:`);
+        console.log(`  - Length: ${semanticChunkText.length} chars`);
+        console.log(`  - Merged: ${endIdx - startIdx + 1} raw chunks (${startIdx + 1}-${endIdx + 1})`);
+        console.log(`  - Topic: ${mergedTopics[0]}`);
+        console.log(`  - First 50 chars: "${semanticChunkText.slice(0, 50)}..."`);
+        console.log(`  - Last 50 chars: "...${semanticChunkText.slice(-50)}"`);
+        console.log('');
       }
       
       // Move to next unprocessed chunk
