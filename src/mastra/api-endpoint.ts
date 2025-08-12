@@ -14,9 +14,11 @@ const AZURE_OPENAI_API_VERSION = process.env.AZURE_OPENAI_API_VERSION || '2023-1
 const EMBEDDINGS_DEPLOYMENT = 'text-embedding-ada-002';
 
 // Quick relevance check: Embed query and check if any documents are relevant
-async function checkDocumentRelevance(query: string, threshold: number = 0.75): Promise<{ hasRelevantDocs: boolean, bestScore: number, source?: string }> {
+async function checkDocumentRelevance(query: string, threshold: number = 0.85): Promise<{ hasRelevantDocs: boolean, bestScore: number, source?: string }> {
   try {
     console.log(`[Relevance Check] Checking if query is relevant to any documents...`);
+    console.log(`[Relevance Check] Query: "${query}"`);
+    console.log(`[Relevance Check] Threshold: ${threshold}`);
     
     // Generate embedding for the query
     const embeddingUrl = `${AZURE_OPENAI_ENDPOINT}/openai/deployments/${EMBEDDINGS_DEPLOYMENT}/embeddings?api-version=${AZURE_OPENAI_API_VERSION}`;
@@ -41,49 +43,65 @@ async function checkDocumentRelevance(query: string, threshold: number = 0.75): 
     const embeddingData: any = await embeddingResponse.json();
     const queryEmbedding = embeddingData.data[0].embedding;
     
-    // Query all indexes with topK=1 using Newman executor
-    console.log('[Relevance Check] Querying vectors with topK=1...');
+    // First, list all indexes to find document indexes (not queries)
+    console.log('[Relevance Check] Getting list of all indexes...');
+    const { listIndicesWithDetails } = await import('./lib/index-manager.js');
+    const allIndexes = await listIndicesWithDetails();
     
-    try {
-      // We need to query each index separately since queryVectorsWithNewman takes a single index
-      // For now, query the "queries" index which should have all user queries
-      const queryResult = await queryVectorsWithNewman('queries', queryEmbedding, 1);
-      
-      if (!queryResult || queryResult.length === 0) {
-        console.log('[Relevance Check] No results found');
-        return { hasRelevantDocs: false, bestScore: 0 };
-      }
-      
-      // Find the best score from results
-      let bestScore = 0;
-      let bestSource = '';
-      
-      for (const result of queryResult) {
-        // Distance is typically between 0 and 1, where lower is better
-        // Convert to similarity score (1 - distance)
-        const distance = result.distance || result._distance || 1;
-        const similarity = 1 - distance;
-        
-        if (similarity > bestScore) {
-          bestScore = similarity;
-          bestSource = result.key || result.docName || 'queries';
-        }
-      }
-      
-      console.log(`[Relevance Check] Best match from all indexes:`);
-      console.log(`  - Score: ${bestScore.toFixed(3)}`);
-      console.log(`  - Source: ${bestSource}`);
-      console.log(`  - Meets threshold (${threshold})?: ${bestScore >= threshold ? 'YES' : 'NO'}`);
-      
-      return {
-        hasRelevantDocs: bestScore >= threshold,
-        bestScore,
-        source: bestSource
-      };
-    } catch (queryError) {
-      console.error('[Relevance Check] Query error:', queryError);
+    // Filter to only document indexes (exclude 'queries' index)
+    const documentIndexes = allIndexes.filter((idx: any) => 
+      idx.name !== 'queries' && idx.name !== 'test'
+    );
+    
+    console.log(`[Relevance Check] Found ${documentIndexes.length} document indexes to search`);
+    
+    if (documentIndexes.length === 0) {
+      console.log('[Relevance Check] No document indexes found - routing to research');
       return { hasRelevantDocs: false, bestScore: 0 };
     }
+    
+    // Query each document index with topK=1 to find the best match
+    let bestScore = 0;
+    let bestSource = '';
+    
+    for (const index of documentIndexes) {
+      try {
+        console.log(`[Relevance Check] Querying index: ${index.name}`);
+        const queryResult = await queryVectorsWithNewman(index.name, queryEmbedding, 1);
+        
+        if (queryResult && queryResult.length > 0) {
+          for (const result of queryResult) {
+            // Distance is typically between 0 and 1, where lower is better
+            // Convert to similarity score (1 - distance)
+            const distance = result.distance || result._distance || 1;
+            const similarity = 1 - distance;
+            
+            console.log(`[Relevance Check]   - Index ${index.name}: distance=${distance.toFixed(4)}, similarity=${similarity.toFixed(4)}`);
+            
+            if (similarity > bestScore) {
+              bestScore = similarity;
+              bestSource = index.name;
+            }
+          }
+        }
+      } catch (queryError) {
+        console.log(`[Relevance Check] Error querying ${index.name}:`, queryError);
+        // Continue with other indexes
+      }
+    }
+    
+    console.log(`[Relevance Check] === FINAL RESULTS ===`);
+    console.log(`[Relevance Check] Best match across all indexes:`);
+    console.log(`[Relevance Check]   - Score: ${bestScore.toFixed(3)}`);
+    console.log(`[Relevance Check]   - Source: ${bestSource || 'none'}`);
+    console.log(`[Relevance Check]   - Threshold: ${threshold}`);
+    console.log(`[Relevance Check]   - Meets threshold?: ${bestScore >= threshold ? 'YES - USE FILE AGENT' : 'NO - USE RESEARCH AGENT'}`);
+    
+    return {
+      hasRelevantDocs: bestScore >= threshold,
+      bestScore,
+      source: bestSource
+    };
   } catch (error) {
     console.error('[Relevance Check] Error:', error);
     return { hasRelevantDocs: false, bestScore: 0 };
@@ -105,7 +123,7 @@ async function handleRequest(body: any) {
   if (agentId === 'assistantAgent' && !body.files) {  // Only for queries without file uploads
     console.log('[API Endpoint] Performing relevance check for smart routing...');
     
-    const relevanceCheck = await checkDocumentRelevance(body.message, 0.7); // 0.7 threshold
+    const relevanceCheck = await checkDocumentRelevance(body.message, 0.85); // 0.85 threshold to prevent false positives
     
     if (relevanceCheck.hasRelevantDocs) {
       console.log(`[API Endpoint] ✓ Found relevant documents (score: ${relevanceCheck.bestScore.toFixed(3)}) - routing to file agent`);
