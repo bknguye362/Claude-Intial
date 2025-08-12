@@ -163,7 +163,24 @@ async function generateLLMChunks(fullText: string, maxChunkSize: number = 1000):
             messages: [
               {
                 role: 'system',
-                content: `Analyze this text chunk and provide:\n1. A one-sentence summary\n2. The main topic\n3. Whether it should merge with the next chunk (only true if the chunk ends mid-sentence or mid-thought)\n\nBe conservative - only suggest merging if the chunk clearly cuts off in the middle of a thought.\nReturn JSON: {"summary": "...", "topic": "...", "shouldMergeWithNext": true/false}`
+                content: `Analyze this text chunk and provide:
+1. A one-sentence summary
+2. The main topic
+3. Whether it should merge with the next chunk
+
+MERGE GUIDELINES:
+Merge if (shouldMergeWithNext: true):
+- Section spillover: Content continues beyond this chunk without a clear end point
+- Context dependency: Meaning is incomplete (ends mid-sentence, mid-paragraph, or mid-enumeration)
+- Chunk too small: Less than 200 characters and needs more context
+
+Do NOT merge if (shouldMergeWithNext: false):
+- Clear topic break: Next chunk starts a new section/topic
+- Optimal size: Current chunk is 700-1000 chars and semantically complete
+- Independent sections: Next chunk references this one but can stand alone
+
+This chunk is ${chunk.length} chars. Be conservative with merging.
+Return JSON: {"summary": "...", "topic": "...", "shouldMergeWithNext": true/false}`
               },
               {
                 role: 'user',
@@ -213,10 +230,16 @@ async function generateLLMChunks(fullText: string, maxChunkSize: number = 1000):
       let mergedSummaries: string[] = [chunkAnalyses[i].summary].filter(s => s);
       let mergedTopics: string[] = [chunkAnalyses[i].topic];
       
-      // Keep merging while LLM suggests it and within size limits
+      // Calculate current chunk size
+      const currentEndPos = endIdx === rawChunks.length - 1 
+        ? fullText.length 
+        : chunkStartPositions[endIdx + 1];
+      const currentLength = currentEndPos - startPos;
+      
+      // Keep merging while appropriate
       while (
-        chunkAnalyses[endIdx]?.shouldMergeWithNext && 
-        endIdx < rawChunks.length - 1
+        endIdx < rawChunks.length - 1 &&
+        (chunkAnalyses[endIdx]?.shouldMergeWithNext || currentLength < 200) // Force merge if too small
       ) {
         // Check if merging would exceed max chunk size
         const nextEndPos = endIdx + 1 === rawChunks.length - 1 
@@ -224,8 +247,9 @@ async function generateLLMChunks(fullText: string, maxChunkSize: number = 1000):
           : chunkStartPositions[endIdx + 2];
         const mergedLength = nextEndPos - startPos;
         
-        if (mergedLength > maxChunkSize * 1.2) {  // Allow 20% overflow for semantic completeness
-          break;  // Stop merging if it would exceed size limit
+        // Stop if merging would make chunk too large (unless current is too small)
+        if (mergedLength > maxChunkSize * 1.2 && currentLength >= 200) {
+          break;
         }
         endIdx++;
         if (chunkAnalyses[endIdx].summary) {
