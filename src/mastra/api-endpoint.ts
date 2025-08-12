@@ -119,11 +119,73 @@ async function handleRequest(body: any) {
     return { error: 'Message is required' };
   }
   
-  // SMART ROUTING: Route assistant queries to file agent first
+  // SMART ROUTING: Use LLM to determine best agent for the query
   if (agentId === 'assistantAgent' && !body.files) {  // Only for queries without file uploads
-    console.log('[API Endpoint] Routing assistant query to file agent first...');
-    agentId = 'fileAgent';  // Always try file agent first
-    console.log(`[API Endpoint] ROUTING DECISION: Using ${agentId}`);
+    console.log('[API Endpoint] Using LLM-based smart routing...');
+    
+    try {
+      // Ask the LLM to analyze the query and determine routing
+      const routingPrompt = `Analyze this user query and determine which agent should handle it:
+
+Query: "${body.message}"
+
+Available agents:
+1. fileAgent - Use for questions about specific books, stories, or documents that the user has likely uploaded (e.g., Animal Farm, specific PDFs, documents with characters/plots)
+2. researchAgent - Use for current events, general knowledge, real-world people, news, or any information that requires web search
+
+Examples:
+- "Who is Snowball in Animal Farm?" → fileAgent (specific book character)
+- "What happens in chapter 3?" → fileAgent (referring to a document)
+- "Explain the ending" → fileAgent (likely about a document)
+- "Who is the current pope?" → researchAgent (current real-world info)
+- "What's the weather today?" → researchAgent (current info)
+- "Who is Napoleon?" → Could be either - if context suggests the book character use fileAgent, if historical figure use researchAgent
+
+Respond with ONLY one word: either "fileAgent" or "researchAgent"`;
+
+      const routingUrl = `${AZURE_OPENAI_ENDPOINT}/openai/deployments/gpt-4.1-test/chat/completions?api-version=${AZURE_OPENAI_API_VERSION}`;
+      
+      const routingResponse = await fetch(routingUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'api-key': AZURE_OPENAI_API_KEY
+        },
+        body: JSON.stringify({
+          messages: [
+            { role: 'system', content: 'You are a routing assistant. Analyze queries and respond with only "fileAgent" or "researchAgent".' },
+            { role: 'user', content: routingPrompt }
+          ],
+          temperature: 0.1,
+          max_tokens: 10
+        })
+      });
+
+      if (routingResponse.ok) {
+        const routingData: any = await routingResponse.json();
+        const decision = routingData.choices[0].message.content.trim().toLowerCase();
+        
+        console.log(`[API Endpoint] LLM routing analysis for: "${body.message}"`);
+        console.log(`[API Endpoint] LLM decision: ${decision}`);
+        
+        if (decision.includes('file')) {
+          agentId = 'fileAgent';
+          console.log(`[API Endpoint] → Routing to fileAgent (document-related query)`);
+        } else {
+          agentId = 'researchAgent';
+          console.log(`[API Endpoint] → Routing to researchAgent (general/current info query)`);
+        }
+      } else {
+        console.log('[API Endpoint] LLM routing failed, defaulting to fileAgent');
+        agentId = 'fileAgent';
+      }
+    } catch (error) {
+      console.error('[API Endpoint] Error in smart routing:', error);
+      // Default to fileAgent on error since most queries are document-related
+      agentId = 'fileAgent';
+    }
+    
+    console.log(`[API Endpoint] FINAL ROUTING DECISION: Using ${agentId}`);
   }
   
   const agent = mastra.getAgent(agentId);
