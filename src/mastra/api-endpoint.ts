@@ -2,19 +2,120 @@ import { mastra } from './index.js';
 // Using original line-based processor
 import { processPDF } from './lib/pdf-processor.js';
 // import { processSemanticPDF as processPDF } from './lib/pdf-processor-semantic.js';
+import { queryVectorsWithNewman } from './lib/newman-executor.js';
 
 // Simple HTTP server example for the assistant chatbot
 const PORT = 3000;
 
+// Azure OpenAI configuration for embeddings
+const AZURE_OPENAI_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT || 'https://franklin-open-ai-test.openai.azure.com';
+const AZURE_OPENAI_API_KEY = process.env.AZURE_OPENAI_API_KEY || process.env.AZURE_API_KEY || process.env.OPENAI_API_KEY || '';
+const AZURE_OPENAI_API_VERSION = process.env.AZURE_OPENAI_API_VERSION || '2023-12-01-preview';
+const EMBEDDINGS_DEPLOYMENT = 'text-embedding-ada-002';
+
+// Quick relevance check: Embed query and check if any documents are relevant
+async function checkDocumentRelevance(query: string, threshold: number = 0.75): Promise<{ hasRelevantDocs: boolean, bestScore: number, source?: string }> {
+  try {
+    console.log(`[Relevance Check] Checking if query is relevant to any documents...`);
+    
+    // Generate embedding for the query
+    const embeddingUrl = `${AZURE_OPENAI_ENDPOINT}/openai/deployments/${EMBEDDINGS_DEPLOYMENT}/embeddings?api-version=${AZURE_OPENAI_API_VERSION}`;
+    
+    const embeddingResponse = await fetch(embeddingUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'api-key': AZURE_OPENAI_API_KEY
+      },
+      body: JSON.stringify({
+        input: query.slice(0, 8000),
+        model: 'text-embedding-ada-002'
+      })
+    });
+
+    if (!embeddingResponse.ok) {
+      console.error('[Relevance Check] Failed to generate embedding');
+      return { hasRelevantDocs: false, bestScore: 0 };
+    }
+
+    const embeddingData: any = await embeddingResponse.json();
+    const queryEmbedding = embeddingData.data[0].embedding;
+    
+    // Query all indexes with topK=1 using Newman executor
+    console.log('[Relevance Check] Querying vectors with topK=1...');
+    
+    try {
+      // We need to query each index separately since queryVectorsWithNewman takes a single index
+      // For now, query the "queries" index which should have all user queries
+      const queryResult = await queryVectorsWithNewman('queries', queryEmbedding, 1);
+      
+      if (!queryResult || queryResult.length === 0) {
+        console.log('[Relevance Check] No results found');
+        return { hasRelevantDocs: false, bestScore: 0 };
+      }
+      
+      // Find the best score from results
+      let bestScore = 0;
+      let bestSource = '';
+      
+      for (const result of queryResult) {
+        // Distance is typically between 0 and 1, where lower is better
+        // Convert to similarity score (1 - distance)
+        const distance = result.distance || result._distance || 1;
+        const similarity = 1 - distance;
+        
+        if (similarity > bestScore) {
+          bestScore = similarity;
+          bestSource = result.key || result.docName || 'queries';
+        }
+      }
+      
+      console.log(`[Relevance Check] Best match from all indexes:`);
+      console.log(`  - Score: ${bestScore.toFixed(3)}`);
+      console.log(`  - Source: ${bestSource}`);
+      console.log(`  - Meets threshold (${threshold})?: ${bestScore >= threshold ? 'YES' : 'NO'}`);
+      
+      return {
+        hasRelevantDocs: bestScore >= threshold,
+        bestScore,
+        source: bestSource
+      };
+    } catch (queryError) {
+      console.error('[Relevance Check] Query error:', queryError);
+      return { hasRelevantDocs: false, bestScore: 0 };
+    }
+  } catch (error) {
+    console.error('[Relevance Check] Error:', error);
+    return { hasRelevantDocs: false, bestScore: 0 };
+  }
+}
+
 async function handleRequest(body: any) {
   // Use agentId from request body, default to assistantAgent
-  const agentId = body.agentId || 'assistantAgent';
+  let agentId = body.agentId || 'assistantAgent';
   console.log(`[API Endpoint] >>> Handling request for agent: ${agentId.toUpperCase()} <<<`);
   console.log(`[API Endpoint] Message: ${body.message}`);
   
   if (!body.message) {
     console.error('[API Endpoint] No message provided in request');
     return { error: 'Message is required' };
+  }
+  
+  // SMART ROUTING: Check document relevance for assistant agent queries
+  if (agentId === 'assistantAgent' && !body.files) {  // Only for queries without file uploads
+    console.log('[API Endpoint] Performing relevance check for smart routing...');
+    
+    const relevanceCheck = await checkDocumentRelevance(body.message, 0.7); // 0.7 threshold
+    
+    if (relevanceCheck.hasRelevantDocs) {
+      console.log(`[API Endpoint] ✓ Found relevant documents (score: ${relevanceCheck.bestScore.toFixed(3)}) - routing to file agent`);
+      agentId = 'fileAgent';  // Override to use file agent
+    } else {
+      console.log(`[API Endpoint] ✗ No relevant documents (best score: ${relevanceCheck.bestScore.toFixed(3)}) - routing to research agent`);
+      agentId = 'researchAgent';  // Override to use research agent
+    }
+    
+    console.log(`[API Endpoint] ROUTING DECISION: Using ${agentId}`);
   }
   
   const agent = mastra.getAgent(agentId);
