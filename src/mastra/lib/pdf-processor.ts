@@ -636,34 +636,27 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
       fileType: isPDF ? 'PDF' : 'TXT'
     };
     
-    // Choose chunking strategy based on environment variable
-    const useLLMChunking = process.env.USE_LLM_CHUNKING === 'true';
+    // Always use LLM-based chunking for intelligent semantic boundaries
     console.log(`[PDF Processor] Text length: ${pdfData.text.length} characters`);
     
     let textChunks: string[];
     let chunkSummaries: string[] = [];
     let dynamicChunks: any[] = [];
     
-    if (useLLMChunking) {
-      console.log(`[PDF Processor] Using LLM-based semantic chunking...`);
-      const llmResult = await generateLLMChunks(pdfData.text, chunkSize);
-      textChunks = llmResult.chunks;
-      chunkSummaries = llmResult.summaries;
-      
-      // Create compatible dynamic chunks structure for metadata
-      dynamicChunks = textChunks.map((chunk, i) => ({
-        content: chunk,
-        metadata: {
-          isHeader: false,
-          paragraphCount: chunk.split('\n\n').length,
-          summary: chunkSummaries[i]
-        }
-      }));
-    } else {
-      console.log(`[PDF Processor] Using dynamic paragraph-aware chunking...`);
-      dynamicChunks = dynamicChunk(pdfData.text, chunkSize, 100); // 100 char overlap
-      textChunks = convertToProcessorChunks(dynamicChunks);
-    }
+    console.log(`[PDF Processor] Using LLM-based semantic chunking...`);
+    const llmResult = await generateLLMChunks(pdfData.text, chunkSize);
+    textChunks = llmResult.chunks;
+    chunkSummaries = llmResult.summaries;
+    
+    // Create compatible dynamic chunks structure for metadata
+    dynamicChunks = textChunks.map((chunk, i) => ({
+      content: chunk,
+      metadata: {
+        isHeader: false,
+        paragraphCount: chunk.split('\n\n').length,
+        summary: chunkSummaries[i]
+      }
+    }));
     
     console.log(`[PDF Processor] Split into ${textChunks.length} chunks`);
     console.log(`[PDF Processor] Chunk distribution:`);
