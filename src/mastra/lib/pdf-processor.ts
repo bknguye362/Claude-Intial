@@ -121,18 +121,62 @@ async function generateLLMChunks(fullText: string, maxChunkSize: number = 1000):
   try {
     const url = `${AZURE_OPENAI_ENDPOINT}/openai/deployments/${LLM_DEPLOYMENT}/chat/completions?api-version=${AZURE_OPENAI_API_VERSION}`;
     
-    // First, create overview chunks for the LLM to analyze
-    const overviewChunkSize = 3000;
-    const overviewChunks: string[] = [];
-    for (let i = 0; i < fullText.length; i += overviewChunkSize) {
-      overviewChunks.push(fullText.slice(i, i + overviewChunkSize));
+    // Step 1: First create initial chunks to feed to the LLM
+    console.log('[PDF Processor] Step 1: Creating initial chunks for LLM analysis...');
+    const initialChunks: string[] = [];
+    for (let i = 0; i < fullText.length; i += maxChunkSize) {
+      initialChunks.push(fullText.slice(i, i + maxChunkSize));
+    }
+    console.log(`[PDF Processor] Created ${initialChunks.length} initial chunks of ~${maxChunkSize} chars each`);
+    
+    // Step 2: Feed ALL chunks to LLM for analysis
+    console.log('[PDF Processor] Step 2: Feeding all chunks to LLM for document analysis...');
+    const chunkMessages: string[] = [];
+    
+    // Process chunks in batches to avoid token limits
+    const batchSize = 10; // Process 10 chunks at a time
+    for (let i = 0; i < initialChunks.length; i += batchSize) {
+      const batch = initialChunks.slice(i, Math.min(i + batchSize, initialChunks.length));
+      const batchMessage = batch.map((chunk, idx) => 
+        `CHUNK ${i + idx + 1}: ${chunk.slice(0, 200)}...`
+      ).join('\n\n');
+      
+      console.log(`[PDF Processor] Processing batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(initialChunks.length/batchSize)}`);
+      
+      const analysisResponse = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'api-key': AZURE_OPENAI_API_KEY
+        },
+        body: JSON.stringify({
+          messages: [
+            {
+              role: 'system',
+              content: 'You are analyzing a document in chunks. Identify the main topics, themes, and natural section boundaries in these chunks.'
+            },
+            {
+              role: 'user',
+              content: `Analyze these document chunks and note their topics:\n\n${batchMessage}`
+            }
+          ],
+          max_tokens: 300,
+          temperature: 0.3
+        })
+      });
+      
+      if (analysisResponse.ok) {
+        const analysisData: any = await analysisResponse.json();
+        chunkMessages.push(analysisData.choices[0].message.content);
+      }
+      
+      // Rate limiting
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
     
-    console.log(`[PDF Processor] Created ${overviewChunks.length} overview chunks for LLM analysis`);
-    
-    // Step 1: Analyze document structure with LLM
-    console.log('[PDF Processor] Step 1: Analyzing document structure with LLM...');
-    const structureResponse = await fetch(url, {
+    // Step 3: Get chunking guidelines from LLM based on full document analysis
+    console.log('[PDF Processor] Step 3: Getting chunking guidelines from LLM...');
+    const guidelinesResponse = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -142,11 +186,11 @@ async function generateLLMChunks(fullText: string, maxChunkSize: number = 1000):
         messages: [
           {
             role: 'system',
-            content: 'You are an expert at analyzing document structure. Identify the main sections, topics, and natural breaking points in this document. Provide a brief structural overview.'
+            content: `Based on the document analysis, provide specific chunking guidelines. The document has ${initialChunks.length} initial chunks of ${maxChunkSize} chars each. Suggest how to better organize these into semantic chunks while keeping each chunk under ${maxChunkSize} characters.`
           },
           {
             role: 'user',
-            content: `Analyze the structure of this document and identify natural section boundaries. Here are samples from different parts:\n\nBEGINNING:\n${overviewChunks[0]?.slice(0, 1000) || ''}\n\nMIDDLE:\n${overviewChunks[Math.floor(overviewChunks.length/2)]?.slice(0, 1000) || ''}\n\nEND:\n${overviewChunks[overviewChunks.length-1]?.slice(0, 1000) || ''}`
+            content: `Document analysis from all chunks:\n\n${chunkMessages.join('\n\n---\n\n')}\n\nProvide chunking guidelines: Which chunks should be combined or split? What are the natural boundaries?`
           }
         ],
         max_tokens: 500,
@@ -154,109 +198,137 @@ async function generateLLMChunks(fullText: string, maxChunkSize: number = 1000):
       })
     });
 
-    let structure = 'Document appears to be continuous text.';
-    if (structureResponse.ok) {
-      const structureData: any = await structureResponse.json();
-      structure = structureData.choices[0].message.content;
-      console.log('[PDF Processor] Document structure analysis:', structure.slice(0, 200) + '...');
+    let guidelines = 'Use natural paragraph boundaries.';
+    if (guidelinesResponse.ok) {
+      const guidelinesData: any = await guidelinesResponse.json();
+      guidelines = guidelinesData.choices[0].message.content;
+      console.log('[PDF Processor] Chunking guidelines:', guidelines.slice(0, 300) + '...');
     }
     
-    // Step 2: Create semantic chunks based on the structure
-    console.log('[PDF Processor] Step 2: Creating semantic chunks...');
+    // Step 4: Create semantic chunks based on the guidelines
+    console.log('[PDF Processor] Step 4: Creating semantic chunks based on LLM guidelines...');
     const chunks: string[] = [];
     const summaries: string[] = [];
-    let currentPos = 0;
     
-    while (currentPos < fullText.length) {
-      // Get a segment to analyze (2x max chunk size to find best break point)
-      const segment = fullText.slice(currentPos, currentPos + maxChunkSize * 2);
+    // Ask LLM to create the final chunks based on its analysis
+    console.log('[PDF Processor] Asking LLM to define chunk boundaries...');
+    const chunkingResponse = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'api-key': AZURE_OPENAI_API_KEY
+      },
+      body: JSON.stringify({
+        messages: [
+          {
+            role: 'system',
+            content: `Based on your analysis and guidelines, provide a list of chunk boundaries. Each chunk should be ${maxChunkSize} characters or less. Return a JSON array of objects with 'start' and 'end' indices, like: [{"start": 0, "end": 950, "topic": "Introduction"}, ...]`
+          },
+          {
+            role: 'user',
+            content: `Document length: ${fullText.length} chars\nInitial chunks: ${initialChunks.length}\nGuidelines: ${guidelines}\n\nProvide optimal chunk boundaries as JSON.`
+          }
+        ],
+        max_tokens: 1000,
+        temperature: 0
+      })
+    });
+    
+    let chunkBoundaries: Array<{start: number, end: number, topic?: string}> = [];
+    
+    if (chunkingResponse.ok) {
+      const chunkingData: any = await chunkingResponse.json();
+      const response = chunkingData.choices[0].message.content;
       
-      if (segment.length <= maxChunkSize) {
-        // Last chunk
-        chunks.push(segment);
-        summaries.push('');
-        break;
-      }
-      
-      // Ask LLM to find the best breaking point
-      const chunkResponse = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'api-key': AZURE_OPENAI_API_KEY
-        },
-        body: JSON.stringify({
-          messages: [
-            {
-              role: 'system',
-              content: `You are creating semantic chunks from a document. The chunk should be between ${maxChunkSize * 0.7} and ${maxChunkSize} characters. Find the best natural breaking point (end of sentence, paragraph, or section).`
-            },
-            {
-              role: 'user',
-              content: `Find the best breaking point in this text segment. Return ONLY a number indicating the character position (between ${maxChunkSize * 0.7} and ${maxChunkSize}):\n\n${segment.slice(0, maxChunkSize + 500)}`
-            }
-          ],
-          max_tokens: 50,
-          temperature: 0
-        })
-      });
-      
-      let breakPoint = maxChunkSize;
-      if (chunkResponse.ok) {
-        const chunkData: any = await chunkResponse.json();
-        const response = chunkData.choices[0].message.content;
-        const position = parseInt(response.match(/\d+/)?.[0] || String(maxChunkSize));
-        if (!isNaN(position) && position > 0 && position <= maxChunkSize) {
-          breakPoint = position;
+      // Try to parse JSON from response
+      try {
+        const jsonMatch = response.match(/\[[\s\S]*\]/);
+        if (jsonMatch) {
+          chunkBoundaries = JSON.parse(jsonMatch[0]);
+          console.log(`[PDF Processor] LLM provided ${chunkBoundaries.length} chunk boundaries`);
         }
+      } catch (e) {
+        console.log('[PDF Processor] Could not parse LLM chunk boundaries, using fallback');
       }
+    }
+    
+    // If LLM didn't provide valid boundaries, create them based on natural breaks
+    if (chunkBoundaries.length === 0) {
+      console.log('[PDF Processor] Creating chunks based on natural boundaries...');
+      let currentPos = 0;
       
-      // Find the nearest sentence end after the break point
-      const chunk = segment.slice(0, breakPoint);
-      const lastPeriod = chunk.lastIndexOf('.');
-      const lastNewline = chunk.lastIndexOf('\n');
-      const actualBreak = Math.max(lastPeriod + 1, lastNewline + 1, breakPoint * 0.7);
-      
-      const finalChunk = segment.slice(0, actualBreak).trim();
-      chunks.push(finalChunk);
-      
-      // Generate a summary for this chunk
-      const summaryResponse = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'api-key': AZURE_OPENAI_API_KEY
-        },
-        body: JSON.stringify({
-          messages: [
-            {
-              role: 'system',
-              content: 'Provide a one-sentence summary of this text chunk.'
-            },
-            {
-              role: 'user',
-              content: finalChunk.slice(0, 1500)
+      while (currentPos < fullText.length) {
+        // Look for natural break points
+        let endPos = Math.min(currentPos + maxChunkSize, fullText.length);
+        
+        // If not at the end, find a good break point
+        if (endPos < fullText.length) {
+          const segment = fullText.slice(currentPos, endPos);
+          
+          // Try to find paragraph break
+          const lastDoubleNewline = segment.lastIndexOf('\n\n');
+          if (lastDoubleNewline > maxChunkSize * 0.5) {
+            endPos = currentPos + lastDoubleNewline;
+          } else {
+            // Try to find sentence break
+            const lastPeriod = segment.lastIndexOf('. ');
+            if (lastPeriod > maxChunkSize * 0.5) {
+              endPos = currentPos + lastPeriod + 1;
             }
-          ],
-          max_tokens: 100,
-          temperature: 0.3
-        })
-      });
-      
-      if (summaryResponse.ok) {
-        const summaryData: any = await summaryResponse.json();
-        summaries.push(summaryData.choices[0].message.content);
-      } else {
-        summaries.push('');
+          }
+        }
+        
+        chunkBoundaries.push({
+          start: currentPos,
+          end: endPos,
+          topic: `Section ${chunkBoundaries.length + 1}`
+        });
+        
+        currentPos = endPos;
       }
-      
-      currentPos += actualBreak;
-      
-      // Rate limiting
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      if (chunks.length % 5 === 0) {
-        console.log(`[PDF Processor] Created ${chunks.length} chunks so far...`);
+    }
+    
+    // Create chunks from boundaries
+    for (const boundary of chunkBoundaries) {
+      const chunkText = fullText.slice(boundary.start, boundary.end).trim();
+      if (chunkText.length > 0) {
+        chunks.push(chunkText);
+        
+        // Generate summary for this chunk
+        const summaryResponse = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'api-key': AZURE_OPENAI_API_KEY
+          },
+          body: JSON.stringify({
+            messages: [
+              {
+                role: 'system',
+                content: 'Provide a one-sentence summary of this text chunk.'
+              },
+              {
+                role: 'user',
+                content: `${boundary.topic ? `Topic: ${boundary.topic}\n` : ''}Text: ${chunkText.slice(0, 1500)}`
+              }
+            ],
+            max_tokens: 100,
+            temperature: 0.3
+          })
+        });
+        
+        if (summaryResponse.ok) {
+          const summaryData: any = await summaryResponse.json();
+          summaries.push(summaryData.choices[0].message.content);
+        } else {
+          summaries.push(boundary.topic || '');
+        }
+        
+        // Rate limiting
+        if (chunks.length % 10 === 0) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          console.log(`[PDF Processor] Created ${chunks.length} chunks so far...`);
+        }
       }
     }
     
