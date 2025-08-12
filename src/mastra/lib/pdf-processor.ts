@@ -120,7 +120,7 @@ async function generateLLMChunks(fullText: string, maxChunkSize: number = 1000):
   try {
     const url = `${AZURE_OPENAI_ENDPOINT}/openai/deployments/${LLM_DEPLOYMENT}/chat/completions?api-version=${AZURE_OPENAI_API_VERSION}`;
     
-    // PASS 1: Create raw chunks at word boundaries
+    // PASS 1: Create raw chunks at sentence boundaries
     console.log('[PDF Processor] PASS 1: Creating raw chunks for analysis...');
     const rawChunks: string[] = [];
     const chunkStartPositions: number[] = [];
@@ -129,21 +129,53 @@ async function generateLLMChunks(fullText: string, maxChunkSize: number = 1000):
     while (currentPos < fullText.length) {
       let endPos = Math.min(currentPos + maxChunkSize, fullText.length);
       
-      // Adjust to word boundary if not at the end
+      // Adjust to sentence boundary if not at the end
       if (endPos < fullText.length) {
-        // Look for last space before the cut point
         const chunk = fullText.slice(currentPos, endPos);
-        const lastSpace = chunk.lastIndexOf(' ');
-        if (lastSpace > maxChunkSize * 0.8) { // If we have a space in the last 20%
-          endPos = currentPos + lastSpace;
+        
+        // Look for sentence endings (. ! ?) in the last part of the chunk
+        let bestBreak = -1;
+        
+        // Search for sentence endings in reverse order (prefer later sentences)
+        const sentenceEndings = ['. ', '.\n', '! ', '!\n', '? ', '?\n', '."', '!"', '?"'];
+        for (const ending of sentenceEndings) {
+          const lastIndex = chunk.lastIndexOf(ending);
+          if (lastIndex > maxChunkSize * 0.5) { // Found in last half of chunk
+            bestBreak = Math.max(bestBreak, lastIndex + ending.length - (ending.includes('\n') ? 1 : 0));
+          }
+        }
+        
+        // If no sentence break found, try paragraph break
+        if (bestBreak === -1) {
+          const lastParagraph = chunk.lastIndexOf('\n\n');
+          if (lastParagraph > maxChunkSize * 0.5) {
+            bestBreak = lastParagraph + 2;
+          }
+        }
+        
+        // If still no break, fall back to word boundary
+        if (bestBreak === -1) {
+          const lastSpace = chunk.lastIndexOf(' ');
+          if (lastSpace > maxChunkSize * 0.7) {
+            bestBreak = lastSpace;
+          }
+        }
+        
+        if (bestBreak > 0) {
+          endPos = currentPos + bestBreak;
         }
       }
       
-      rawChunks.push(fullText.slice(currentPos, endPos));
+      rawChunks.push(fullText.slice(currentPos, endPos).trim());
       chunkStartPositions.push(currentPos);
       currentPos = endPos;
+      
+      // Skip whitespace at the start of next chunk
+      while (currentPos < fullText.length && /\s/.test(fullText[currentPos])) {
+        currentPos++;
+      }
     }
-    console.log(`[PDF Processor] Created ${rawChunks.length} raw chunks at word boundaries`);
+    console.log(`[PDF Processor] Created ${rawChunks.length} raw chunks at sentence boundaries`);
     
     // Analyze each chunk for summaries and boundary suggestions
     console.log('[PDF Processor] Analyzing chunks for summaries and boundaries...');
@@ -279,12 +311,24 @@ Return JSON: {"summary": "...", "topic": "...", "shouldMergeWithNext": true/fals
         ? fullText.length 
         : chunkStartPositions[endIdx + 1];
       
-      // Ensure we don't cut words at the end
-      if (endPos < fullText.length && fullText[endPos - 1] !== ' ') {
-        // Find the next space after the position
-        const nextSpace = fullText.indexOf(' ', endPos);
-        if (nextSpace !== -1 && nextSpace - endPos < 20) { // Allow up to 20 chars to complete word
-          endPos = nextSpace;
+      // Ensure we end at a sentence boundary if possible
+      if (endPos < fullText.length) {
+        const remainder = fullText.slice(endPos, Math.min(endPos + 100, fullText.length));
+        
+        // Check if we're mid-sentence and find the next sentence ending
+        const sentenceEndings = ['. ', '.\n', '! ', '!\n', '? ', '?\n', '."', '!"', '?"'];
+        let nearestEnd = -1;
+        
+        for (const ending of sentenceEndings) {
+          const idx = remainder.indexOf(ending);
+          if (idx !== -1 && (nearestEnd === -1 || idx < nearestEnd)) {
+            nearestEnd = idx + ending.length - (ending.includes('\n') ? 1 : 0);
+          }
+        }
+        
+        // Extend to complete the sentence if it's reasonably close
+        if (nearestEnd > 0 && nearestEnd < 100) {
+          endPos += nearestEnd;
         }
       }
       
