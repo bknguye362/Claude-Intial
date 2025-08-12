@@ -163,7 +163,7 @@ async function generateLLMChunks(fullText: string, maxChunkSize: number = 1000):
             messages: [
               {
                 role: 'system',
-                content: `Analyze this text chunk and provide:\n1. A one-sentence summary\n2. The main topic\n3. Whether it should merge with the next chunk (true if content continues)\n\nReturn JSON: {"summary": "...", "topic": "...", "shouldMergeWithNext": true/false}`
+                content: `Analyze this text chunk and provide:\n1. A one-sentence summary\n2. The main topic\n3. Whether it should merge with the next chunk (only true if the chunk ends mid-sentence or mid-thought)\n\nBe conservative - only suggest merging if the chunk clearly cuts off in the middle of a thought.\nReturn JSON: {"summary": "...", "topic": "...", "shouldMergeWithNext": true/false}`
               },
               {
                 role: 'user',
@@ -213,12 +213,20 @@ async function generateLLMChunks(fullText: string, maxChunkSize: number = 1000):
       let mergedSummaries: string[] = [chunkAnalyses[i].summary].filter(s => s);
       let mergedTopics: string[] = [chunkAnalyses[i].topic];
       
-      // Keep merging while LLM suggests it and within reasonable limits
+      // Keep merging while LLM suggests it and within size limits
       while (
         chunkAnalyses[endIdx]?.shouldMergeWithNext && 
-        endIdx < rawChunks.length - 1 &&
-        endIdx - startIdx < 2  // Max merge 3 raw chunks
+        endIdx < rawChunks.length - 1
       ) {
+        // Check if merging would exceed max chunk size
+        const nextEndPos = endIdx + 1 === rawChunks.length - 1 
+          ? fullText.length 
+          : chunkStartPositions[endIdx + 2];
+        const mergedLength = nextEndPos - startPos;
+        
+        if (mergedLength > maxChunkSize * 1.2) {  // Allow 20% overflow for semantic completeness
+          break;  // Stop merging if it would exceed size limit
+        }
         endIdx++;
         if (chunkAnalyses[endIdx].summary) {
           mergedSummaries.push(chunkAnalyses[endIdx].summary);
