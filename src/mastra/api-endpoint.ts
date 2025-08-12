@@ -119,20 +119,10 @@ async function handleRequest(body: any) {
     return { error: 'Message is required' };
   }
   
-  // SMART ROUTING: Check document relevance for assistant agent queries
+  // SMART ROUTING: Route assistant queries to file agent first
   if (agentId === 'assistantAgent' && !body.files) {  // Only for queries without file uploads
-    console.log('[API Endpoint] Performing relevance check for smart routing...');
-    
-    const relevanceCheck = await checkDocumentRelevance(body.message, 0.85); // 0.85 threshold to prevent false positives
-    
-    if (relevanceCheck.hasRelevantDocs) {
-      console.log(`[API Endpoint] ✓ Found relevant documents (score: ${relevanceCheck.bestScore.toFixed(3)}) - routing to file agent`);
-      agentId = 'fileAgent';  // Override to use file agent
-    } else {
-      console.log(`[API Endpoint] ✗ No relevant documents (best score: ${relevanceCheck.bestScore.toFixed(3)}) - routing to research agent`);
-      agentId = 'researchAgent';  // Override to use research agent
-    }
-    
+    console.log('[API Endpoint] Routing assistant query to file agent first...');
+    agentId = 'fileAgent';  // Always try file agent first
     console.log(`[API Endpoint] ROUTING DECISION: Using ${agentId}`);
   }
   
