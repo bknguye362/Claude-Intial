@@ -120,16 +120,30 @@ async function generateLLMChunks(fullText: string, maxChunkSize: number = 1000):
   try {
     const url = `${AZURE_OPENAI_ENDPOINT}/openai/deployments/${LLM_DEPLOYMENT}/chat/completions?api-version=${AZURE_OPENAI_API_VERSION}`;
     
-    // PASS 1: Create raw chunks and analyze each for summaries and boundaries
+    // PASS 1: Create raw chunks at word boundaries
     console.log('[PDF Processor] PASS 1: Creating raw chunks for analysis...');
     const rawChunks: string[] = [];
     const chunkStartPositions: number[] = [];
     
-    for (let i = 0; i < fullText.length; i += maxChunkSize) {
-      rawChunks.push(fullText.slice(i, Math.min(i + maxChunkSize, fullText.length)));
-      chunkStartPositions.push(i);
+    let currentPos = 0;
+    while (currentPos < fullText.length) {
+      let endPos = Math.min(currentPos + maxChunkSize, fullText.length);
+      
+      // Adjust to word boundary if not at the end
+      if (endPos < fullText.length) {
+        // Look for last space before the cut point
+        const chunk = fullText.slice(currentPos, endPos);
+        const lastSpace = chunk.lastIndexOf(' ');
+        if (lastSpace > maxChunkSize * 0.8) { // If we have a space in the last 20%
+          endPos = currentPos + lastSpace;
+        }
+      }
+      
+      rawChunks.push(fullText.slice(currentPos, endPos));
+      chunkStartPositions.push(currentPos);
+      currentPos = endPos;
     }
-    console.log(`[PDF Processor] Created ${rawChunks.length} raw chunks of ~${maxChunkSize} chars each`);
+    console.log(`[PDF Processor] Created ${rawChunks.length} raw chunks at word boundaries`);
     
     // Analyze each chunk for summaries and boundary suggestions
     console.log('[PDF Processor] Analyzing chunks for summaries and boundaries...');
@@ -261,9 +275,18 @@ Return JSON: {"summary": "...", "topic": "...", "shouldMergeWithNext": true/fals
       }
       
       // Extract the semantic chunk from the full text
-      const endPos = endIdx === rawChunks.length - 1 
+      let endPos = endIdx === rawChunks.length - 1 
         ? fullText.length 
         : chunkStartPositions[endIdx + 1];
+      
+      // Ensure we don't cut words at the end
+      if (endPos < fullText.length && fullText[endPos - 1] !== ' ') {
+        // Find the next space after the position
+        const nextSpace = fullText.indexOf(' ', endPos);
+        if (nextSpace !== -1 && nextSpace - endPos < 20) { // Allow up to 20 chars to complete word
+          endPos = nextSpace;
+        }
+      }
       
       const semanticChunkText = fullText.slice(startPos, endPos).trim();
       
