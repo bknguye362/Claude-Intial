@@ -112,7 +112,55 @@ async function sendMessage() {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
         
-        const data = await response.json();
+        // Check if response is Server-Sent Events
+        const contentType = response.headers.get('content-type');
+        let data;
+        
+        if (contentType && contentType.includes('text/event-stream')) {
+            // Handle SSE response
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
+                
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const dataStr = line.slice(6);
+                        if (dataStr === '[DONE]') {
+                            break;
+                        }
+                        
+                        try {
+                            const event = JSON.parse(dataStr);
+                            
+                            if (event.status === 'processing') {
+                                // Update typing indicator with status
+                                const typingEl = document.querySelector('.typing-indicator');
+                                if (typingEl) {
+                                    typingEl.textContent = event.message;
+                                }
+                            } else if (event.status === 'complete') {
+                                data = event.result;
+                            } else if (event.status === 'error') {
+                                throw new Error(event.details || 'Processing failed');
+                            }
+                        } catch (e) {
+                            console.error('Error parsing SSE:', e);
+                        }
+                    }
+                }
+            }
+        } else {
+            // Regular JSON response
+            data = await response.json();
+        }
         console.log('[Client] Response received:', data);
         
         // Display agent communication logs if present

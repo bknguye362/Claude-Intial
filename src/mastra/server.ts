@@ -256,25 +256,71 @@ const server = createServer(async (req, res) => {
       console.log('[Server] With uploaded files:', uploadedFiles.map(f => f.originalName));
     }
     
-    // Use a simple approach: just process and send response
-    // The Newman operations are the slow part, not the response sending
-    const result = await handleRequest(requestData);
+    // Use Server-Sent Events to keep connection alive during Newman operations
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*',
+      'X-Accel-Buffering': 'no'
+    });
     
-    // Log response details
-    const responseContent = result?.choices?.[0]?.message?.content || '';
-    if (responseContent.length > 200) {
-      console.log('[Server] Response length:', responseContent.length, 'characters');
-      console.log('[Server] Result preview:', JSON.stringify(result).substring(0, 200) + '...');
-    } else {
-      console.log('[Server] Result from handleRequest:', JSON.stringify(result));
+    // Send initial event
+    res.write('data: {"status":"processing","message":"Starting to process your request..."}\n\n');
+    
+    // Keep connection alive with periodic messages
+    const messages = [
+      'Searching through documents...',
+      'Running vector similarity search...',
+      'Analyzing relevant content...',
+      'Preparing response...',
+      'Still working on your request...'
+    ];
+    let messageIndex = 0;
+    
+    const keepAliveInterval = setInterval(() => {
+      const message = messages[messageIndex % messages.length];
+      res.write(`data: {"status":"processing","message":"${message}"}\n\n`);
+      messageIndex++;
+      console.log(`[Server] Sent keepalive: ${message}`);
+    }, 8000); // Every 8 seconds
+    
+    try {
+      // Process the request
+      const result = await handleRequest(requestData);
+      
+      // Stop keepalive messages
+      clearInterval(keepAliveInterval);
+      
+      // Log response details
+      const responseContent = result?.choices?.[0]?.message?.content || '';
+      if (responseContent.length > 200) {
+        console.log('[Server] Response length:', responseContent.length, 'characters');
+        console.log('[Server] Result preview:', JSON.stringify(result).substring(0, 200) + '...');
+      } else {
+        console.log('[Server] Result from handleRequest:', JSON.stringify(result));
+      }
+      
+      // Send final result
+      console.log('[Server] Sending final response...');
+      res.write(`data: {"status":"complete","result":${JSON.stringify(result)}}\n\n`);
+      res.write('data: [DONE]\n\n');
+      res.end();
+      console.log('[Server] Response sent successfully');
+    } catch (error) {
+      clearInterval(keepAliveInterval);
+      console.error('[Server] Error processing request:', error);
+      
+      const errorResponse = {
+        status: 'error',
+        error: 'Processing failed',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      };
+      
+      res.write(`data: ${JSON.stringify(errorResponse)}\n\n`);
+      res.write('data: [DONE]\n\n');
+      res.end();
     }
-    
-    console.log('[Server] About to send response...');
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    const responseData = JSON.stringify(result);
-    console.log('[Server] Response data length:', responseData.length);
-    res.end(responseData);
-    console.log('[Server] Response sent successfully');
   } catch (error) {
     console.error('Error processing request:', error);
     res.writeHead(500, { 'Content-Type': 'application/json' });
