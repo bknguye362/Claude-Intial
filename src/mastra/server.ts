@@ -267,8 +267,12 @@ const server = createServer(async (req, res) => {
       console.log('[Server] Result from handleRequest:', JSON.stringify(result));
     }
     
+    console.log('[Server] About to send response...');
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(result));
+    const responseData = JSON.stringify(result);
+    console.log('[Server] Response data length:', responseData.length);
+    res.end(responseData);
+    console.log('[Server] Response sent successfully');
   } catch (error) {
     console.error('Error processing request:', error);
     res.writeHead(500, { 'Content-Type': 'application/json' });
