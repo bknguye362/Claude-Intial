@@ -256,7 +256,32 @@ const server = createServer(async (req, res) => {
       console.log('[Server] With uploaded files:', uploadedFiles.map(f => f.originalName));
     }
     
-    const result = await handleRequest(requestData);
+    // Process the request but send response quickly to avoid timeout
+    // Use a promise with timeout fallback
+    const timeoutPromise = new Promise((resolve) => {
+      setTimeout(() => {
+        console.log('[Server] Request taking too long, sending partial response...');
+        resolve({
+          choices: [{
+            message: {
+              role: 'assistant',
+              content: 'Processing is taking longer than expected. The request is still being processed. Please try again in a moment if you don\'t receive a full response.'
+            },
+            finish_reason: 'timeout',
+            index: 0
+          }],
+          model: 'gpt-4.1-test',
+          timestamp: new Date().toISOString(),
+          timeout: true
+        });
+      }, 25000); // 25 seconds (before Heroku's 30 second timeout)
+    });
+    
+    // Race between actual processing and timeout
+    const result = await Promise.race([
+      handleRequest(requestData),
+      timeoutPromise
+    ]);
     
     // Log response details
     const responseContent = result?.choices?.[0]?.message?.content || '';
