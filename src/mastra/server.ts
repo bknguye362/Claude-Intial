@@ -278,7 +278,7 @@ const server = createServer(async (req, res) => {
     });
     
     // Race between actual processing and timeout
-    const result = await Promise.race([
+    const result: any = await Promise.race([
       handleRequest(requestData),
       timeoutPromise
     ]);
