@@ -428,8 +428,8 @@ Respond with ONLY one word: either "fileAgent" or "researchAgent"`;
         completion_tokens: response.length, // Approximate
         total_tokens: body.message.length + response.length
       },
-      // Include agent communication logs
-      agentLogs: requestLogs
+      // Include agent communication logs (limited to reduce response size)
+      agentLogs: requestLogs.slice(0, 10) // Limit to 10 logs to reduce response size
     };
     
     console.log('[API Endpoint] Returning response format:', JSON.stringify(result).substring(0, 200) + '...');
