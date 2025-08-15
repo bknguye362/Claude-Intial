@@ -119,76 +119,16 @@ async function handleRequest(body: any) {
     return { error: 'Message is required' };
   }
   
-  // SMART ROUTING: Use LLM to determine best agent for the query
+  // TWO-STEP ROUTING: Always try fileAgent first, then fallback to research if no docs found
+  let shouldTryResearch = false;
   if (agentId === 'assistantAgent' && !body.files) {  // Only for queries without file uploads
-    console.log('[API Endpoint] Using LLM-based smart routing...');
-    
-    try {
-      // Ask the LLM to analyze the query and determine routing
-      const routingPrompt = `Analyze this user query and determine which agent should handle it:
-
-Query: "${body.message}"
-
-Available agents:
-1. fileAgent - Use for questions about specific books, stories, or documents that the user has likely uploaded (e.g., Animal Farm, specific PDFs, documents with characters/plots)
-2. researchAgent - Use for current events, general knowledge, real-world people, news, or any information that requires web search
-
-Examples:
-- "Who is Snowball in Animal Farm?" → fileAgent (specific book character)
-- "What happens in chapter 3?" → fileAgent (referring to a document)
-- "Explain the ending" → fileAgent (likely about a document)
-- "Who is the current pope?" → researchAgent (current real-world info)
-- "What's the weather today?" → researchAgent (current info)
-- "Who is Napoleon?" → Could be either - if context suggests the book character use fileAgent, if historical figure use researchAgent
-
-Respond with ONLY one word: either "fileAgent" or "researchAgent"`;
-
-      const routingUrl = `${AZURE_OPENAI_ENDPOINT}/openai/deployments/gpt-4.1-test/chat/completions?api-version=${AZURE_OPENAI_API_VERSION}`;
-      
-      const routingResponse = await fetch(routingUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'api-key': AZURE_OPENAI_API_KEY
-        },
-        body: JSON.stringify({
-          messages: [
-            { role: 'system', content: 'You are a routing assistant. Analyze queries and respond with only "fileAgent" or "researchAgent".' },
-            { role: 'user', content: routingPrompt }
-          ],
-          temperature: 0.1,
-          max_tokens: 10
-        })
-      });
-
-      if (routingResponse.ok) {
-        const routingData: any = await routingResponse.json();
-        const decision = routingData.choices[0].message.content.trim().toLowerCase();
-        
-        console.log(`[API Endpoint] LLM routing analysis for: "${body.message}"`);
-        console.log(`[API Endpoint] LLM decision: ${decision}`);
-        
-        if (decision.includes('file')) {
-          agentId = 'fileAgent';
-          console.log(`[API Endpoint] → Routing to fileAgent (document-related query)`);
-        } else {
-          agentId = 'researchAgent';
-          console.log(`[API Endpoint] → Routing to researchAgent (general/current info query)`);
-        }
-      } else {
-        console.log('[API Endpoint] LLM routing failed, defaulting to fileAgent');
-        agentId = 'fileAgent';
-      }
-    } catch (error) {
-      console.error('[API Endpoint] Error in smart routing:', error);
-      // Default to fileAgent on error since most queries are document-related
-      agentId = 'fileAgent';
-    }
-    
-    console.log(`[API Endpoint] FINAL ROUTING DECISION: Using ${agentId}`);
+    console.log('[API Endpoint] Two-step routing: Always trying fileAgent first...');
+    agentId = 'fileAgent';
+    shouldTryResearch = true; // Mark that we should check for fallback
+    console.log(`[API Endpoint] Step 1: Routing to fileAgent to search documents`);
   }
   
-  const agent = mastra.getAgent(agentId);
+  let agent = mastra.getAgent(agentId);
 
   // Handle uploaded files if present
   let enhancedMessage = body.message;
@@ -285,12 +225,13 @@ Respond with ONLY one word: either "fileAgent" or "researchAgent"`;
     console.log(`[API Endpoint] Agent toolChoice:`, (agent as any).toolChoice || 'not set');
     console.log(`[API Endpoint] Agent getTools:`, typeof agent.getTools === 'function' ? 'available' : 'not available');
     
+    // Define streamOptions outside the try block so it's available for fallback
+    const streamOptions: any = {};
+    
     let stream;
     try {
       console.log(`[API Endpoint] Calling agent.stream with message content:`, body.message);
       // Pass the message as a string directly, not as an array
-      // Also pass options to ensure tools are included
-      const streamOptions: any = {};
       
       // Get tools from the agent if available
       if (typeof agent.getTools === 'function') {
@@ -406,6 +347,54 @@ Respond with ONLY one word: either "fileAgent" or "researchAgent"`;
         ? 'I apologize, but I\'m unable to process your request right now. This might be due to rate limiting. Please try again in 20-30 seconds.'
         : 'I apologize, but I was unable to generate a proper response. Please try again.';
       response = errorMessage;
+    }
+    
+    // TWO-STEP ROUTING: Check if we should fallback to research agent
+    if (shouldTryResearch && agentId === 'fileAgent') {
+      // Check if fileAgent found no relevant documents
+      const noDocsPatterns = [
+        'no similar content found',
+        'no relevant documents',
+        'no documents found',
+        'couldn\'t find any information',
+        'no results found',
+        'no matching documents',
+        'no relevant information found'
+      ];
+      
+      const responseLower = response.toLowerCase();
+      const foundNoDocs = noDocsPatterns.some(pattern => responseLower.includes(pattern));
+      
+      if (foundNoDocs) {
+        console.log('[API Endpoint] Step 2: No relevant documents found, falling back to researchAgent...');
+        
+        // Switch to research agent and retry
+        agentId = 'researchAgent';
+        agent = mastra.getAgent(agentId);
+        
+        // Reset response and try again with research agent
+        response = '';
+        chunkCount = 0;
+        
+        try {
+          console.log(`[API Endpoint] Creating new stream with researchAgent...`);
+          const researchStream = await agent.stream(enhancedMessage, streamOptions);
+          
+          if (researchStream && researchStream.textStream) {
+            for await (const chunk of researchStream.textStream) {
+              response += chunk;
+              chunkCount++;
+              console.log(`[API Endpoint] Research chunk ${chunkCount}: ${chunk.substring(0, 50)}...`);
+            }
+            console.log(`[API Endpoint] Research agent complete. Response length: ${response.length}`);
+          }
+        } catch (researchError) {
+          console.error('[API Endpoint] Error with research agent:', researchError);
+          response = 'I apologize, but I couldn\'t find information about your query in either the documents or through web search.';
+        }
+      } else {
+        console.log('[API Endpoint] FileAgent found relevant content, no need for research fallback');
+      }
     }
     
     // Restore original console.log
