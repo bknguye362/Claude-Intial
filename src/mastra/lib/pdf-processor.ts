@@ -804,67 +804,42 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
     
     console.log(`[PDF Processor] Upload complete. Uploaded ${uploadedCount} vectors to index '${indexName}'`);
     
-    // Create Neptune knowledge graph
+    // Create Neptune knowledge graph with enhanced relationships
     console.log(`[PDF Processor] Creating Neptune knowledge graph...`);
     try {
-      // Create document node
+      const { createNeptuneGraphEnhanced } = await import('./neptune-enhanced.js');
+      
       const docId = `doc_${indexName}`;
-      await createDocumentNode(docId, {
-        title: metadata.title,
-        author: metadata.author,
-        pages: metadata.pages,
-        totalChunks: chunks.length,
-        indexName: indexName,
-        timestamp: new Date().toISOString()
-      });
+      const neptuneChunks = chunks.map((chunk, i) => ({
+        id: `chunk_${indexName}_${i}`,
+        content: chunk.content,
+        summary: chunk.metadata.summary || chunkSummaries[i] || '',
+        metadata: {
+          pageStart: chunk.metadata.pageStart,
+          pageEnd: chunk.metadata.pageEnd,
+          chunkIndex: i,
+          totalChunks: chunks.length
+        }
+      }));
       
-      // Create chunk nodes and relationships
-      for (let i = 0; i < chunks.length; i++) {
-        const chunk = chunks[i];
-        const chunkId = `chunk_${indexName}_${i}`;
-        
-        // Create chunk node
-        await createChunkNode(
-          chunkId,
-          docId,
-          i,
-          chunk.content.substring(0, 1000), // Limit content size
-          chunk.metadata.summary || chunkSummaries[i],
-          {
-            pageStart: chunk.metadata.pageStart,
-            pageEnd: chunk.metadata.pageEnd,
-            chunkIndex: i,
-            totalChunks: chunks.length
-          }
-        );
-        
-        // Create relationships to adjacent chunks
-        const relationships = [];
-        
-        // Link to previous chunk
-        if (i > 0) {
-          relationships.push({
-            id: `chunk_${indexName}_${i - 1}`,
-            relationship: 'FOLLOWS',
-            strength: 1.0
-          });
-        }
-        
-        // Link to next chunk
-        if (i < chunks.length - 1) {
-          relationships.push({
-            id: `chunk_${indexName}_${i + 1}`,
-            relationship: 'PRECEDES',
-            strength: 1.0
-          });
-        }
-        
-        if (relationships.length > 0) {
-          await createChunkRelationships(chunkId, relationships);
-        }
+      const graphCreated = await createNeptuneGraphEnhanced(
+        docId,
+        {
+          title: metadata.title,
+          author: metadata.author,
+          pages: metadata.pages,
+          totalChunks: chunks.length,
+          indexName: indexName,
+          timestamp: new Date().toISOString()
+        },
+        neptuneChunks
+      );
+      
+      if (graphCreated) {
+        console.log(`[PDF Processor] Neptune knowledge graph created with semantic relationships`);
+      } else {
+        console.log(`[PDF Processor] Neptune graph creation had issues but continuing...`);
       }
-      
-      console.log(`[PDF Processor] Neptune knowledge graph created successfully`);
     } catch (neptuneError) {
       console.error('[PDF Processor] Error creating Neptune graph:', neptuneError);
       // Continue even if Neptune fails - S3 Vectors is the primary storage
