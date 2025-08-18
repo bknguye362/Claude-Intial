@@ -6,6 +6,11 @@ import { basename } from 'path';
 import { createRequire } from 'module';
 import { createIndexWithNewman, uploadVectorsWithNewman } from './newman-executor.js';
 import { dynamicChunk, convertToProcessorChunks } from './dynamic-chunker.js';
+import { 
+  createDocumentNode, 
+  createChunkNode, 
+  createChunkRelationships 
+} from './neptune-lambda-client.js';
 
 const require = createRequire(import.meta.url);
 
@@ -798,6 +803,73 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
     const uploadedCount = await uploadVectorsWithNewman(indexName, vectors);
     
     console.log(`[PDF Processor] Upload complete. Uploaded ${uploadedCount} vectors to index '${indexName}'`);
+    
+    // Create Neptune knowledge graph
+    console.log(`[PDF Processor] Creating Neptune knowledge graph...`);
+    try {
+      // Create document node
+      const docId = `doc_${indexName}`;
+      await createDocumentNode(docId, {
+        title: metadata.title,
+        author: metadata.author,
+        pages: metadata.pages,
+        totalChunks: chunks.length,
+        indexName: indexName,
+        timestamp: new Date().toISOString()
+      });
+      
+      // Create chunk nodes and relationships
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        const chunkId = `chunk_${indexName}_${i}`;
+        
+        // Create chunk node
+        await createChunkNode(
+          chunkId,
+          docId,
+          i,
+          chunk.content.substring(0, 1000), // Limit content size
+          chunk.metadata.summary || chunkSummaries[i],
+          {
+            pageStart: chunk.metadata.pageStart,
+            pageEnd: chunk.metadata.pageEnd,
+            chunkIndex: i,
+            totalChunks: chunks.length
+          }
+        );
+        
+        // Create relationships to adjacent chunks
+        const relationships = [];
+        
+        // Link to previous chunk
+        if (i > 0) {
+          relationships.push({
+            id: `chunk_${indexName}_${i - 1}`,
+            relationship: 'FOLLOWS',
+            strength: 1.0
+          });
+        }
+        
+        // Link to next chunk
+        if (i < chunks.length - 1) {
+          relationships.push({
+            id: `chunk_${indexName}_${i + 1}`,
+            relationship: 'PRECEDES',
+            strength: 1.0
+          });
+        }
+        
+        if (relationships.length > 0) {
+          await createChunkRelationships(chunkId, relationships);
+        }
+      }
+      
+      console.log(`[PDF Processor] Neptune knowledge graph created successfully`);
+    } catch (neptuneError) {
+      console.error('[PDF Processor] Error creating Neptune graph:', neptuneError);
+      // Continue even if Neptune fails - S3 Vectors is the primary storage
+    }
+    
     console.log(`[PDF Processor] ===== FILE PROCESSING COMPLETE =====`);
     
     return {
