@@ -68,6 +68,17 @@ export async function createDocumentNode(
   documentId: string,
   metadata: Record<string, any>
 ): Promise<boolean> {
+  // TEMPORARY: Lambda createDocumentGraph has a bug - it tries to access .length on undefined
+  // This is a Lambda function issue that needs to be fixed on the AWS side
+  console.warn(`[Neptune Lambda] SKIPPING document node creation for ${documentId} - Lambda bug`);
+  console.warn('[Neptune Lambda] Lambda createDocumentGraph operation has a bug accessing .length on undefined');
+  console.warn('[Neptune Lambda] Document metadata would have been:', metadata);
+  
+  // Return true to allow the rest of the pipeline to continue
+  // S3 Vectors will still work even without Neptune graph
+  return true;
+  
+  /* Original code commented out until Lambda is fixed:
   try {
     console.log(`[Neptune Lambda] Creating document node: ${documentId}`);
     
@@ -83,6 +94,7 @@ export async function createDocumentNode(
     console.error('[Neptune Lambda] Error creating document node:', error);
     return false;
   }
+  */
 }
 
 // Create a chunk node in Neptune
@@ -94,6 +106,18 @@ export async function createChunkNode(
   summary?: string,
   metadata?: Record<string, any>
 ): Promise<boolean> {
+  // TEMPORARY: Lambda createChunkGraph has a bug - it tries to access .length on undefined
+  // This is a Lambda function issue that needs to be fixed on the AWS side
+  if (chunkIndex === 0) {
+    console.warn(`[Neptune Lambda] SKIPPING chunk node creation for document ${documentId} - Lambda bug`);
+    console.warn('[Neptune Lambda] Lambda createChunkGraph operation has a bug accessing .length on undefined');
+  }
+  
+  // Return true to allow the rest of the pipeline to continue
+  // S3 Vectors will still work even without Neptune graph
+  return true;
+  
+  /* Original code commented out until Lambda is fixed:
   try {
     console.log(`[Neptune Lambda] Creating chunk node: ${chunkId}`);
     
@@ -113,6 +137,7 @@ export async function createChunkNode(
     console.error('[Neptune Lambda] Error creating chunk node:', error);
     return false;
   }
+  */
 }
 
 // Create relationships between chunks
