@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>PDF Upload Test</title>
+</head>
+<body>
+    <h1>Test PDF Upload to S3 + Neptune</h1>
+    
+    <form id="uploadForm">
+        <input type="file" id="fileInput" accept=".pdf" required>
+        <button type="submit">Upload PDF</button>
+    </form>
+    
+    <div id="status"></div>
+    <pre id="response"></pre>
+    
+    <script>
+    document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const fileInput = document.getElementById('fileInput');
+        const file = fileInput.files[0];
+        const status = document.getElementById('status');
+        const responseDiv = document.getElementById('response');
+        
+        if (!file) {
+            status.textContent = 'Please select a file';
+            return;
+        }
+        
+        status.textContent = 'Uploading and processing...';
+        responseDiv.textContent = '';
+        
+        // Read file as base64
+        const reader = new FileReader();
+        reader.onload = async function() {
+            const base64 = reader.result.split(',')[1];
+            
+            try {
+                const response = await fetch('https://bryan-project-e9edb377d562.herokuapp.com/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        message: `[FILE_AGENT_TASK] Process this PDF: ${file.name}`,
+                        userId: 'test-neptune-' + Date.now(),
+                        files: [{
+                            name: file.name,
+                            content: base64,
+                            type: 'application/pdf'
+                        }]
+                    })
+                });
+                
+                const text = await response.text();
+                status.textContent = 'Upload complete!';
+                responseDiv.textContent = text;
+                
+            } catch (error) {
+                status.textContent = 'Error: ' + error.message;
+                responseDiv.textContent = error.stack;
+            }
+        };
+        
+        reader.readAsDataURL(file);
+    });
+    </script>
+</body>
+</html>

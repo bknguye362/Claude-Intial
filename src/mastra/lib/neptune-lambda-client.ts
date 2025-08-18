@@ -72,7 +72,7 @@ export async function createDocumentNode(
     console.log(`[Neptune Lambda] Creating document node: ${documentId}`);
     
     const result = await invokeLambda({
-      operation: 'createDocument',
+      operation: 'createDocumentGraph',
       documentId,
       metadata
     });
@@ -98,7 +98,7 @@ export async function createChunkNode(
     console.log(`[Neptune Lambda] Creating chunk node: ${chunkId}`);
     
     const result = await invokeLambda({
-      operation: 'createChunk',
+      operation: 'createChunkGraph',
       chunkId,
       documentId,
       chunkIndex,
