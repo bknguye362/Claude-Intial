@@ -804,44 +804,36 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
     
     console.log(`[PDF Processor] Upload complete. Uploaded ${uploadedCount} vectors to index '${indexName}'`);
     
-    // Create Neptune knowledge graph with enhanced relationships
-    console.log(`[PDF Processor] Creating Neptune knowledge graph...`);
+    // Create entity-based knowledge graph
+    console.log(`[PDF Processor] Creating entity knowledge graph...`);
     try {
-      const { createNeptuneGraphEnhanced } = await import('./neptune-enhanced.js');
+      const { createEntityKnowledgeGraph } = await import('./entity-extractor.js');
       
-      const docId = `doc_${indexName}`;
-      const neptuneChunks = chunks.map((chunk, i) => ({
+      const docId = `doc_${indexName}`;  // Matches S3 index name
+      const graphChunks = chunks.map((chunk, i) => ({
         id: `chunk_${indexName}_${i}`,
         content: chunk.content,
-        summary: chunk.metadata.summary || chunkSummaries[i] || '',
-        metadata: {
-          pageStart: chunk.metadata.pageStart,
-          pageEnd: chunk.metadata.pageEnd,
-          chunkIndex: i,
-          totalChunks: chunks.length
-        }
+        summary: chunk.metadata.summary || chunkSummaries[i] || ''
       }));
       
-      const graphCreated = await createNeptuneGraphEnhanced(
-        docId,
-        {
-          title: metadata.title,
-          author: metadata.author,
-          pages: metadata.pages,
-          totalChunks: chunks.length,
-          indexName: indexName,
-          timestamp: new Date().toISOString()
-        },
-        neptuneChunks
-      );
+      const graphResult = await createEntityKnowledgeGraph(docId, indexName, graphChunks);
       
-      if (graphCreated) {
-        console.log(`[PDF Processor] Neptune knowledge graph created with semantic relationships`);
+      if (graphResult.success) {
+        console.log(`[PDF Processor] Entity knowledge graph created successfully`);
+        console.log(`[PDF Processor] - ${graphResult.entities.length} entities extracted`);
+        console.log(`[PDF Processor] - ${graphResult.relationships.length} relationships identified`);
+        
+        // Log entity type distribution
+        const entityTypes: Record<string, number> = {};
+        for (const entity of graphResult.entities) {
+          entityTypes[entity.type] = (entityTypes[entity.type] || 0) + 1;
+        }
+        console.log(`[PDF Processor] Entity types:`, entityTypes);
       } else {
-        console.log(`[PDF Processor] Neptune graph creation had issues but continuing...`);
+        console.log(`[PDF Processor] Entity graph creation had issues but continuing...`);
       }
     } catch (neptuneError) {
-      console.error('[PDF Processor] Error creating Neptune graph:', neptuneError);
+      console.error('[PDF Processor] Error creating entity knowledge graph:', neptuneError);
       // Continue even if Neptune fails - S3 Vectors is the primary storage
     }
     

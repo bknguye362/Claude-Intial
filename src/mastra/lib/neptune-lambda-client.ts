@@ -35,7 +35,7 @@ export interface GraphStats {
 }
 
 // Helper function to invoke Lambda
-async function invokeLambda(payload: any): Promise<any> {
+export async function invokeLambda(payload: any): Promise<any> {
   try {
     console.log('[Neptune Lambda] Invoking Lambda with payload:', payload);
     
