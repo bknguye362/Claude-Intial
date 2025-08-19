@@ -1,4 +1,4 @@
-import { createDocumentNode, createChunkNode, createChunkRelationships } from './neptune-lambda-client';
+import { createDocumentNode, createChunkNode, createChunkRelationships } from './neptune-lambda-client.js';
 
 // Azure OpenAI configuration
 const AZURE_OPENAI_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT || 'https://franklin-open-ai-test.openai.azure.com';

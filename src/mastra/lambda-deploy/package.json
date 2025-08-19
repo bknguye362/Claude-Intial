@@ -1,0 +1,9 @@
+{
+  "name": "neptune-lambda-fixed",
+  "version": "1.0.0",
+  "description": "Fixed Lambda function for Neptune graph operations",
+  "main": "index.js",
+  "dependencies": {
+    "gremlin": "^3.6.2"
+  }
+}

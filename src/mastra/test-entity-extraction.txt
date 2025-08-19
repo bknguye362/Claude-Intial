@@ -1,0 +1,9 @@
+Amazon Web Services (AWS) is a cloud computing platform developed by Amazon. Jeff Bezos, the founder of Amazon, launched AWS in 2006 from their headquarters in Seattle, Washington. The platform revolutionized how companies deploy applications.
+
+Microsoft Azure, developed by Microsoft Corporation, is AWS's main competitor. Satya Nadella, CEO of Microsoft, has led the company's cloud transformation from their base in Redmond, Washington. Azure uses technologies like Kubernetes and Docker for container orchestration.
+
+Google Cloud Platform (GCP) is another major player, operated by Google from Mountain View, California. Sundar Pichai oversees Google's cloud strategy. GCP leverages TensorFlow for machine learning capabilities.
+
+These three companies dominate the cloud computing market. AWS holds the largest market share at 32%, followed by Azure at 23% and GCP at 10%. All three platforms support Python, Java, and Node.js for application development.
+
+The cloud computing industry generates over $500 billion in annual revenue. Major enterprises like Netflix use AWS, while companies like Walmart prefer Azure. Spotify relies on GCP for their streaming infrastructure.

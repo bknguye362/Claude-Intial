@@ -333,33 +333,67 @@ export async function createEntityKnowledgeGraph(
     // Step 4: Create entity nodes in Neptune
     console.log('[Entity Knowledge Graph] Step 4: Creating entity nodes in Neptune...');
     
+    let successfulEntities = 0;
+    let failedEntities = 0;
+    
     for (const entity of dedupedEntities) {
-      await invokeLambda({
-        operation: 'createEntityNode',  // This would need to be added to Lambda
-        entityId: entity.id,
-        entityType: entity.type,
-        name: entity.name,
-        properties: entity.properties,
-        documentId: documentId,
-        indexName: indexName  // Link to S3 Vector index
-      });
+      try {
+        const result = await invokeLambda({
+          operation: 'createEntityNode',
+          entityId: entity.id,
+          entityType: entity.type,
+          name: entity.name,
+          properties: entity.properties,
+          documentId: documentId,
+          indexName: indexName  // Link to S3 Vector index
+        });
+        
+        if (result && result.statusCode === 200) {
+          successfulEntities++;
+        } else {
+          console.error(`[Entity Knowledge Graph] Failed to create entity ${entity.name}:`, result);
+          failedEntities++;
+        }
+      } catch (error) {
+        console.error(`[Entity Knowledge Graph] Error creating entity ${entity.name}:`, error);
+        failedEntities++;
+      }
     }
+    
+    console.log(`[Entity Knowledge Graph] Created ${successfulEntities} entities, ${failedEntities} failed`)
     
     // Step 5: Create relationships in Neptune
     console.log('[Entity Knowledge Graph] Step 5: Creating relationships in Neptune...');
     
+    let successfulRelationships = 0;
+    let failedRelationships = 0;
+    
     for (const rel of allRelationships) {
-      await invokeLambda({
-        operation: 'createEntityRelationship',  // This would need to be added to Lambda
-        fromEntity: rel.fromEntity,
-        toEntity: rel.toEntity,
-        relationshipType: rel.relationshipType,
-        properties: rel.properties,
-        confidence: rel.confidence
-      });
+      try {
+        const result = await invokeLambda({
+          operation: 'createEntityRelationship',
+          fromEntity: rel.fromEntity,
+          toEntity: rel.toEntity,
+          relationshipType: rel.relationshipType,
+          properties: rel.properties,
+          confidence: rel.confidence
+        });
+        
+        if (result && result.statusCode === 200) {
+          successfulRelationships++;
+        } else {
+          console.error(`[Entity Knowledge Graph] Failed to create relationship:`, result);
+          failedRelationships++;
+        }
+      } catch (error) {
+        console.error(`[Entity Knowledge Graph] Error creating relationship:`, error);
+        failedRelationships++;
+      }
     }
     
-    console.log(`[Entity Knowledge Graph] Created knowledge graph with ${dedupedEntities.length} entities and ${allRelationships.length} relationships`);
+    console.log(`[Entity Knowledge Graph] Created knowledge graph:`);
+    console.log(`  - Entities: ${successfulEntities}/${dedupedEntities.length} created`);
+    console.log(`  - Relationships: ${successfulRelationships}/${allRelationships.length} created`);
     
     return {
       entities: dedupedEntities,
