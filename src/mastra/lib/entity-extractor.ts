@@ -1,5 +1,6 @@
 // Entity extraction and knowledge graph creation
 import { createDocumentNode, createChunkNode, createChunkRelationships, invokeLambda } from './neptune-lambda-client.js';
+import { findEntityRelationships } from './entity-relationship-finder.js';
 
 // Azure OpenAI configuration
 const AZURE_OPENAI_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT || 'https://franklin-open-ai-test.openai.azure.com';
@@ -7,7 +8,7 @@ const AZURE_OPENAI_API_KEY = process.env.AZURE_OPENAI_API_KEY || process.env.AZU
 const AZURE_OPENAI_API_VERSION = process.env.AZURE_OPENAI_API_VERSION || '2023-12-01-preview';
 const LLM_DEPLOYMENT = process.env.AZURE_OPENAI_LLM_DEPLOYMENT || 'gpt-4.1-test';
 
-interface Entity {
+export interface Entity {
   id: string;
   name: string;
   type: string; // PERSON, ORGANIZATION, LOCATION, CONCEPT, TECHNOLOGY, EVENT, etc.
@@ -15,7 +16,7 @@ interface Entity {
   sourceChunk: string;
 }
 
-interface EntityRelationship {
+export interface EntityRelationship {
   fromEntity: string;
   toEntity: string;
   relationshipType: string;
@@ -325,13 +326,8 @@ export async function createEntityKnowledgeGraph(
     const dedupedEntities = Array.from(uniqueEntities.values());
     console.log(`[Entity Knowledge Graph] Deduplicated to ${dedupedEntities.length} unique entities`);
     
-    // Step 3: Find cross-chunk relationships
-    console.log('[Entity Knowledge Graph] Step 3: Finding cross-chunk relationships...');
-    const crossChunkRels = await findCrossChunkRelationships(dedupedEntities);
-    allRelationships.push(...crossChunkRels);
-    
-    // Step 4: Create entity nodes in Neptune
-    console.log('[Entity Knowledge Graph] Step 4: Creating entity nodes in Neptune...');
+    // Step 3: Create entity nodes in Neptune FIRST
+    console.log('[Entity Knowledge Graph] Step 3: Creating entity nodes in Neptune...');
     
     let successfulEntities = 0;
     let failedEntities = 0;
@@ -360,7 +356,13 @@ export async function createEntityKnowledgeGraph(
       }
     }
     
-    console.log(`[Entity Knowledge Graph] Created ${successfulEntities} entities, ${failedEntities} failed`)
+    console.log(`[Entity Knowledge Graph] Created ${successfulEntities} entities, ${failedEntities} failed`);
+    
+    // Step 4: NOW find relationships AFTER entities exist in Neptune
+    console.log('[Entity Knowledge Graph] Step 4: Finding relationships between entities...');
+    const discoveredRelationships = await findEntityRelationships(dedupedEntities);
+    allRelationships.push(...discoveredRelationships);
+    console.log(`[Entity Knowledge Graph] Discovered ${discoveredRelationships.length} relationships`);
     
     // Step 5: Create relationships in Neptune
     console.log('[Entity Knowledge Graph] Step 5: Creating relationships in Neptune...');
