@@ -806,8 +806,11 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
     
     // Create entity-based knowledge graph
     console.log(`[PDF Processor] Creating entity knowledge graph...`);
+    console.log(`[PDF Processor] Azure API Key present: ${process.env.AZURE_OPENAI_API_KEY ? 'YES' : 'NO'}`);
     try {
+      console.log(`[PDF Processor] Importing entity extractor module...`);
       const { createEntityKnowledgeGraph } = await import('./entity-extractor.js');
+      console.log(`[PDF Processor] Module imported successfully`);
       
       const docId = `doc_${indexName}`;  // Matches S3 index name
       const graphChunks = chunks.map((chunk, i) => ({
@@ -816,7 +819,9 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
         summary: chunk.metadata.summary || chunkSummaries[i] || ''
       }));
       
+      console.log(`[PDF Processor] Calling createEntityKnowledgeGraph with ${graphChunks.length} chunks...`);
       const graphResult = await createEntityKnowledgeGraph(docId, indexName, graphChunks);
+      console.log(`[PDF Processor] Graph creation completed`);
       
       if (graphResult.success) {
         console.log(`[PDF Processor] Entity knowledge graph created successfully`);
@@ -832,8 +837,10 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
       } else {
         console.log(`[PDF Processor] Entity graph creation had issues but continuing...`);
       }
-    } catch (neptuneError) {
+    } catch (neptuneError: any) {
       console.error('[PDF Processor] Error creating entity knowledge graph:', neptuneError);
+      console.error('[PDF Processor] Error message:', neptuneError.message);
+      console.error('[PDF Processor] Error stack:', neptuneError.stack);
       // Continue even if Neptune fails - S3 Vectors is the primary storage
     }
     
