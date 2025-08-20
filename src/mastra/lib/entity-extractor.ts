@@ -280,7 +280,7 @@ export async function createEntityKnowledgeGraph(
   console.log(`[Entity Knowledge Graph] S3 Index Name: ${indexName}`);
   
   const allEntities: Entity[] = [];
-  const allRelationships: EntityRelationship[] = [];
+  let allRelationships: EntityRelationship[] = [];
   
   try {
     // Step 1: Extract entities from each chunk
@@ -297,7 +297,8 @@ export async function createEntityKnowledgeGraph(
       );
       
       allEntities.push(...chunkEntities.entities);
-      allRelationships.push(...chunkEntities.relationships);
+      // Don't collect within-chunk relationships here - they have wrong IDs before deduplication
+      // allRelationships.push(...chunkEntities.relationships);
       
       // Don't overwhelm the API
       if (i < chunks.length - 1) {
@@ -358,8 +359,10 @@ export async function createEntityKnowledgeGraph(
     
     console.log(`[Entity Knowledge Graph] Created ${successfulEntities} entities, ${failedEntities} failed`);
     
-    // Step 4: NOW find relationships AFTER entities exist in Neptune
+    // Step 4: NOW find ALL relationships AFTER entities exist in Neptune
     console.log('[Entity Knowledge Graph] Step 4: Finding relationships between entities...');
+    // Clear any old relationships with wrong IDs
+    allRelationships = [];
     const discoveredRelationships = await findEntityRelationships(dedupedEntities);
     allRelationships.push(...discoveredRelationships);
     console.log(`[Entity Knowledge Graph] Discovered ${discoveredRelationships.length} relationships`);
