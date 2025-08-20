@@ -1,4 +1,5 @@
 const gremlin = require('gremlin');
+const __ = gremlin.process.statics;
 
 const NEPTUNE_ENDPOINT = process.env.NEPTUNE_ENDPOINT || 'your-neptune-cluster.cluster-xxxxx.us-east-2.neptune.amazonaws.com';
 const NEPTUNE_PORT = process.env.NEPTUNE_PORT || 8182;
@@ -166,7 +167,7 @@ async function createChunkGraph(event, g) {
         try {
             await g.V().has('gremlin.id', documentId)
                 .addE('HAS_CHUNK')
-                .to(g.V().has('gremlin.id', chunkId))
+                .to(__.V().has('gremlin.id', chunkId))
                 .property('chunkIndex', chunkIndex)
                 .next();
             console.log(`Created HAS_CHUNK edge from ${documentId} to ${chunkId}`);
@@ -219,7 +220,7 @@ async function createRelationships(event, g) {
             
             await g.V().has('gremlin.id', chunkId)
                 .addE(rel.relationship || 'RELATED_TO')
-                .to(g.V().has('gremlin.id', rel.id))
+                .to(__.V().has('gremlin.id', rel.id))
                 .property('strength', rel.strength || 0.5)
                 .next();
                 
@@ -382,7 +383,7 @@ async function createEntityNode(event, g) {
             try {
                 await g.V().has('gremlin.id', documentId)
                     .addE('HAS_ENTITY')
-                    .to(g.V().has('gremlin.id', entityId))
+                    .to(__.V().has('gremlin.id', entityId))
                     .property('entityType', entityType)
                     .next();
                 console.log(`Created HAS_ENTITY edge from document to ${name}`);
@@ -442,7 +443,7 @@ async function createEntityRelationship(event, g) {
         // Create the relationship
         await g.V().has('gremlin.id', fromEntity)
             .addE(relationshipType)
-            .to(g.V().has('gremlin.id', toEntity))
+            .to(__.V().has('gremlin.id', toEntity))
             .property('confidence', confidence)
             .property('crossChunk', properties.crossChunk || false)
             .property('timestamp', new Date().toISOString())

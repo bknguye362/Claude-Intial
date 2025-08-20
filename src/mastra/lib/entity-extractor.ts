@@ -371,6 +371,7 @@ export async function createEntityKnowledgeGraph(
     let failedRelationships = 0;
     
     for (const rel of allRelationships) {
+      console.log(`[Entity Knowledge Graph] Creating relationship: ${rel.fromEntity} --[${rel.relationshipType}]--> ${rel.toEntity}`);
       try {
         const result = await invokeLambda({
           operation: 'createEntityRelationship',
@@ -382,13 +383,20 @@ export async function createEntityKnowledgeGraph(
         });
         
         if (result && result.statusCode === 200) {
-          successfulRelationships++;
+          const body = JSON.parse(result.body);
+          if (body.success) {
+            successfulRelationships++;
+            console.log(`[Entity Knowledge Graph] ✓ Relationship created successfully`);
+          } else {
+            console.error(`[Entity Knowledge Graph] ✗ Relationship failed:`, body.error);
+            failedRelationships++;
+          }
         } else {
-          console.error(`[Entity Knowledge Graph] Failed to create relationship:`, result);
+          console.error(`[Entity Knowledge Graph] ✗ Failed to create relationship:`, result);
           failedRelationships++;
         }
       } catch (error) {
-        console.error(`[Entity Knowledge Graph] Error creating relationship:`, error);
+        console.error(`[Entity Knowledge Graph] ✗ Error creating relationship:`, error);
         failedRelationships++;
       }
     }
