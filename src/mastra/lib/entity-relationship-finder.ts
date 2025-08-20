@@ -67,7 +67,14 @@ Return JSON with relationships array:
         const content = data.choices[0].message.content;
         
         try {
-          const parsed = JSON.parse(content.match(/\{[\s\S]*\}/)?.[0] || '{}');
+          // Clean up JSON response
+          let jsonStr = content.match(/\{[\s\S]*\}/)?.[0] || '{}';
+          jsonStr = jsonStr
+            .replace(/,\s*}/g, '}')  // Remove trailing commas
+            .replace(/,\s*]/g, ']')  // Remove trailing commas in arrays
+            .replace(/[\u0000-\u001F\u007F-\u009F]/g, ''); // Remove control characters
+          
+          const parsed = JSON.parse(jsonStr);
           const rels = parsed.relationships || [];
           
           for (const rel of rels) {

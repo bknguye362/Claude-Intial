@@ -100,7 +100,33 @@ Return JSON:
       const content = data.choices[0].message.content;
       
       try {
-        const extracted = JSON.parse(content.match(/\{[\s\S]*\}/)?.[0] || '{}');
+        // Try to extract JSON from the response
+        let jsonStr = content.match(/\{[\s\S]*\}/)?.[0] || '{}';
+        
+        // Clean up common JSON issues
+        jsonStr = jsonStr
+          .replace(/,\s*}/g, '}')  // Remove trailing commas
+          .replace(/,\s*]/g, ']')  // Remove trailing commas in arrays
+          .replace(/[\u0000-\u001F\u007F-\u009F]/g, '') // Remove control characters
+          .replace(/\\/g, '\\\\'); // Escape backslashes
+        
+        let extracted;
+        try {
+          extracted = JSON.parse(jsonStr);
+        } catch (parseError) {
+          console.warn('[Entity Extractor] Failed to parse JSON, attempting to extract entities manually');
+          // Fallback: try to extract just the entities array
+          const entitiesMatch = jsonStr.match(/"entities"\s*:\s*\[(.*?)\]/s);
+          if (entitiesMatch) {
+            try {
+              extracted = { entities: JSON.parse('[' + entitiesMatch[1] + ']'), relationships: [] };
+            } catch {
+              extracted = { entities: [], relationships: [] };
+            }
+          } else {
+            extracted = { entities: [], relationships: [] };
+          }
+        }
         
         // Convert to our format
         const entities: Entity[] = [];
