@@ -2,9 +2,11 @@
 import { invokeLambda } from './neptune-lambda-client.js';
 import { findEntityRelationships } from './entity-relationship-finder.js';
 
-// Configuration
+// Azure OpenAI configuration - matching original extractor
+const AZURE_OPENAI_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT || 'https://franklin-open-ai-test.openai.azure.com';
 const AZURE_OPENAI_API_KEY = process.env.AZURE_OPENAI_API_KEY || process.env.AZURE_API_KEY || process.env.OPENAI_API_KEY || '';
-const AZURE_OPENAI_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT || 'https://neogenaieastus2.openai.azure.com/openai/deployments/gpt-4o-mini/chat/completions?api-version=2024-02-15-preview';
+const AZURE_OPENAI_API_VERSION = process.env.AZURE_OPENAI_API_VERSION || '2023-12-01-preview';
+const LLM_DEPLOYMENT = process.env.AZURE_OPENAI_LLM_DEPLOYMENT || 'gpt-4.1-test';
 
 const CHUNK_BATCH_SIZE = 3; // Process 3 chunks at a time
 
@@ -48,7 +50,9 @@ async function extractEntitiesFromBatch(
   ).join('\n\n---CHUNK SEPARATOR---\n\n');
 
   try {
-    const response = await fetch(AZURE_OPENAI_ENDPOINT, {
+    const url = `${AZURE_OPENAI_ENDPOINT}/openai/deployments/${LLM_DEPLOYMENT}/chat/completions?api-version=${AZURE_OPENAI_API_VERSION}`;
+    
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

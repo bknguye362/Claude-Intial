@@ -807,7 +807,7 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
     // Create entity-based knowledge graph
     console.log(`[PDF Processor] Creating entity knowledge graph...`);
     try {
-      const { createEntityKnowledgeGraph } = await import('./entity-extractor-batch.js');
+      const { createEntityKnowledgeGraph } = await import('./entity-extractor.js');
       
       const docId = `doc_${indexName}`;  // Matches S3 index name
       const graphChunks = chunks.map((chunk, i) => ({
