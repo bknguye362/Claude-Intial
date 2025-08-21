@@ -38,15 +38,19 @@ export async function findEntityRelationships(
           messages: [
             {
               role: 'system',
-              content: `Find relationships between entities. Focus on clear, meaningful connections.
+              content: `Find relationships between entities by analyzing their names AND descriptions. Look for both explicit and implicit connections.
               
 Common relationships:
-- PERSON to PERSON: KNOWS, WORKS_WITH, REPORTS_TO, CHILD_OF, RIVAL_OF
-- PERSON to ORGANIZATION: WORKS_FOR, FOUNDED, LEADS, MEMBER_OF
-- PERSON to LOCATION: LIVES_IN, WORKS_IN, FROM
-- PERSON to CONCEPT: BELIEVES_IN, ADVOCATES_FOR, OPPOSES
+- PERSON to PERSON: KNOWS, WORKS_WITH, REPORTS_TO, CHILD_OF, PARENT_OF, RIVAL_OF, IS_NAME_OF, EXHIBITED_AS
+- PERSON to ORGANIZATION: WORKS_FOR, FOUNDED, LEADS, MEMBER_OF, BELONGS_TO
+- PERSON to LOCATION: LIVES_IN, WORKS_IN, FROM, SITS_ON, SPEAKS_AT
+- PERSON to CONCEPT: BELIEVES_IN, ADVOCATES_FOR, OPPOSES, IS_TYPE_OF, EXEMPLIFIES
 - ORGANIZATION to LOCATION: LOCATED_IN, HEADQUARTERED_IN
-- CONCEPT to CONCEPT: RELATED_TO, OPPOSES, ENABLES
+- CONCEPT to CONCEPT: RELATED_TO, OPPOSES, ENABLES, IS_BREED_OF
+- LOCATION to PERSON: PLATFORM_FOR, PLACE_OF
+
+Analyze entity descriptions to find implicit relationships.
+For example, if one entity is described as "name under which X was exhibited", create IS_NAME_OF or EXHIBITED_AS relationship.
 
 Return JSON with relationships array:
 {
@@ -58,7 +62,7 @@ Return JSON with relationships array:
             {
               role: 'user',
               content: `Find relationships between these entities:\n${batch.map(e => 
-                `- ${e.name} (${e.type})`
+                `- ${e.name} (${e.type}): ${e.properties?.description || 'No description'}`
               ).join('\n')}`
             }
           ],
