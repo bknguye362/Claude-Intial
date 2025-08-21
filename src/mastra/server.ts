@@ -332,6 +332,19 @@ const server = createServer(async (req, res) => {
   }
 });
 
+// Keep-alive endpoint to prevent Heroku idling
+server.on('request', (req, res) => {
+  if (req.url === '/keep-alive' && req.method === 'GET') {
+    console.log('[Keep-Alive] Ping received at', new Date().toISOString());
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ 
+      alive: true,
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime()
+    }));
+  }
+});
+
 server.listen(PORT, () => {
   console.log(`🚀 Server running at http://localhost:${PORT}`);
   console.log(`🌐 Web interface available at http://localhost:${PORT}`);
@@ -346,4 +359,49 @@ server.listen(PORT, () => {
     console.log(`   AWS Region: ${process.env.AWS_REGION || 'us-east-1'}`);
     console.log(`   Credentials: ${process.env.AWS_ACCESS_KEY_ID ? 'Using keys' : 'Using IAM role'}`);
   }
+  
+  // Start self-ping to prevent Heroku idling (only in production)
+  if (process.env.NODE_ENV === 'production' || process.env.DYNO) {
+    startSelfPing();
+  }
 });
+
+// Self-ping function to prevent Heroku idling
+function startSelfPing() {
+  const APP_URL = process.env.HEROKU_APP_URL || 'https://bryan-project-e9edb377d562.herokuapp.com';
+  const PING_INTERVAL = 25 * 60 * 1000; // 25 minutes (before 30-minute idle timeout)
+  
+  console.log('⏰ Self-ping enabled to prevent idling');
+  
+  const ping = async () => {
+    try {
+      // Use native fetch if available, otherwise use http
+      const url = `${APP_URL}/keep-alive`;
+      if (typeof fetch !== 'undefined') {
+        const response = await fetch(url);
+        if (response.ok) {
+          console.log('[Self-Ping] Successfully pinged app at', new Date().toISOString());
+        }
+      } else {
+        // Fallback for older Node versions
+        const https = await import('https');
+        https.get(url, (res) => {
+          console.log('[Self-Ping] Ping response:', res.statusCode);
+        }).on('error', (err) => {
+          console.error('[Self-Ping] Error:', err.message);
+        });
+      }
+    } catch (error) {
+      console.error('[Self-Ping] Error pinging app:', error);
+    }
+  };
+  
+  // Initial ping after 20 minutes
+  setTimeout(() => {
+    ping();
+    // Then ping every 25 minutes
+    setInterval(ping, PING_INTERVAL);
+  }, 20 * 60 * 1000);
+  
+  console.log(`[Self-Ping] Will ping ${APP_URL} every 25 minutes`);
+}

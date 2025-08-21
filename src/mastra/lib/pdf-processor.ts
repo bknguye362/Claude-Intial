@@ -741,15 +741,31 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
     
     console.log(`[PDF Processor] ✅ Index '${indexName}' created! Processing will continue...`)
     
-    // Generate embeddings and summaries in parallel
-    console.log(`[PDF Processor] Generating embeddings and summaries...`);
-    const [embeddings, summaries] = await Promise.all([
-      generateEmbeddings(textChunks),
-      generateChunkSummaries(textChunks)
-    ]);
-    console.log(`[PDF Processor] Generated ${embeddings.length} embeddings and ${summaries.length} summaries`);
+    // Extract entities from chunks in parallel with embeddings and summaries
+    console.log(`[PDF Processor] Starting parallel processing: embeddings, summaries, and entity extraction...`);
     
-    // Create chunks with metadata including dynamic chunk info
+    // Import entity extractor
+    const { extractEntitiesFromChunks } = await import('./entity-extractor.js');
+    
+    // Process in parallel: embeddings, summaries, and entities
+    const [embeddings, summaries, chunkEntities] = await Promise.all([
+      generateEmbeddings(textChunks),
+      generateChunkSummaries(textChunks),
+      extractEntitiesFromChunks(
+        textChunks.map((chunk, i) => ({
+          id: `chunk_${indexName}_${i}`,
+          content: chunk,
+          summary: '' // Will be filled by summaries later
+        }))
+      )
+    ]);
+    
+    console.log(`[PDF Processor] Parallel processing complete:`);
+    console.log(`[PDF Processor]   - ${embeddings.length} embeddings generated`);
+    console.log(`[PDF Processor]   - ${summaries.length} summaries generated`);
+    console.log(`[PDF Processor]   - ${chunkEntities.length} chunks processed for entities`);
+    
+    // Create chunks with metadata including dynamic chunk info and entities
     const chunks = textChunks.map((content, index) => {
       const chunkPosition = index / textChunks.length;
       const numPages = pdfData.numpages || 1;
@@ -762,6 +778,9 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
       // Get metadata from dynamic chunks if available
       const dynamicMeta = dynamicChunks[index]?.metadata;
       
+      // Get entities for this chunk
+      const chunkEntityData = chunkEntities[index] || { entities: [], relationships: [] };
+      
       return {
         content,
         embedding: embeddings[index],
@@ -773,7 +792,11 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
           isHeader: dynamicMeta?.isHeader || false,
           headerLevel: dynamicMeta?.headerLevel,
           paragraphCount: dynamicMeta?.paragraphCount || 1,
-          summary: dynamicMeta?.summary || ''
+          summary: summaries[index] || dynamicMeta?.summary || '',
+          // Add entity information
+          entities: chunkEntityData.entities,
+          entityCount: chunkEntityData.entities.length,
+          relationships: chunkEntityData.relationships
         }
       };
     });
@@ -782,7 +805,7 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
     console.log(`[PDF Processor] Using existing index '${indexName}' for vector upload`);
     console.log(`[PDF Processor] Ready to upload ${chunks.length} vectors with embeddings`)
     
-    // Prepare vectors for upload with metadata
+    // Prepare vectors for upload with metadata including entities
     const vectors = chunks.map((chunk, index) => ({
       key: `${documentId}-chunk-${index}`,
       embedding: chunk.embedding,
@@ -795,7 +818,11 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
         chunkContent: chunk.content,
         chunkSummary: (chunk.metadata.summary || '').substring(0, 200), // LLM-generated summary limited to 200 chars
         // Add document name for multi-document filtering
-        docName: basename(filepath, fileExt).substring(0, 50) // Limited to 50 chars
+        docName: basename(filepath, fileExt).substring(0, 50), // Limited to 50 chars
+        // Add entity information for enhanced search
+        entityNames: chunk.metadata.entities.map((e: any) => e.name).join(', ').substring(0, 500), // Entity names as comma-separated string
+        entityTypes: [...new Set(chunk.metadata.entities.map((e: any) => e.type))].join(', '), // Unique entity types
+        entityCount: chunk.metadata.entityCount
       }
     }));
     
@@ -804,29 +831,36 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
     
     console.log(`[PDF Processor] Upload complete. Uploaded ${uploadedCount} vectors to index '${indexName}'`);
     
-    // Create entity-based knowledge graph
-    console.log(`[PDF Processor] Creating entity knowledge graph...`);
-    console.log(`[PDF Processor] Azure API Key present: ${process.env.AZURE_OPENAI_API_KEY ? 'YES' : 'NO'}`);
+    // Create entity-based knowledge graph using pre-extracted entities
+    console.log(`[PDF Processor] Creating entity knowledge graph from pre-extracted entities...`);
     try {
-      console.log(`[PDF Processor] Importing entity extractor module...`);
-      const { createEntityKnowledgeGraph } = await import('./entity-extractor.js');
+      console.log(`[PDF Processor] Importing entity knowledge graph creator...`);
+      const { createEntityKnowledgeGraphFromExtracted } = await import('./entity-extractor.js');
       console.log(`[PDF Processor] Module imported successfully`);
       
       const docId = `doc_${indexName}`;  // Matches S3 index name
+      
+      // Prepare chunks with their pre-extracted entities
       const graphChunks = chunks.map((chunk, i) => ({
         id: `chunk_${indexName}_${i}`,
         content: chunk.content,
-        summary: chunk.metadata.summary || chunkSummaries[i] || ''
+        summary: chunk.metadata.summary || '',
+        entities: chunk.metadata.entities,
+        relationships: chunk.metadata.relationships
       }));
       
-      console.log(`[PDF Processor] Calling createEntityKnowledgeGraph with ${graphChunks.length} chunks...`);
-      const graphResult = await createEntityKnowledgeGraph(docId, indexName, graphChunks);
+      // Count total entities across all chunks
+      const totalEntities = chunks.reduce((sum, chunk) => sum + chunk.metadata.entityCount, 0);
+      const totalRelationships = chunks.reduce((sum, chunk) => sum + chunk.metadata.relationships.length, 0);
+      
+      console.log(`[PDF Processor] Creating graph with ${totalEntities} pre-extracted entities and ${totalRelationships} relationships...`);
+      const graphResult = await createEntityKnowledgeGraphFromExtracted(docId, indexName, graphChunks);
       console.log(`[PDF Processor] Graph creation completed`);
       
       if (graphResult.success) {
         console.log(`[PDF Processor] Entity knowledge graph created successfully`);
-        console.log(`[PDF Processor] - ${graphResult.entities.length} entities extracted`);
-        console.log(`[PDF Processor] - ${graphResult.relationships.length} relationships identified`);
+        console.log(`[PDF Processor] - ${graphResult.entities.length} unique entities in graph`);
+        console.log(`[PDF Processor] - ${graphResult.relationships.length} relationships created`);
         
         // Log entity type distribution
         const entityTypes: Record<string, number> = {};

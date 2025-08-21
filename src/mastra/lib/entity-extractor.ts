@@ -450,5 +450,212 @@ export async function createEntityKnowledgeGraph(
   }
 }
 
+// Function to extract entities from multiple chunks in parallel
+export async function extractEntitiesFromChunks(
+  chunks: Array<{
+    id: string;
+    content: string;
+    summary?: string;
+  }>
+): Promise<ChunkEntities[]> {
+  console.log(`[Entity Extractor] Extracting entities from ${chunks.length} chunks in parallel...`);
+  
+  if (!AZURE_OPENAI_API_KEY) {
+    console.log('[Entity Extractor] No API key, returning empty entities');
+    return chunks.map(chunk => ({ chunkId: chunk.id, entities: [], relationships: [] }));
+  }
+  
+  const results: ChunkEntities[] = [];
+  const maxConcurrent = 3; // Process 3 chunks at a time
+  const batchDelay = 1500; // Delay between batches
+  
+  for (let i = 0; i < chunks.length; i += maxConcurrent) {
+    const batch = chunks.slice(i, i + maxConcurrent);
+    
+    if (i % 10 === 0) {
+      console.log(`[Entity Extractor] Processing chunks ${i + 1}-${Math.min(i + maxConcurrent, chunks.length)}/${chunks.length}`);
+    }
+    
+    // Process batch in parallel
+    const batchPromises = batch.map(async (chunk) => {
+      try {
+        return await extractEntitiesFromChunk(chunk.id, chunk.content, chunk.summary);
+      } catch (error) {
+        console.error(`[Entity Extractor] Error processing chunk ${chunk.id}:`, error);
+        return { chunkId: chunk.id, entities: [], relationships: [] };
+      }
+    });
+    
+    const batchResults = await Promise.all(batchPromises);
+    results.push(...batchResults);
+    
+    // Delay between batches to respect rate limits
+    if (i + maxConcurrent < chunks.length) {
+      await new Promise(resolve => setTimeout(resolve, batchDelay));
+    }
+  }
+  
+  return results;
+}
+
+// Create entity knowledge graph from pre-extracted entities
+export async function createEntityKnowledgeGraphFromExtracted(
+  documentId: string,
+  indexName: string,
+  chunks: Array<{
+    id: string;
+    content: string;
+    summary?: string;
+    entities: Entity[];
+    relationships: EntityRelationship[];
+  }>
+): Promise<{
+  entities: Entity[];
+  relationships: EntityRelationship[];
+  success: boolean;
+}> {
+  console.log('[Entity Knowledge Graph] Creating graph from pre-extracted entities...');
+  console.log(`[Entity Knowledge Graph] Document ID: ${documentId}`);
+  console.log(`[Entity Knowledge Graph] S3 Index Name: ${indexName}`);
+  
+  const allEntities: Entity[] = [];
+  let allRelationships: EntityRelationship[] = [];
+  
+  try {
+    // Collect all entities and relationships from chunks
+    for (const chunk of chunks) {
+      allEntities.push(...chunk.entities);
+      allRelationships.push(...chunk.relationships);
+    }
+    
+    console.log(`[Entity Knowledge Graph] Collected ${allEntities.length} entities from chunks`);
+    
+    // Deduplicate entities
+    const uniqueEntities = new Map<string, Entity>();
+    for (const entity of allEntities) {
+      const key = `${entity.type}_${entity.name}`.toLowerCase();
+      if (!uniqueEntities.has(key)) {
+        // Generate consistent entity ID
+        entity.id = `entity_${key.replace(/[^a-z0-9]/g, '_')}`;
+        uniqueEntities.set(key, entity);
+      } else {
+        // Merge properties if entity appears in multiple chunks
+        const existing = uniqueEntities.get(key)!;
+        existing.properties = { ...existing.properties, ...entity.properties };
+        if (!existing.properties.sourceChunks) {
+          existing.properties.sourceChunks = [existing.sourceChunk];
+        }
+        if (!existing.properties.sourceChunks.includes(entity.sourceChunk)) {
+          existing.properties.sourceChunks.push(entity.sourceChunk);
+        }
+      }
+    }
+    
+    const dedupedEntities = Array.from(uniqueEntities.values());
+    console.log(`[Entity Knowledge Graph] Deduplicated to ${dedupedEntities.length} unique entities`);
+    
+    // Create document node in Neptune
+    console.log('[Entity Knowledge Graph] Creating document node in Neptune...');
+    await createDocumentNode(documentId, {
+      indexName,
+      totalChunks: chunks.length,
+      extractedAt: new Date().toISOString()
+    });
+    
+    // Create chunk nodes and relationships
+    console.log('[Entity Knowledge Graph] Creating chunk nodes...');
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      await createChunkNode(
+        chunk.id, 
+        documentId, 
+        i, // chunk index
+        chunk.content.substring(0, 1000), // content (limited)
+        chunk.summary || '', // summary
+        { entityCount: chunk.entities.length } // metadata
+      );
+    }
+    
+    // Create chunk relationships (sequential relationship between chunks)
+    console.log('[Entity Knowledge Graph] Creating chunk relationships...');
+    for (let i = 0; i < chunks.length - 1; i++) {
+      await createChunkRelationships(chunks[i].id, [
+        { id: chunks[i + 1].id, relationship: 'NEXT_CHUNK', strength: 1.0 }
+      ]);
+    }
+    
+    // Create entity nodes in Neptune
+    console.log('[Entity Knowledge Graph] Creating entity nodes in Neptune...');
+    const createdEntities = await invokeLambda({
+      operation: 'createEntities',
+      entities: dedupedEntities.map(entity => ({
+        entityId: entity.id,
+        name: entity.name,
+        type: entity.type,
+        properties: {
+          ...entity.properties,
+          indexName  // Link entity to S3 Vectors index
+        }
+      }))
+    });
+    
+    console.log(`[Entity Knowledge Graph] Created ${createdEntities.result?.created || 0} entity nodes`);
+    
+    // Find relationships between entities using descriptions
+    console.log('[Entity Knowledge Graph] Finding entity relationships...');
+    const entityRelationships = await findEntityRelationships(dedupedEntities);
+    allRelationships.push(...entityRelationships);
+    
+    // Create relationships in Neptune
+    if (allRelationships.length > 0) {
+      console.log(`[Entity Knowledge Graph] Creating ${allRelationships.length} relationships in Neptune...`);
+      const relationshipResult = await invokeLambda({
+        operation: 'createRelationships',
+        relationships: allRelationships.map(rel => ({
+          fromEntityId: rel.fromEntity,
+          toEntityId: rel.toEntity,
+          relationshipType: rel.relationshipType,
+          confidence: rel.confidence,
+          properties: rel.properties
+        }))
+      });
+      
+      console.log(`[Entity Knowledge Graph] Created ${relationshipResult.result?.created || 0} relationships`);
+    }
+    
+    // Create entity-chunk relationships
+    console.log('[Entity Knowledge Graph] Creating entity-chunk relationships...');
+    for (const chunk of chunks) {
+      for (const entity of chunk.entities) {
+        const dedupedEntity = dedupedEntities.find(e => 
+          e.name === entity.name && e.type === entity.type
+        );
+        if (dedupedEntity) {
+          await invokeLambda({
+            operation: 'createEntityChunkRelationship',
+            chunkId: chunk.id,
+            entityId: dedupedEntity.id
+          });
+        }
+      }
+    }
+    
+    console.log('[Entity Knowledge Graph] Graph creation completed successfully');
+    return {
+      entities: dedupedEntities,
+      relationships: allRelationships,
+      success: true
+    };
+    
+  } catch (error) {
+    console.error('[Entity Knowledge Graph] Error creating graph:', error);
+    return {
+      entities: [],
+      relationships: [],
+      success: false
+    };
+  }
+}
+
 // Export for use in PDF processor
 export { extractEntitiesFromChunk, findCrossChunkRelationships };
