@@ -450,7 +450,7 @@ export async function createEntityKnowledgeGraph(
   }
 }
 
-// Function to extract entities from multiple chunks in parallel
+// Function to extract entities from multiple chunks with TRUE parallel processing
 export async function extractEntitiesFromChunks(
   chunks: Array<{
     id: string;
@@ -458,42 +458,52 @@ export async function extractEntitiesFromChunks(
     summary?: string;
   }>
 ): Promise<ChunkEntities[]> {
-  console.log(`[Entity Extractor] Extracting entities from ${chunks.length} chunks in parallel...`);
+  console.log(`[Entity Extractor] Extracting entities from ${chunks.length} chunks with high concurrency...`);
   
   if (!AZURE_OPENAI_API_KEY) {
     console.log('[Entity Extractor] No API key, returning empty entities');
     return chunks.map(chunk => ({ chunkId: chunk.id, entities: [], relationships: [] }));
   }
   
+  // Process with much higher concurrency using Promise.all with chunks
+  const maxConcurrent = 15; // Process 15 chunks simultaneously (Azure OpenAI can handle this)
   const results: ChunkEntities[] = [];
-  const maxConcurrent = 3; // Process 3 chunks at a time
-  const batchDelay = 1500; // Delay between batches
+  const startTime = Date.now();
   
+  console.log(`[Entity Extractor] Processing ${chunks.length} chunks with concurrency limit of ${maxConcurrent}...`);
+  
+  // Process all chunks in batches with high concurrency
   for (let i = 0; i < chunks.length; i += maxConcurrent) {
-    const batch = chunks.slice(i, i + maxConcurrent);
+    const batch = chunks.slice(i, Math.min(i + maxConcurrent, chunks.length));
+    const batchStartTime = Date.now();
     
-    if (i % 10 === 0) {
-      console.log(`[Entity Extractor] Processing chunks ${i + 1}-${Math.min(i + maxConcurrent, chunks.length)}/${chunks.length}`);
-    }
+    console.log(`[Entity Extractor] Processing batch ${Math.floor(i/maxConcurrent) + 1}/${Math.ceil(chunks.length/maxConcurrent)} (chunks ${i + 1}-${Math.min(i + maxConcurrent, chunks.length)})...`);
     
-    // Process batch in parallel
-    const batchPromises = batch.map(async (chunk) => {
-      try {
-        return await extractEntitiesFromChunk(chunk.id, chunk.content, chunk.summary);
-      } catch (error) {
-        console.error(`[Entity Extractor] Error processing chunk ${chunk.id}:`, error);
-        return { chunkId: chunk.id, entities: [], relationships: [] };
-      }
-    });
+    // Process entire batch in parallel - no waiting between individual chunks
+    const batchPromises = batch.map(chunk => 
+      extractEntitiesFromChunk(chunk.id, chunk.content, chunk.summary)
+        .catch(error => {
+          console.error(`[Entity Extractor] Error in chunk ${chunk.id}:`, error.message);
+          return { chunkId: chunk.id, entities: [], relationships: [] };
+        })
+    );
     
+    // Wait for entire batch to complete
     const batchResults = await Promise.all(batchPromises);
     results.push(...batchResults);
     
-    // Delay between batches to respect rate limits
+    const batchTime = ((Date.now() - batchStartTime) / 1000).toFixed(1);
+    console.log(`[Entity Extractor] Batch completed in ${batchTime}s`);
+    
+    // Small delay between batches to avoid rate limits (reduced from 1500ms)
     if (i + maxConcurrent < chunks.length) {
-      await new Promise(resolve => setTimeout(resolve, batchDelay));
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
   }
+  
+  const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
+  const avgTimePerChunk = (parseFloat(totalTime) / chunks.length).toFixed(2);
+  console.log(`[Entity Extractor] ✅ Completed ${chunks.length} chunks in ${totalTime}s (avg ${avgTimePerChunk}s per chunk)`);
   
   return results;
 }
