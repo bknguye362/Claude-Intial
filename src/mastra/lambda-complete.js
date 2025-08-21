@@ -1,5 +1,6 @@
 const gremlin = require('gremlin');
 const __ = gremlin.process.statics;
+const T = gremlin.process.T;
 
 const NEPTUNE_ENDPOINT = process.env.NEPTUNE_ENDPOINT || 'your-neptune-cluster.cluster-xxxxx.us-east-2.neptune.amazonaws.com';
 const NEPTUNE_PORT = process.env.NEPTUNE_PORT || 8182;
@@ -508,21 +509,21 @@ async function getEntityRelationships(event, g) {
     
     try {
         // Get outgoing relationships
-        const outgoing = await g.V().has('gremlin.id', entityId)
+        const outgoing = await g.V().has('entityId', entityId)
             .outE()
             .project('type', 'to', 'confidence')
-            .by(gremlin.process.T.label)
-            .by(g.inV().values('name'))
-            .by(g.values('confidence'))
+            .by(T.label)
+            .by(__.inV().values('name'))
+            .by(__.values('confidence'))
             .toList();
             
         // Get incoming relationships
-        const incoming = await g.V().has('gremlin.id', entityId)
+        const incoming = await g.V().has('entityId', entityId)
             .inE()
             .project('type', 'from', 'confidence')
-            .by(gremlin.process.T.label)
-            .by(g.outV().values('name'))
-            .by(g.values('confidence'))
+            .by(T.label)
+            .by(__.outV().values('name'))
+            .by(__.values('confidence'))
             .toList();
             
         return {
