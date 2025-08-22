@@ -19,6 +19,7 @@ import { queryVectorProcessorTool } from '../tools/query-vector-processor.js';
 import { multiIndexSimilaritySearchTool } from '../tools/multi-index-similarity-search.js';
 import { ragQueryProcessorTool } from '../tools/rag-query-processor.js';
 import { defaultQueryTool } from '../tools/default-query-tool.js';
+import { graphEnhancedQueryTool } from '../tools/graph-enhanced-query-tool.js';
 // import { queryCommandTool } from '../tools/query-command-tool.js'; // No longer needed - auto-vectorization in workflow
 import { ContextBuilder } from '../lib/context-builder.js';
 import { checkIndexStatusTool } from '../tools/check-index-status.js';
@@ -111,6 +112,7 @@ const agentConfig: any = {
     
     YOUR MAIN TASK:
     → Use defaultQueryTool to answer questions and search indexed content
+    → For enhanced results, use graphEnhancedQueryTool which integrates knowledge graph data
     → The system will tell you if a PDF was processed and its index name
     → Focus on providing great answers using the indexed content
     
@@ -139,10 +141,12 @@ const agentConfig: any = {
     
     Example workflow:
     1. User asks: "What is machine learning?"
-    2. Use defaultQueryTool with question: "What is machine learning?"
+    2. Use graphEnhancedQueryTool with question: "What is machine learning?"
+       OR defaultQueryTool if knowledge graph is not available
     3. Tool returns similar chunks from documents about ML
-    4. Use the chunk content to formulate a comprehensive answer
-    5. Reference which documents the information came from
+    4. If using graphEnhancedQueryTool, also get related entities from knowledge graph
+    5. Use the chunk content to formulate a comprehensive answer
+    6. Reference which documents and entities the information came from
     
     DEFAULT BEHAVIOR:
     - When user says "list" → ALWAYS show S3 Vectors indices using s3VectorsBucketMonitorTool
@@ -229,6 +233,7 @@ const agentConfig: any = {
     - localListTool: List files in the local uploads directory
     - textReaderTool: Read text files
     - defaultQueryTool: Search and query indexed content (PDFs are automatically indexed)
+    - graphEnhancedQueryTool: Search with knowledge graph enhancement for better results
     - s3VectorsMonitorTool: Monitor vectors in mastra-chatbot index
       * Actions: "list" (list vectors), "stats" (get statistics), "inspect" (inspect specific document)
     - s3VectorsBucketMonitorTool: Monitor entire bucket - list ALL indices, get bucket statistics
@@ -310,8 +315,21 @@ const agentConfig: any = {
       - Any relevant metadata (for PDFs: number of pages, author, etc.)
     
     HANDLING PDF QUESTIONS:
-    - When users ask questions about a PDF, use defaultQueryTool
-    - The tool will automatically find the most relevant chunks (up to 10) that answer the question
+    - When users ask questions about a PDF, use graphEnhancedQueryTool for best results
+    - Falls back to defaultQueryTool if graph is not available
+    - The tool will automatically find the most relevant chunks (up to 30) that answer the question
+    - Graph enhancement finds related entities and boosts relevant chunks
+    
+    USING GRAPH ENHANCEMENT DATA:
+    When graphEnhancedQueryTool returns results:
+    - The 'contextString' field contains BOTH document chunks AND knowledge graph context
+    - The 'graphEnhancement' field contains:
+      * entities: List of entities found in the knowledge graph
+      * relationships: How entities are connected to each other
+      * graphContextString: Formatted graph data ready for your response
+    - USE this information to provide richer, more connected answers
+    - MENTION relevant entities and their relationships when answering
+    - Example: "According to the knowledge graph, Napoleon is connected to Old Major through..."
     - CRITICAL: If defaultQueryTool returns:
       * message: "No similar content found" OR
       * similarChunks: [] (empty) OR 
@@ -374,6 +392,7 @@ const agentConfig: any = {
   getTools: () => ({ 
     // defaultQueryTool is the main tool for searching indexed content
     defaultQueryTool,  // This tool handles questions after PDFs are automatically indexed
+    graphEnhancedQueryTool,  // Enhanced version with knowledge graph integration
     
     // localListTool, // TEMPORARILY DISABLED to prevent interference with Query: commands
     textReaderTool,
