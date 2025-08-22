@@ -631,28 +631,65 @@ async function createEntityChunkRelationshipsBatch(event, g) {
     
     let successCount = 0;
     let failCount = 0;
+    let skippedCount = 0;
     const errors = [];
     
     console.log(`Creating batch of ${relationships.length} entity-chunk relationships...`);
     
-    for (const rel of relationships) {
-        try {
-            // Create APPEARS_IN edge from entity to chunk
-            await g.V().has('gremlin.id', rel.entityId)
-                .addE('APPEARS_IN')
-                .to(__.V().has('gremlin.id', rel.chunkId))
-                .property('timestamp', new Date().toISOString())
-                .next();
-            
-            successCount++;
-        } catch (error) {
-            console.error(`Failed to create relationship ${rel.entityId} -> ${rel.chunkId}:`, error.message);
-            failCount++;
-            errors.push(`${rel.entityId} -> ${rel.chunkId}: ${error.message}`);
-        }
+    // Process in smaller sub-batches for better performance
+    const BATCH_SIZE = 20; // Higher batch size since these are simpler operations
+    for (let i = 0; i < relationships.length; i += BATCH_SIZE) {
+        const batch = relationships.slice(i, Math.min(i + BATCH_SIZE, relationships.length));
+        
+        // Process batch in parallel
+        const results = await Promise.all(batch.map(async (rel) => {
+            try {
+                // Check if both vertices exist
+                const [entityExists, chunkExists] = await Promise.all([
+                    g.V().has('gremlin.id', rel.entityId).hasNext(),
+                    g.V().has('gremlin.id', rel.chunkId).hasNext()
+                ]);
+                
+                if (!entityExists || !chunkExists) {
+                    return { status: 'skipped', entityId: rel.entityId, chunkId: rel.chunkId, reason: 'vertices not found' };
+                }
+                
+                // Check if relationship already exists
+                const relExists = await g.V().has('gremlin.id', rel.entityId)
+                    .outE('APPEARS_IN')
+                    .where(__.inV().has('gremlin.id', rel.chunkId))
+                    .hasNext();
+                
+                if (relExists) {
+                    return { status: 'skipped', entityId: rel.entityId, chunkId: rel.chunkId, reason: 'already exists' };
+                }
+                
+                // Create APPEARS_IN edge from entity to chunk
+                await g.V().has('gremlin.id', rel.entityId)
+                    .addE('APPEARS_IN')
+                    .to(__.V().has('gremlin.id', rel.chunkId))
+                    .property('timestamp', new Date().toISOString())
+                    .next();
+                
+                return { status: 'success', entityId: rel.entityId, chunkId: rel.chunkId };
+            } catch (error) {
+                console.error(`Failed to create relationship ${rel.entityId} -> ${rel.chunkId}:`, error.message);
+                return { status: 'failed', entityId: rel.entityId, chunkId: rel.chunkId, error: error.message };
+            }
+        }));
+        
+        // Count results
+        results.forEach(result => {
+            if (result.status === 'success') successCount++;
+            else if (result.status === 'failed') {
+                failCount++;
+                if (errors.length < 10) errors.push(`${result.entityId} -> ${result.chunkId}: ${result.error}`);
+            }
+            else if (result.status === 'skipped') skippedCount++;
+        });
     }
     
-    console.log(`Batch complete: ${successCount} created, ${failCount} failed`);
+    console.log(`Batch complete: ${successCount} created, ${failCount} failed, ${skippedCount} skipped`);
     
     return {
         statusCode: 200,
@@ -661,8 +698,9 @@ async function createEntityChunkRelationshipsBatch(event, g) {
             result: {
                 created: successCount,
                 failed: failCount,
+                skipped: skippedCount,
                 total: relationships.length,
-                errors: errors.length > 0 ? errors.slice(0, 10) : undefined // Limit error messages
+                errors: errors.length > 0 ? errors : undefined
             }
         })
     };
@@ -686,38 +724,58 @@ async function createEntitiesBatch(event, g) {
     
     let successCount = 0;
     let failCount = 0;
+    let skippedCount = 0;
+    const errors = [];
     
     console.log(`Creating batch of ${entities.length} entities...`);
     
-    for (const entity of entities) {
-        try {
-            // Check if entity already exists
-            const exists = await g.V().has('gremlin.id', entity.entityId).hasNext();
-            if (exists) {
-                console.log(`Entity ${entity.entityId} already exists, skipping`);
-                continue;
+    // Process in smaller sub-batches for better performance
+    const BATCH_SIZE = 10;
+    for (let i = 0; i < entities.length; i += BATCH_SIZE) {
+        const batch = entities.slice(i, Math.min(i + BATCH_SIZE, entities.length));
+        
+        // Process batch in parallel
+        const results = await Promise.all(batch.map(async (entity) => {
+            try {
+                // Check if entity already exists
+                const exists = await g.V().has('gremlin.id', entity.entityId).hasNext();
+                if (exists) {
+                    console.log(`Entity ${entity.entityId} already exists, skipping`);
+                    return { status: 'skipped', entityId: entity.entityId };
+                }
+                
+                // Create entity vertex
+                await g.addV('entity')
+                    .property('gremlin.id', entity.entityId)
+                    .property('entityId', entity.entityId)
+                    .property('entityType', entity.type || entity.entityType)
+                    .property('name', entity.name)
+                    .property('indexName', entity.properties?.indexName || entity.indexName || '')
+                    .property('documentId', entity.documentId || '')
+                    .property('description', entity.properties?.description || '')
+                    .property('sourceChunks', JSON.stringify(entity.properties?.sourceChunks || []))
+                    .property('timestamp', new Date().toISOString())
+                    .next();
+                
+                return { status: 'success', entityId: entity.entityId };
+            } catch (error) {
+                console.error(`Failed to create entity ${entity.name}:`, error.message);
+                return { status: 'failed', entityId: entity.entityId, error: error.message };
             }
-            
-            // Create entity vertex
-            await g.addV('entity')
-                .property('gremlin.id', entity.entityId)
-                .property('entityId', entity.entityId)
-                .property('entityType', entity.type)
-                .property('name', entity.name)
-                .property('indexName', entity.properties?.indexName || '')
-                .property('description', entity.properties?.description || '')
-                .property('sourceChunks', JSON.stringify(entity.properties?.sourceChunks || []))
-                .property('timestamp', new Date().toISOString())
-                .next();
-            
-            successCount++;
-        } catch (error) {
-            console.error(`Failed to create entity ${entity.name}:`, error.message);
-            failCount++;
-        }
+        }));
+        
+        // Count results
+        results.forEach(result => {
+            if (result.status === 'success') successCount++;
+            else if (result.status === 'failed') {
+                failCount++;
+                if (errors.length < 10) errors.push(result.error);
+            }
+            else if (result.status === 'skipped') skippedCount++;
+        });
     }
     
-    console.log(`Batch complete: ${successCount} created, ${failCount} failed`);
+    console.log(`Batch complete: ${successCount} created, ${failCount} failed, ${skippedCount} skipped`);
     
     return {
         statusCode: 200,
@@ -726,7 +784,9 @@ async function createEntitiesBatch(event, g) {
             result: {
                 created: successCount,
                 failed: failCount,
-                total: entities.length
+                skipped: skippedCount,
+                total: entities.length,
+                errors: errors.length > 0 ? errors : undefined
             }
         })
     };
@@ -750,38 +810,72 @@ async function createRelationshipsBatch(event, g) {
     
     let successCount = 0;
     let failCount = 0;
+    let skippedCount = 0;
+    const errors = [];
     
     console.log(`Creating batch of ${relationships.length} entity relationships...`);
     
-    for (const rel of relationships) {
-        try {
-            // Check if entities exist
-            const fromExists = await g.V().has('gremlin.id', rel.fromEntityId).hasNext();
-            const toExists = await g.V().has('gremlin.id', rel.toEntityId).hasNext();
-            
-            if (!fromExists || !toExists) {
-                console.log(`Entities not found for relationship: from=${fromExists}, to=${toExists}`);
-                failCount++;
-                continue;
+    // Process in smaller sub-batches for better performance
+    const BATCH_SIZE = 10;
+    for (let i = 0; i < relationships.length; i += BATCH_SIZE) {
+        const batch = relationships.slice(i, Math.min(i + BATCH_SIZE, relationships.length));
+        
+        // Process batch in parallel
+        const results = await Promise.all(batch.map(async (rel) => {
+            try {
+                // Support both naming conventions
+                const fromId = rel.fromEntityId || rel.fromEntity;
+                const toId = rel.toEntityId || rel.toEntity;
+                
+                // Check if entities exist
+                const [fromExists, toExists] = await Promise.all([
+                    g.V().has('gremlin.id', fromId).hasNext(),
+                    g.V().has('gremlin.id', toId).hasNext()
+                ]);
+                
+                if (!fromExists || !toExists) {
+                    console.log(`Entities not found for relationship: from=${fromExists}, to=${toExists}`);
+                    return { status: 'skipped', from: fromId, to: toId, reason: 'entities not found' };
+                }
+                
+                // Check if relationship already exists
+                const relExists = await g.V().has('gremlin.id', fromId)
+                    .outE(rel.relationshipType || 'RELATED_TO')
+                    .where(__.inV().has('gremlin.id', toId))
+                    .hasNext();
+                
+                if (relExists) {
+                    return { status: 'skipped', from: fromId, to: toId, reason: 'already exists' };
+                }
+                
+                // Create relationship
+                await g.V().has('gremlin.id', fromId)
+                    .addE(rel.relationshipType || 'RELATED_TO')
+                    .to(__.V().has('gremlin.id', toId))
+                    .property('confidence', rel.confidence || 0.8)
+                    .property('crossChunk', rel.properties?.crossChunk || false)
+                    .property('timestamp', new Date().toISOString())
+                    .next();
+                
+                return { status: 'success', from: fromId, to: toId };
+            } catch (error) {
+                console.error(`Failed to create relationship:`, error.message);
+                return { status: 'failed', from: rel.fromEntityId || rel.fromEntity, to: rel.toEntityId || rel.toEntity, error: error.message };
             }
-            
-            // Create relationship
-            await g.V().has('gremlin.id', rel.fromEntityId)
-                .addE(rel.relationshipType || 'RELATED_TO')
-                .to(__.V().has('gremlin.id', rel.toEntityId))
-                .property('confidence', rel.confidence || 0.8)
-                .property('crossChunk', rel.properties?.crossChunk || false)
-                .property('timestamp', new Date().toISOString())
-                .next();
-            
-            successCount++;
-        } catch (error) {
-            console.error(`Failed to create relationship:`, error.message);
-            failCount++;
-        }
+        }));
+        
+        // Count results
+        results.forEach(result => {
+            if (result.status === 'success') successCount++;
+            else if (result.status === 'failed') {
+                failCount++;
+                if (errors.length < 10) errors.push(`${result.from}->${result.to}: ${result.error}`);
+            }
+            else if (result.status === 'skipped') skippedCount++;
+        });
     }
     
-    console.log(`Batch complete: ${successCount} created, ${failCount} failed`);
+    console.log(`Batch complete: ${successCount} created, ${failCount} failed, ${skippedCount} skipped`);
     
     return {
         statusCode: 200,
@@ -790,7 +884,9 @@ async function createRelationshipsBatch(event, g) {
             result: {
                 created: successCount,
                 failed: failCount,
-                total: relationships.length
+                skipped: skippedCount,
+                total: relationships.length,
+                errors: errors.length > 0 ? errors : undefined
             }
         })
     };

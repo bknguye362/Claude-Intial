@@ -110,6 +110,18 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  // Handle keep-alive endpoint
+  if (req.url === '/keep-alive' && req.method === 'GET') {
+    console.log('[Keep-Alive] Ping received at', new Date().toISOString());
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ 
+      alive: true,
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime()
+    }));
+    return;
+  }
+
   // Serve static files
   if (req.method === 'GET' && req.url) {
     let filePath = req.url;
@@ -332,19 +344,8 @@ const server = createServer(async (req, res) => {
   }
 });
 
-// Keep-alive endpoint to prevent Heroku idling
-server.on('request', (req, res) => {
-  if (req.url === '/keep-alive' && req.method === 'GET') {
-    console.log('[Keep-Alive] Ping received at', new Date().toISOString());
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ 
-      alive: true,
-      timestamp: new Date().toISOString(),
-      uptime: process.uptime()
-    }));
-    return; // Prevent further processing
-  }
-});
+// Remove the problematic server.on('request') handler
+// Keep-alive is handled in the main request routing above
 
 server.listen(PORT, () => {
   console.log(`🚀 Server running at http://localhost:${PORT}`);
