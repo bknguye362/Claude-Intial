@@ -5,6 +5,7 @@ import { ContextBuilder } from '../lib/context-builder.js';
 import { hybridSearch } from '../lib/hybrid-search.js';
 import { detectSectionQuery } from '../lib/metadata-filter-simplified.js';
 import { multiQuerySearch } from '../lib/multi-query-search.js';
+import { invokeLambda } from '../lib/neptune-lambda-client.js';
 
 // Azure OpenAI configuration for embeddings
 const AZURE_OPENAI_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT || 'https://franklin-open-ai-test.openai.azure.com';
@@ -12,10 +13,77 @@ const AZURE_OPENAI_API_KEY = process.env.AZURE_OPENAI_API_KEY || process.env.AZU
 const AZURE_OPENAI_API_VERSION = process.env.AZURE_OPENAI_API_VERSION || '2023-12-01-preview';
 const EMBEDDINGS_DEPLOYMENT = 'text-embedding-ada-002';
 
-// Helper function to generate embeddings - identical to test file
 // Helper function to wait (for rate limiting)
 async function wait(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Extract entities from text for graph enhancement
+function extractEntitiesFromText(text: string): string[] {
+  const entities: string[] = [];
+  
+  // Pattern for capitalized words (potential named entities)
+  const capitalizedPattern = /\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*/g;
+  const matches = text.match(capitalizedPattern) || [];
+  
+  // Filter out common words
+  const commonWords = new Set(['The', 'This', 'That', 'These', 'Those', 'What', 'When', 'Where', 'Why', 'How']);
+  
+  matches.forEach(match => {
+    if (!commonWords.has(match) && match.length > 2) {
+      entities.push(match);
+    }
+  });
+  
+  // Also extract quoted strings
+  const quotedPattern = /"([^"]+)"/g;
+  let quotedMatch;
+  while ((quotedMatch = quotedPattern.exec(text)) !== null) {
+    entities.push(quotedMatch[1]);
+  }
+  
+  return [...new Set(entities)]; // Remove duplicates
+}
+
+// Query Neptune graph for related entities
+async function queryGraphForEntities(entities: string[], maxEntities: number = 5): Promise<Map<string, any[]>> {
+  const relatedEntities = new Map<string, any[]>();
+  
+  // Limit entities to query
+  const entitiesToQuery = entities.slice(0, maxEntities);
+  
+  for (const entity of entitiesToQuery) {
+    try {
+      console.log(`[Default Query Tool] 🔍 Querying graph for entity: ${entity}`);
+      
+      // Query for all entities and filter by name
+      const result = await invokeLambda({
+        operation: 'queryEntitiesByType',
+        limit: 100
+      });
+      
+      if (result.body) {
+        const response = JSON.parse(result.body);
+        if (response.result?.entities) {
+          // Filter entities that match our query
+          const matches = response.result.entities.filter((e: any) => {
+            const name = e.name?.[0] || '';
+            return name.toLowerCase().includes(entity.toLowerCase()) || 
+                   entity.toLowerCase().includes(name.toLowerCase());
+          });
+          
+          if (matches.length > 0) {
+            relatedEntities.set(entity, matches.slice(0, 3)); // Limit to 3 matches per entity
+            console.log(`[Default Query Tool] ✅ Found ${matches.length} graph entities for "${entity}"`);
+          }
+        }
+      }
+    } catch (error) {
+      console.log(`[Default Query Tool] ⚠️ Graph query failed for "${entity}":`, error instanceof Error ? error.message : 'Unknown error');
+    }
+  }
+  
+  return relatedEntities;
 }
 
 async function generateEmbedding(text: string): Promise<number[]> {
@@ -110,9 +178,24 @@ export const defaultQueryTool = createTool({
       console.log(`[Default Query Tool]    Embedding generated, length: ${embedding.length}`);
       console.log(`[Default Query Tool]    Generated embedding first 5: [${embedding.slice(0, 5).map(v => v.toFixed(6)).join(', ')}...]`);
       
-      // Step 2: Skip uploading - we'll query directly with the embedding
-      console.log('[Default Query Tool] 2. Skipping vector storage - will query directly');
-      console.log('[Default Query Tool] ✅ Question vectorized, ready to search');
+      // Step 2: Query knowledge graph for related entities
+      console.log('[Default Query Tool] 2. Checking knowledge graph for entities...');
+      const questionEntities = extractEntitiesFromText(context.question);
+      console.log(`[Default Query Tool]    Extracted ${questionEntities.length} potential entities: ${questionEntities.join(', ')}`);
+      
+      let graphEntities: Map<string, any[]> = new Map();
+      if (questionEntities.length > 0) {
+        try {
+          graphEntities = await queryGraphForEntities(questionEntities, 5);
+          if (graphEntities.size > 0) {
+            console.log(`[Default Query Tool] 📊 Found ${graphEntities.size} entities in knowledge graph`);
+          } else {
+            console.log('[Default Query Tool]    No matching entities found in graph');
+          }
+        } catch (graphError) {
+          console.log('[Default Query Tool] ⚠️ Graph query failed, continuing with vector search only');
+        }
+      }
       
       // Step 3: List all indices (exactly like the test file)
       console.log('\n[Default Query Tool] 3. Listing all indices...');
@@ -273,6 +356,53 @@ export const defaultQueryTool = createTool({
         
         console.log(`[Default Query Tool] 📊 Found ${validResults.length} valid results after hybrid search and filtering`);
         finalResults = validResults;
+      }
+      
+      // Apply graph enhancement to boost relevant results
+      if (graphEntities.size > 0) {
+        console.log('\n[Default Query Tool] 🔗 APPLYING GRAPH ENHANCEMENT:');
+        console.log('[Default Query Tool] =====================================');
+        
+        let boostedCount = 0;
+        finalResults = finalResults.map(result => {
+          const content = (result.metadata?.chunkContent || result.metadata?.content || '').toLowerCase();
+          let graphBoost = 0;
+          
+          // Check if content mentions any graph entities
+          graphEntities.forEach((entities, queryTerm) => {
+            entities.forEach(entity => {
+              const entityName = (entity.name?.[0] || '').toLowerCase();
+              if (entityName && content.includes(entityName)) {
+                graphBoost = Math.max(graphBoost, 0.15); // 15% boost for graph entity mentions
+                if (graphBoost > 0 && boostedCount < 10) {
+                  console.log(`[Default Query Tool]    ⭐ Boosting chunk with "${entityName}"`);
+                  boostedCount++;
+                }
+              }
+            });
+          });
+          
+          // Apply boost to score or distance
+          if (graphBoost > 0) {
+            return {
+              ...result,
+              distance: result.distance ? result.distance * (1 - graphBoost) : result.distance,
+              score: result.score ? result.score + graphBoost : graphBoost,
+              graphEnhanced: true
+            };
+          }
+          return result;
+        });
+        
+        console.log(`[Default Query Tool] 📊 Boosted ${boostedCount} chunks based on graph entities`);
+        
+        // Re-sort by enhanced scores
+        finalResults.sort((a, b) => {
+          if (a.distance !== undefined && b.distance !== undefined) {
+            return a.distance - b.distance; // Lower distance is better
+          }
+          return (b.score || 0) - (a.score || 0); // Higher score is better
+        });
       }
       
       // Now continue with the rest of the processing using finalResults
@@ -506,6 +636,31 @@ export const defaultQueryTool = createTool({
       // Use ContextBuilder to create enhanced response
       const contextualResponse = ContextBuilder.buildContextualResponse(contextualizedChunks);
       
+      // Build graph context string if we have entities
+      let graphContextString = '';
+      if (graphEntities.size > 0) {
+        graphContextString = '\n\n📊 KNOWLEDGE GRAPH CONTEXT:\n';
+        graphContextString += '================================\n';
+        
+        graphEntities.forEach((entities, queryTerm) => {
+          if (entities.length > 0) {
+            graphContextString += `\n🔍 Related to "${queryTerm}":\n`;
+            entities.forEach(entity => {
+              const name = entity.name?.[0] || '';
+              const type = entity.entityType?.[0] || '';
+              graphContextString += `• ${name} (${type})\n`;
+              if (entity.description?.[0]) {
+                graphContextString += `  ${entity.description[0]}\n`;
+              }
+            });
+          }
+        });
+        
+        const graphEnhancedCount = top30.filter(r => r.graphEnhanced).length;
+        graphContextString += '\n================================\n';
+        graphContextString += `${graphEnhancedCount} results were enhanced with graph data.\n`;
+      }
+      
       // Return the enhanced results with ContextBuilder output
       const result = {
         success: true,
@@ -520,9 +675,20 @@ export const defaultQueryTool = createTool({
           documentsFound: contextualResponse.documentSummary.length,
           summary: contextualResponse.documentSummary
         },
-        // Additional context from ContextBuilder
-        contextString: contextualResponse.contextString,
+        // Combined context string with graph data
+        contextString: contextualResponse.contextString + graphContextString,
         citations: contextualResponse.citations,
+        // Graph enhancement summary
+        graphEnhancement: graphEntities.size > 0 ? {
+          entitiesFound: graphEntities.size,
+          entities: Array.from(graphEntities.entries()).map(([query, entities]) => ({
+            queryTerm: query,
+            relatedEntities: entities.map(e => ({
+              name: e.name?.[0] || '',
+              type: e.entityType?.[0] || ''
+            }))
+          }))
+        } : null,
         // Debug information
         debug: {
           indicesSearched: indices.join(','),
@@ -533,7 +699,9 @@ export const defaultQueryTool = createTool({
           listingMethod: indices.length > 1 ? 'listIndicesWithNewman' : 'fallback',
           awsKeySet: !!process.env.AWS_ACCESS_KEY_ID,
           bucketName: process.env.S3_VECTORS_BUCKET || 'chatbotvectors362',
-          listingErrors: listingErrors
+          listingErrors: listingErrors,
+          graphEntitiesQueried: graphEntities.size,
+          graphEnhancedChunks: top30.filter(r => r.graphEnhanced).length
         }
       };
       
