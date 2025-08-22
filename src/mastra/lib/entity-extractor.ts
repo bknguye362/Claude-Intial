@@ -41,8 +41,11 @@ async function extractEntitiesFromChunk(
     return { chunkId, entities: [], relationships: [] };
   }
 
+  console.log(`[Entity Extractor] Processing chunk ${chunkId}, content length: ${chunkContent.length}`);
+
   try {
     const url = `${AZURE_OPENAI_ENDPOINT}/openai/deployments/${LLM_DEPLOYMENT}/chat/completions?api-version=${AZURE_OPENAI_API_VERSION}`;
+    console.log(`[Entity Extractor] Calling Azure OpenAI at: ${url}`);
     
     const response = await fetch(url, {
       method: 'POST',
@@ -103,28 +106,60 @@ Return JSON:
         // Try to extract JSON from the response
         let jsonStr = content.match(/\{[\s\S]*\}/)?.[0] || '{}';
         
-        // Clean up common JSON issues
+        // More robust JSON cleanup
         jsonStr = jsonStr
-          .replace(/,\s*}/g, '}')  // Remove trailing commas
+          .replace(/,\s*}/g, '}')  // Remove trailing commas in objects
           .replace(/,\s*]/g, ']')  // Remove trailing commas in arrays
           .replace(/[\u0000-\u001F\u007F-\u009F]/g, '') // Remove control characters
-          .replace(/\\/g, '\\\\'); // Escape backslashes
+          .replace(/"/g, '"')      // Replace smart quotes
+          .replace(/"/g, '"')      // Replace smart quotes
+          .replace(/'/g, "'")      // Replace smart single quotes
+          .replace(/'/g, "'")      // Replace smart single quotes
+          .replace(/,\s*,/g, ',')  // Remove double commas
+          .replace(/\[\s*,/g, '[') // Remove leading comma in arrays
+          .replace(/}\s*{/g, '},{'); // Fix missing comma between objects
+        
+        // Don't double-escape backslashes if they're already escaped
+        if (!jsonStr.includes('\\\\')) {
+          jsonStr = jsonStr.replace(/\\/g, '\\\\');
+        }
         
         let extracted;
         try {
           extracted = JSON.parse(jsonStr);
         } catch (parseError) {
-          console.warn('[Entity Extractor] Failed to parse JSON, attempting to extract entities manually');
-          // Fallback: try to extract just the entities array
-          const entitiesMatch = jsonStr.match(/"entities"\s*:\s*\[(.*?)\]/s);
+          console.warn('[Entity Extractor] Failed to parse JSON, attempting fallback extraction');
+          // More robust fallback extraction
+          extracted = { entities: [], relationships: [] };
+          
+          // Try to extract entities array
+          const entitiesMatch = content.match(/"entities"\s*:\s*\[([\s\S]*?)\](?:\s*[,}])/);
           if (entitiesMatch) {
             try {
-              extracted = { entities: JSON.parse('[' + entitiesMatch[1] + ']'), relationships: [] };
-            } catch {
-              extracted = { entities: [], relationships: [] };
+              const entitiesStr = '[' + entitiesMatch[1] + ']';
+              const cleanedEntities = entitiesStr
+                .replace(/,\s*}/g, '}')
+                .replace(/,\s*]/g, ']')
+                .replace(/,\s*,/g, ',');
+              extracted.entities = JSON.parse(cleanedEntities);
+            } catch (e: any) {
+              console.warn('[Entity Extractor] Could not parse entities array:', e.message);
             }
-          } else {
-            extracted = { entities: [], relationships: [] };
+          }
+          
+          // Try to extract relationships array
+          const relMatch = content.match(/"relationships"\s*:\s*\[([\s\S]*?)\](?:\s*[,}])/);
+          if (relMatch) {
+            try {
+              const relStr = '[' + relMatch[1] + ']';
+              const cleanedRels = relStr
+                .replace(/,\s*}/g, '}')
+                .replace(/,\s*]/g, ']')
+                .replace(/,\s*,/g, ',');
+              extracted.relationships = JSON.parse(cleanedRels);
+            } catch (e: any) {
+              console.warn('[Entity Extractor] Could not parse relationships array:', e.message);
+            }
           }
         }
         
@@ -459,9 +494,12 @@ export async function extractEntitiesFromChunks(
   }>
 ): Promise<ChunkEntities[]> {
   console.log(`[Entity Extractor] Extracting entities from ${chunks.length} chunks with high concurrency...`);
+  console.log(`[Entity Extractor] API Key present: ${!!AZURE_OPENAI_API_KEY}, Key length: ${AZURE_OPENAI_API_KEY.length}`);
+  console.log(`[Entity Extractor] Using endpoint: ${AZURE_OPENAI_ENDPOINT}`);
   
   if (!AZURE_OPENAI_API_KEY) {
     console.log('[Entity Extractor] No API key, returning empty entities');
+    console.log('[Entity Extractor] Checked env vars: AZURE_OPENAI_API_KEY, AZURE_API_KEY, OPENAI_API_KEY');
     return chunks.map(chunk => ({ chunkId: chunk.id, entities: [], relationships: [] }));
   }
   
@@ -478,12 +516,22 @@ export async function extractEntitiesFromChunks(
     const batchStartTime = Date.now();
     
     console.log(`[Entity Extractor] Processing batch ${Math.floor(i/maxConcurrent) + 1}/${Math.ceil(chunks.length/maxConcurrent)} (chunks ${i + 1}-${Math.min(i + maxConcurrent, chunks.length)})...`);
+    console.log(`[Entity Extractor] Batch size: ${batch.length} chunks`);
     
     // Process entire batch in parallel - no waiting between individual chunks
     const batchPromises = batch.map(chunk => 
       extractEntitiesFromChunk(chunk.id, chunk.content, chunk.summary)
+        .then(result => {
+          if (!result.entities || result.entities.length === 0) {
+            console.log(`[Entity Extractor] Chunk ${chunk.id} returned no entities`);
+          } else {
+            console.log(`[Entity Extractor] Chunk ${chunk.id} extracted ${result.entities.length} entities`);
+          }
+          return result;
+        })
         .catch(error => {
           console.error(`[Entity Extractor] Error in chunk ${chunk.id}:`, error.message);
+          console.error(`[Entity Extractor] Error details:`, error);
           return { chunkId: chunk.id, entities: [], relationships: [] };
         })
     );
@@ -572,26 +620,55 @@ export async function createEntityKnowledgeGraphFromExtracted(
       extractedAt: new Date().toISOString()
     });
     
-    // Create chunk nodes and relationships
+    // Create chunk nodes with rate limit protection
     console.log('[Entity Knowledge Graph] Creating chunk nodes...');
-    for (let i = 0; i < chunks.length; i++) {
-      const chunk = chunks[i];
-      await createChunkNode(
-        chunk.id, 
-        documentId, 
-        i, // chunk index
-        chunk.content.substring(0, 1000), // content (limited)
-        chunk.summary || '', // summary
-        { entityCount: chunk.entities.length } // metadata
+    const chunkBatchSize = 5; // Reduced from 10 to avoid rate limits
+    
+    for (let i = 0; i < chunks.length; i += chunkBatchSize) {
+      const batch = chunks.slice(i, Math.min(i + chunkBatchSize, chunks.length));
+      const batchPromises = batch.map((chunk, batchIndex) => 
+        createChunkNode(
+          chunk.id, 
+          documentId, 
+          i + batchIndex, // chunk index
+          chunk.content.substring(0, 1000), // content (limited)
+          chunk.summary || '', // summary
+          { entityCount: chunk.entities.length } // metadata
+        ).catch(err => {
+          console.error(`[Entity Knowledge Graph] Failed to create chunk node ${chunk.id}:`, err.message);
+          return false;
+        })
+      );
+      
+      await Promise.all(batchPromises);
+      
+      if ((i + chunkBatchSize) % 50 === 0 || i + chunkBatchSize >= chunks.length) {
+        console.log(`[Entity Knowledge Graph] Created chunk nodes ${Math.min(i + chunkBatchSize, chunks.length)} of ${chunks.length}`);
+      }
+      
+      // Add delay between batches to avoid rate limiting
+      if (i + chunkBatchSize < chunks.length) {
+        await new Promise(resolve => setTimeout(resolve, 200)); // 200ms delay
+      }
+    }
+    
+    // Create chunk relationships in parallel
+    console.log('[Entity Knowledge Graph] Creating chunk relationships in parallel...');
+    const relationshipPromises = [];
+    for (let i = 0; i < chunks.length - 1; i++) {
+      relationshipPromises.push(
+        createChunkRelationships(chunks[i].id, [
+          { id: chunks[i + 1].id, relationship: 'NEXT_CHUNK', strength: 1.0 }
+        ]).catch(err => {
+          console.error(`[Entity Knowledge Graph] Failed to create relationship for chunk ${i}:`, err.message);
+          return false;
+        })
       );
     }
     
-    // Create chunk relationships (sequential relationship between chunks)
-    console.log('[Entity Knowledge Graph] Creating chunk relationships...');
-    for (let i = 0; i < chunks.length - 1; i++) {
-      await createChunkRelationships(chunks[i].id, [
-        { id: chunks[i + 1].id, relationship: 'NEXT_CHUNK', strength: 1.0 }
-      ]);
+    // Process relationships in batches
+    for (let i = 0; i < relationshipPromises.length; i += 10) {
+      await Promise.all(relationshipPromises.slice(i, i + 10));
     }
     
     // Create entity nodes in Neptune
@@ -633,22 +710,61 @@ export async function createEntityKnowledgeGraphFromExtracted(
       console.log(`[Entity Knowledge Graph] Created ${relationshipResult.result?.created || 0} relationships`);
     }
     
-    // Create entity-chunk relationships
-    console.log('[Entity Knowledge Graph] Creating entity-chunk relationships...');
+    // Collect all entity-chunk relationships to create
+    console.log('[Entity Knowledge Graph] Preparing entity-chunk relationships...');
+    const entityChunkRelationships = [];
+    
     for (const chunk of chunks) {
       for (const entity of chunk.entities) {
         const dedupedEntity = dedupedEntities.find(e => 
           e.name === entity.name && e.type === entity.type
         );
         if (dedupedEntity) {
-          await invokeLambda({
-            operation: 'createEntityChunkRelationship',
+          entityChunkRelationships.push({
             chunkId: chunk.id,
             entityId: dedupedEntity.id
           });
         }
       }
     }
+    
+    // Create relationships in batches to avoid rate limiting
+    console.log(`[Entity Knowledge Graph] Creating ${entityChunkRelationships.length} entity-chunk relationships in batches...`);
+    const batchSize = 50; // Send 50 relationships per Lambda call
+    let successfulRelationships = 0;
+    
+    for (let i = 0; i < entityChunkRelationships.length; i += batchSize) {
+      const batch = entityChunkRelationships.slice(i, Math.min(i + batchSize, entityChunkRelationships.length));
+      
+      try {
+        // Send batch of relationships in a single Lambda call
+        const result = await invokeLambda({
+          operation: 'createEntityChunkRelationshipsBatch',
+          relationships: batch
+        });
+        
+        successfulRelationships += batch.length;
+        
+        if (i % 200 === 0 && i > 0) {
+          console.log(`[Entity Knowledge Graph] Created ${successfulRelationships} of ${entityChunkRelationships.length} entity-chunk relationships`);
+        }
+        
+        // Small delay between batches to respect rate limits
+        if (i + batchSize < entityChunkRelationships.length) {
+          await new Promise(resolve => setTimeout(resolve, 100)); // 100ms delay between batches
+        }
+      } catch (err: any) {
+        console.error(`[Entity Knowledge Graph] Failed to create batch of relationships:`, err.message);
+        // Implement exponential backoff on rate limit
+        if (err.message?.includes('Rate')) {
+          console.log('[Entity Knowledge Graph] Rate limited, waiting 2 seconds...');
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          i -= batchSize; // Retry this batch
+        }
+      }
+    }
+    
+    console.log(`[Entity Knowledge Graph] Created ${successfulRelationships} entity-chunk relationships`);
     
     console.log('[Entity Knowledge Graph] Graph creation completed successfully');
     return {

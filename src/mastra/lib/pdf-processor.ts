@@ -636,6 +636,10 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
   console.log(`[PDF Processor] Processing file: ${filepath}`);
   console.log(`[PDF Processor] Chunk size: ${chunkSize} characters`);
   
+  // Add timeout check
+  const startTime = Date.now();
+  const MAX_PROCESSING_TIME = 25 * 60 * 1000; // 25 minutes max
+  
   // Detect file type based on extension
   const fileExtension = filepath.toLowerCase().split('.').pop();
   const isPDF = fileExtension === 'pdf';
@@ -747,15 +751,19 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
     // Import entity extractor
     const { extractEntitiesFromChunks } = await import('./entity-extractor.js');
     
-    // Process in parallel: embeddings, summaries, and entities
-    const [embeddings, summaries, chunkEntities] = await Promise.all([
+    // First generate summaries, then do entities and embeddings in parallel
+    // (entities may need summaries for better extraction)
+    console.log(`[PDF Processor] Generating summaries first...`);
+    const summaries = await generateChunkSummaries(textChunks);
+    
+    console.log(`[PDF Processor] Now processing embeddings and entities in parallel...`);
+    const [embeddings, chunkEntities] = await Promise.all([
       generateEmbeddings(textChunks),
-      generateChunkSummaries(textChunks),
       extractEntitiesFromChunks(
         textChunks.map((chunk, i) => ({
           id: `chunk_${indexName}_${i}`,
           content: chunk,
-          summary: '' // Will be filled by summaries later
+          summary: summaries[i] || '' // Use actual summary
         }))
       )
     ]);
@@ -764,6 +772,14 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
     console.log(`[PDF Processor]   - ${embeddings.length} embeddings generated`);
     console.log(`[PDF Processor]   - ${summaries.length} summaries generated`);
     console.log(`[PDF Processor]   - ${chunkEntities.length} chunks processed for entities`);
+    
+    // Debug: Check if entities were actually extracted
+    const totalExtractedEntities = chunkEntities.reduce((sum, chunk) => sum + (chunk.entities?.length || 0), 0);
+    console.log(`[PDF Processor]   - Total entities extracted: ${totalExtractedEntities}`);
+    if (totalExtractedEntities === 0) {
+      console.warn(`[PDF Processor] WARNING: No entities were extracted from any chunks!`);
+      console.log(`[PDF Processor] Sample chunk entity data:`, JSON.stringify(chunkEntities[0], null, 2));
+    }
     
     // Create chunks with metadata including dynamic chunk info and entities
     const chunks = textChunks.map((content, index) => {
@@ -832,50 +848,52 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
     console.log(`[PDF Processor] Upload complete. Uploaded ${uploadedCount} vectors to index '${indexName}'`);
     
     // Create entity-based knowledge graph using pre-extracted entities
-    console.log(`[PDF Processor] Creating entity knowledge graph from pre-extracted entities...`);
-    try {
-      console.log(`[PDF Processor] Importing entity knowledge graph creator...`);
-      const { createEntityKnowledgeGraphFromExtracted } = await import('./entity-extractor.js');
-      console.log(`[PDF Processor] Module imported successfully`);
+    console.log(`[PDF Processor] Scheduling Neptune graph creation as background task...`);
+    
+    // Check if we're approaching timeout
+    const elapsedTime = Date.now() - startTime;
+    if (elapsedTime > 20 * 60 * 1000) { // If more than 20 minutes elapsed
+      console.log(`[PDF Processor] Skipping Neptune graph creation due to time constraints (${Math.round(elapsedTime/1000)}s elapsed)`);
+      console.log(`[PDF Processor] Neptune graph can be created separately later`);
+    } else {
+      // Create graph asynchronously without waiting
+      console.log(`[PDF Processor] Starting async Neptune graph creation...`);
       
-      const docId = `doc_${indexName}`;  // Matches S3 index name
-      
-      // Prepare chunks with their pre-extracted entities
-      const graphChunks = chunks.map((chunk, i) => ({
-        id: `chunk_${indexName}_${i}`,
-        content: chunk.content,
-        summary: chunk.metadata.summary || '',
-        entities: chunk.metadata.entities,
-        relationships: chunk.metadata.relationships
-      }));
-      
-      // Count total entities across all chunks
-      const totalEntities = chunks.reduce((sum, chunk) => sum + chunk.metadata.entityCount, 0);
-      const totalRelationships = chunks.reduce((sum, chunk) => sum + chunk.metadata.relationships.length, 0);
-      
-      console.log(`[PDF Processor] Creating graph with ${totalEntities} pre-extracted entities and ${totalRelationships} relationships...`);
-      const graphResult = await createEntityKnowledgeGraphFromExtracted(docId, indexName, graphChunks);
-      console.log(`[PDF Processor] Graph creation completed`);
-      
-      if (graphResult.success) {
-        console.log(`[PDF Processor] Entity knowledge graph created successfully`);
-        console.log(`[PDF Processor] - ${graphResult.entities.length} unique entities in graph`);
-        console.log(`[PDF Processor] - ${graphResult.relationships.length} relationships created`);
-        
-        // Log entity type distribution
-        const entityTypes: Record<string, number> = {};
-        for (const entity of graphResult.entities) {
-          entityTypes[entity.type] = (entityTypes[entity.type] || 0) + 1;
+      // Fire and forget - don't await
+      (async () => {
+        try {
+          const { createEntityKnowledgeGraphFromExtracted } = await import('./entity-extractor.js');
+          const docId = `doc_${indexName}`;
+          
+          const graphChunks = chunks.map((chunk, i) => ({
+            id: `chunk_${indexName}_${i}`,
+            content: chunk.content,
+            summary: chunk.metadata.summary || '',
+            entities: chunk.metadata.entities,
+            relationships: chunk.metadata.relationships
+          }));
+          
+          const totalEntities = chunks.reduce((sum, chunk) => sum + chunk.metadata.entityCount, 0);
+          const totalRelationships = chunks.reduce((sum, chunk) => sum + chunk.metadata.relationships.length, 0);
+          
+          console.log(`[PDF Processor Background] Creating graph with ${totalEntities} entities...`);
+          const graphResult = await createEntityKnowledgeGraphFromExtracted(docId, indexName, graphChunks);
+          
+          if (graphResult.success) {
+            console.log(`[PDF Processor Background] Graph created successfully!`);
+            console.log(`[PDF Processor Background] - ${graphResult.entities.length} unique entities`);
+            console.log(`[PDF Processor Background] - ${graphResult.relationships.length} relationships`);
+          }
+        } catch (error: any) {
+          console.error('[PDF Processor Background] Neptune graph creation failed:', error.message);
         }
-        console.log(`[PDF Processor] Entity types:`, entityTypes);
-      } else {
-        console.log(`[PDF Processor] Entity graph creation had issues but continuing...`);
-      }
-    } catch (neptuneError: any) {
-      console.error('[PDF Processor] Error creating entity knowledge graph:', neptuneError);
-      console.error('[PDF Processor] Error message:', neptuneError.message);
-      console.error('[PDF Processor] Error stack:', neptuneError.stack);
-      // Continue even if Neptune fails - S3 Vectors is the primary storage
+      })().catch(err => {
+        console.error('[PDF Processor Background] Uncaught error in graph creation:', err);
+      });
+      
+      // Give it a moment to start but don't wait for completion
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      console.log(`[PDF Processor] Neptune graph creation running in background...`);
     }
     
     console.log(`[PDF Processor] ===== FILE PROCESSING COMPLETE =====`);

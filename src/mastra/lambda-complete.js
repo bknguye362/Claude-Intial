@@ -66,6 +66,16 @@ exports.handler = async (event) => {
             // Document operations
             case 'clearByDocumentId':
                 return await clearByDocumentId(event, g);
+            
+            // Batch operations for rate limit optimization
+            case 'createEntityChunkRelationshipsBatch':
+                return await createEntityChunkRelationshipsBatch(event, g);
+            
+            // Batch entity and relationship creation
+            case 'createEntities':
+                return await createEntitiesBatch(event, g);
+            case 'createRelationshipsBatch':
+                return await createRelationshipsBatch(event, g);
                 
             default:
                 return {
@@ -599,4 +609,189 @@ async function clearByDocumentId(event, g) {
         console.error('Error clearing document graph:', error);
         throw error;
     }
+}
+
+// BATCH OPERATIONS FOR RATE LIMIT OPTIMIZATION
+
+async function createEntityChunkRelationshipsBatch(event, g) {
+    const relationships = event.relationships || [];
+    
+    if (!relationships || relationships.length === 0) {
+        return {
+            statusCode: 200,
+            body: JSON.stringify({
+                success: true,
+                result: {
+                    created: 0,
+                    message: 'No relationships to create'
+                }
+            })
+        };
+    }
+    
+    let successCount = 0;
+    let failCount = 0;
+    const errors = [];
+    
+    console.log(`Creating batch of ${relationships.length} entity-chunk relationships...`);
+    
+    for (const rel of relationships) {
+        try {
+            // Create APPEARS_IN edge from entity to chunk
+            await g.V().has('gremlin.id', rel.entityId)
+                .addE('APPEARS_IN')
+                .to(__.V().has('gremlin.id', rel.chunkId))
+                .property('timestamp', new Date().toISOString())
+                .next();
+            
+            successCount++;
+        } catch (error) {
+            console.error(`Failed to create relationship ${rel.entityId} -> ${rel.chunkId}:`, error.message);
+            failCount++;
+            errors.push(`${rel.entityId} -> ${rel.chunkId}: ${error.message}`);
+        }
+    }
+    
+    console.log(`Batch complete: ${successCount} created, ${failCount} failed`);
+    
+    return {
+        statusCode: 200,
+        body: JSON.stringify({
+            success: true,
+            result: {
+                created: successCount,
+                failed: failCount,
+                total: relationships.length,
+                errors: errors.length > 0 ? errors.slice(0, 10) : undefined // Limit error messages
+            }
+        })
+    };
+}
+
+async function createEntitiesBatch(event, g) {
+    const entities = event.entities || [];
+    
+    if (!entities || entities.length === 0) {
+        return {
+            statusCode: 200,
+            body: JSON.stringify({
+                success: true,
+                result: {
+                    created: 0,
+                    message: 'No entities to create'
+                }
+            })
+        };
+    }
+    
+    let successCount = 0;
+    let failCount = 0;
+    
+    console.log(`Creating batch of ${entities.length} entities...`);
+    
+    for (const entity of entities) {
+        try {
+            // Check if entity already exists
+            const exists = await g.V().has('gremlin.id', entity.entityId).hasNext();
+            if (exists) {
+                console.log(`Entity ${entity.entityId} already exists, skipping`);
+                continue;
+            }
+            
+            // Create entity vertex
+            await g.addV('entity')
+                .property('gremlin.id', entity.entityId)
+                .property('entityId', entity.entityId)
+                .property('entityType', entity.type)
+                .property('name', entity.name)
+                .property('indexName', entity.properties?.indexName || '')
+                .property('description', entity.properties?.description || '')
+                .property('sourceChunks', JSON.stringify(entity.properties?.sourceChunks || []))
+                .property('timestamp', new Date().toISOString())
+                .next();
+            
+            successCount++;
+        } catch (error) {
+            console.error(`Failed to create entity ${entity.name}:`, error.message);
+            failCount++;
+        }
+    }
+    
+    console.log(`Batch complete: ${successCount} created, ${failCount} failed`);
+    
+    return {
+        statusCode: 200,
+        body: JSON.stringify({
+            success: true,
+            result: {
+                created: successCount,
+                failed: failCount,
+                total: entities.length
+            }
+        })
+    };
+}
+
+async function createRelationshipsBatch(event, g) {
+    const relationships = event.relationships || [];
+    
+    if (!relationships || relationships.length === 0) {
+        return {
+            statusCode: 200,
+            body: JSON.stringify({
+                success: true,
+                result: {
+                    created: 0,
+                    message: 'No relationships to create'
+                }
+            })
+        };
+    }
+    
+    let successCount = 0;
+    let failCount = 0;
+    
+    console.log(`Creating batch of ${relationships.length} entity relationships...`);
+    
+    for (const rel of relationships) {
+        try {
+            // Check if entities exist
+            const fromExists = await g.V().has('gremlin.id', rel.fromEntityId).hasNext();
+            const toExists = await g.V().has('gremlin.id', rel.toEntityId).hasNext();
+            
+            if (!fromExists || !toExists) {
+                console.log(`Entities not found for relationship: from=${fromExists}, to=${toExists}`);
+                failCount++;
+                continue;
+            }
+            
+            // Create relationship
+            await g.V().has('gremlin.id', rel.fromEntityId)
+                .addE(rel.relationshipType || 'RELATED_TO')
+                .to(__.V().has('gremlin.id', rel.toEntityId))
+                .property('confidence', rel.confidence || 0.8)
+                .property('crossChunk', rel.properties?.crossChunk || false)
+                .property('timestamp', new Date().toISOString())
+                .next();
+            
+            successCount++;
+        } catch (error) {
+            console.error(`Failed to create relationship:`, error.message);
+            failCount++;
+        }
+    }
+    
+    console.log(`Batch complete: ${successCount} created, ${failCount} failed`);
+    
+    return {
+        statusCode: 200,
+        body: JSON.stringify({
+            success: true,
+            result: {
+                created: successCount,
+                failed: failCount,
+                total: relationships.length
+            }
+        })
+    };
 }

@@ -76,17 +76,56 @@ Return JSON with relationships array:
         const content = data.choices[0].message.content;
         
         try {
-          // Clean up JSON response
+          // Extract JSON from response with better error handling
           let jsonStr = content.match(/\{[\s\S]*\}/)?.[0] || '{}';
-          jsonStr = jsonStr
-            .replace(/,\s*}/g, '}')  // Remove trailing commas
-            .replace(/,\s*]/g, ']')  // Remove trailing commas in arrays
-            .replace(/[\u0000-\u001F\u007F-\u009F]/g, ''); // Remove control characters
           
-          const parsed = JSON.parse(jsonStr);
+          // More aggressive JSON cleanup
+          jsonStr = jsonStr
+            .replace(/,\s*}/g, '}')  // Remove trailing commas in objects
+            .replace(/,\s*]/g, ']')  // Remove trailing commas in arrays
+            .replace(/[\u0000-\u001F\u007F-\u009F]/g, '') // Remove control characters
+            .replace(/\\/g, '\\\\')  // Escape backslashes
+            .replace(/"/g, '"')      // Replace smart quotes
+            .replace(/"/g, '"')      // Replace smart quotes
+            .replace(/'/g, "'")      // Replace smart single quotes
+            .replace(/'/g, "'")      // Replace smart single quotes
+            .replace(/,\s*,/g, ',')  // Remove double commas
+            .replace(/\[\s*,/g, '[') // Remove leading comma in arrays
+            .replace(/,\s*\]/g, ']') // Remove trailing comma before ]
+            .replace(/,\s*}/g, '}'); // Remove trailing comma before }
+          
+          let parsed;
+          try {
+            parsed = JSON.parse(jsonStr);
+          } catch (parseError) {
+            console.warn('[Relationship Finder] JSON parse failed, attempting to extract relationships array directly');
+            
+            // Try to extract just the relationships array
+            const relMatch = content.match(/"relationships"\s*:\s*\[([\s\S]*?)\]/);
+            if (relMatch) {
+              try {
+                // Try to parse just the array content
+                const arrayContent = '[' + relMatch[1] + ']';
+                const cleanedArray = arrayContent
+                  .replace(/,\s*}/g, '}')
+                  .replace(/,\s*]/g, ']')
+                  .replace(/,\s*,/g, ',');
+                parsed = { relationships: JSON.parse(cleanedArray) };
+              } catch {
+                console.error('[Relationship Finder] Failed to extract relationships array');
+                parsed = { relationships: [] };
+              }
+            } else {
+              parsed = { relationships: [] };
+            }
+          }
+          
           const rels = parsed.relationships || [];
+          let validRelationships = 0;
           
           for (const rel of rels) {
+            if (!rel.from || !rel.to || !rel.type) continue; // Skip incomplete relationships
+            
             // Find entities by name
             const fromEntity = allEntities.find(e => 
               e.name.toLowerCase() === rel.from.toLowerCase()
@@ -95,7 +134,7 @@ Return JSON with relationships array:
               e.name.toLowerCase() === rel.to.toLowerCase()
             );
             
-            if (fromEntity && toEntity && rel.confidence >= 0.6) {
+            if (fromEntity && toEntity && (rel.confidence || 0.7) >= 0.6) {
               // Check for duplicates
               const exists = relationships.some(r => 
                 r.fromEntity === fromEntity.id && 
@@ -108,18 +147,20 @@ Return JSON with relationships array:
                   fromEntity: fromEntity.id,
                   toEntity: toEntity.id,
                   relationshipType: rel.type,
-                  confidence: rel.confidence,
+                  confidence: rel.confidence || 0.7,
                   properties: { 
                     crossChunk: fromEntity.sourceChunk !== toEntity.sourceChunk
                   }
                 });
+                validRelationships++;
               }
             }
           }
           
-          console.log(`[Relationship Finder] Batch found ${rels.length} relationships`);
+          console.log(`[Relationship Finder] Batch processed ${rels.length} relationships, ${validRelationships} valid`);
         } catch (e) {
-          console.error('[Relationship Finder] Error parsing response:', e);
+          console.error('[Relationship Finder] Error processing relationships:', e);
+          console.error('[Relationship Finder] Content preview:', content.substring(0, 200));
         }
       } else {
         console.error('[Relationship Finder] API request failed:', response.status);
