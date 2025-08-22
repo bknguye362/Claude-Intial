@@ -342,6 +342,7 @@ server.on('request', (req, res) => {
       timestamp: new Date().toISOString(),
       uptime: process.uptime()
     }));
+    return; // Prevent further processing
   }
 });
 

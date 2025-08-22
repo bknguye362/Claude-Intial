@@ -671,43 +671,97 @@ export async function createEntityKnowledgeGraphFromExtracted(
       await Promise.all(relationshipPromises.slice(i, i + 10));
     }
     
-    // Create entity nodes in Neptune
+    // Create entity nodes in Neptune in batches
     console.log('[Entity Knowledge Graph] Creating entity nodes in Neptune...');
-    const createdEntities = await invokeLambda({
-      operation: 'createEntities',
-      entities: dedupedEntities.map(entity => ({
-        entityId: entity.id,
-        name: entity.name,
-        type: entity.type,
-        properties: {
-          ...entity.properties,
-          indexName  // Link entity to S3 Vectors index
-        }
-      }))
-    });
+    const entityBatchSize = 100; // Create 100 entities per Lambda call
+    let totalEntitiesCreated = 0;
     
-    console.log(`[Entity Knowledge Graph] Created ${createdEntities.result?.created || 0} entity nodes`);
+    for (let i = 0; i < dedupedEntities.length; i += entityBatchSize) {
+      const batch = dedupedEntities.slice(i, Math.min(i + entityBatchSize, dedupedEntities.length));
+      
+      try {
+        const createdEntities = await invokeLambda({
+          operation: 'createEntities',
+          entities: batch.map(entity => ({
+            entityId: entity.id,
+            name: entity.name,
+            type: entity.type,
+            properties: {
+              ...entity.properties,
+              indexName  // Link entity to S3 Vectors index
+            }
+          }))
+        });
+        
+        totalEntitiesCreated += createdEntities.result?.created || 0;
+        
+        if ((i + entityBatchSize) % 200 === 0 || i + entityBatchSize >= dedupedEntities.length) {
+          console.log(`[Entity Knowledge Graph] Created ${totalEntitiesCreated} of ${dedupedEntities.length} entity nodes`);
+        }
+        
+        // Small delay between batches
+        if (i + entityBatchSize < dedupedEntities.length) {
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+      } catch (err: any) {
+        console.error(`[Entity Knowledge Graph] Failed to create entity batch:`, err.message);
+        if (err.message?.includes('Rate')) {
+          console.log('[Entity Knowledge Graph] Rate limited, waiting 2 seconds...');
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          i -= entityBatchSize; // Retry this batch
+        }
+      }
+    }
+    
+    console.log(`[Entity Knowledge Graph] Created ${totalEntitiesCreated} entity nodes`);
     
     // Find relationships between entities using descriptions
     console.log('[Entity Knowledge Graph] Finding entity relationships...');
     const entityRelationships = await findEntityRelationships(dedupedEntities);
     allRelationships.push(...entityRelationships);
     
-    // Create relationships in Neptune
+    // Create relationships in Neptune in batches
     if (allRelationships.length > 0) {
       console.log(`[Entity Knowledge Graph] Creating ${allRelationships.length} relationships in Neptune...`);
-      const relationshipResult = await invokeLambda({
-        operation: 'createRelationships',
-        relationships: allRelationships.map(rel => ({
-          fromEntityId: rel.fromEntity,
-          toEntityId: rel.toEntity,
-          relationshipType: rel.relationshipType,
-          confidence: rel.confidence,
-          properties: rel.properties
-        }))
-      });
+      const relBatchSize = 100; // Create 100 relationships per Lambda call
+      let totalRelationshipsCreated = 0;
       
-      console.log(`[Entity Knowledge Graph] Created ${relationshipResult.result?.created || 0} relationships`);
+      for (let i = 0; i < allRelationships.length; i += relBatchSize) {
+        const batch = allRelationships.slice(i, Math.min(i + relBatchSize, allRelationships.length));
+        
+        try {
+          const relationshipResult = await invokeLambda({
+            operation: 'createRelationships',
+            relationships: batch.map(rel => ({
+              fromEntityId: rel.fromEntity,
+              toEntityId: rel.toEntity,
+              relationshipType: rel.relationshipType,
+              confidence: rel.confidence,
+              properties: rel.properties
+            }))
+          });
+          
+          totalRelationshipsCreated += relationshipResult.result?.created || 0;
+          
+          if ((i + relBatchSize) % 200 === 0 || i + relBatchSize >= allRelationships.length) {
+            console.log(`[Entity Knowledge Graph] Created ${totalRelationshipsCreated} of ${allRelationships.length} relationships`);
+          }
+          
+          // Small delay between batches
+          if (i + relBatchSize < allRelationships.length) {
+            await new Promise(resolve => setTimeout(resolve, 200));
+          }
+        } catch (err: any) {
+          console.error(`[Entity Knowledge Graph] Failed to create relationship batch:`, err.message);
+          if (err.message?.includes('Rate')) {
+            console.log('[Entity Knowledge Graph] Rate limited, waiting 2 seconds...');
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            i -= relBatchSize; // Retry this batch
+          }
+        }
+      }
+      
+      console.log(`[Entity Knowledge Graph] Created ${totalRelationshipsCreated} relationships`);
     }
     
     // Collect all entity-chunk relationships to create
