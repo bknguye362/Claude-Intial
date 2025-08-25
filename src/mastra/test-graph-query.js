@@ -1,83 +1,75 @@
-import { invokeLambda } from './dist/lib/neptune-lambda-client.js';
+// Test entity extraction and graph querying
+const question = 'the Battle of the Windmill';
 
-async function testGraphQueries() {
-  console.log('=== TESTING NEPTUNE GRAPH QUERIES ===\n');
+// Extract entities from the question
+function extractEntitiesFromText(text) {
+  const entities = [];
   
-  // Test 1: Find all PERSON entities
-  console.log('1. Finding PERSON entities...');
-  const personQuery = await invokeLambda({
-    operation: 'queryGraph',
-    query: "g.V().hasLabel('entity').has('entityType', 'PERSON').limit(5).valueMap(true)"
-  });
+  // Pattern for capitalized words (potential named entities)
+  const capitalizedPattern = /\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*/g;
+  const matches = text.match(capitalizedPattern) || [];
   
-  if (personQuery.statusCode === 200) {
-    const result = JSON.parse(personQuery.body);
-    console.log('   Found persons:', result.result?.length || 0);
-    if (result.result?.[0]) {
-      console.log('   Sample person:', result.result[0]);
+  // Filter out common words
+  const commonWords = new Set(['The', 'This', 'That', 'These', 'Those', 'What', 'When', 'Where', 'Why', 'How']);
+  
+  matches.forEach(match => {
+    if (!commonWords.has(match) && match.length > 2) {
+      entities.push(match);
     }
-  }
-  
-  // Test 2: Find all ORGANIZATION entities
-  console.log('\n2. Finding ORGANIZATION entities...');
-  const orgQuery = await invokeLambda({
-    operation: 'queryGraph',
-    query: "g.V().hasLabel('entity').has('entityType', 'ORGANIZATION').limit(5).valueMap(true)"
   });
   
-  if (orgQuery.statusCode === 200) {
-    const result = JSON.parse(orgQuery.body);
-    console.log('   Found organizations:', result.result?.length || 0);
-    if (result.result?.[0]) {
-      console.log('   Sample org:', result.result[0]);
-    }
+  // Also extract quoted strings
+  const quotedPattern = /"([^"]+)"/g;
+  let quotedMatch;
+  while ((quotedMatch = quotedPattern.exec(text)) !== null) {
+    entities.push(quotedMatch[1]);
   }
   
-  // Test 3: Find relationships
-  console.log('\n3. Finding relationships...');
-  const relQuery = await invokeLambda({
-    operation: 'queryGraph',
-    query: "g.E().limit(5).project('from', 'to', 'type').by(outV().values('name')).by(inV().values('name')).by(label())"
-  });
-  
-  if (relQuery.statusCode === 200) {
-    const result = JSON.parse(relQuery.body);
-    console.log('   Found relationships:', result.result?.length || 0);
-    if (result.result) {
-      result.result.forEach(rel => {
-        console.log(`   - ${rel.from} --[${rel.type}]--> ${rel.to}`);
-      });
-    }
-  }
-  
-  // Test 4: Find connected entities (e.g., who works for which organization)
-  console.log('\n4. Finding WORKS_FOR relationships...');
-  const worksForQuery = await invokeLambda({
-    operation: 'queryGraph',
-    query: "g.V().hasLabel('entity').has('entityType', 'PERSON').outE('WORKS_FOR').inV().has('entityType', 'ORGANIZATION').path().by('name').by(label()).limit(5)"
-  });
-  
-  if (worksForQuery.statusCode === 200) {
-    const result = JSON.parse(worksForQuery.body);
-    console.log('   Found WORKS_FOR relationships:', result.result?.length || 0);
-    if (result.result) {
-      result.result.forEach(path => {
-        console.log(`   Path:`, path);
-      });
-    }
-  }
-  
-  // Test 5: Count different entity types
-  console.log('\n5. Entity type distribution...');
-  const typeCountQuery = await invokeLambda({
-    operation: 'queryGraph',
-    query: "g.V().hasLabel('entity').groupCount().by('entityType')"
-  });
-  
-  if (typeCountQuery.statusCode === 200) {
-    const result = JSON.parse(typeCountQuery.body);
-    console.log('   Entity types:', result.result);
-  }
+  return [...new Set(entities)]; // Remove duplicates
 }
 
-testGraphQueries().catch(console.error);
+const entities = extractEntitiesFromText(question);
+console.log('Question:', question);
+console.log('Extracted entities:', entities);
+
+// Now query the graph for these entities
+import('./dist/lib/neptune-lambda-client.js').then(async m => {
+  console.log('\nQuerying graph for entities...');
+  
+  for (const entity of entities) {
+    console.log(`\nSearching for: ${entity}`);
+    
+    try {
+      const result = await m.invokeLambda({
+        operation: 'queryEntitiesByType',
+        limit: 100
+      });
+      
+      if (result.body) {
+        const response = JSON.parse(result.body);
+        if (response.result?.entities) {
+          // Filter entities that match our query
+          const matches = response.result.entities.filter(e => {
+            const name = e.name?.[0] || '';
+            return name.toLowerCase().includes(entity.toLowerCase()) || 
+                   entity.toLowerCase().includes(name.toLowerCase());
+          });
+          
+          if (matches.length > 0) {
+            console.log(`✅ Found ${matches.length} matches:`);
+            matches.slice(0, 3).forEach(e => {
+              console.log(`  - ${e.name[0]} (${e.entityType[0]})`);
+              if (e.description?.[0]) {
+                console.log(`    ${e.description[0]}`);
+              }
+            });
+          } else {
+            console.log('❌ No matches found');
+          }
+        }
+      }
+    } catch (error) {
+      console.error(`Error querying for ${entity}:`, error.message);
+    }
+  }
+}).catch(console.error);

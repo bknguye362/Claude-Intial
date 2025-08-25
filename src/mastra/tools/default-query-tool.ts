@@ -180,12 +180,14 @@ export const defaultQueryTool = createTool({
       
       // Step 2: Query knowledge graph for related entities
       console.log('[Default Query Tool] 2. Checking knowledge graph for entities...');
+      console.log('[Default Query Tool] 📊 GRAPH ENHANCEMENT ENABLED - Version 2.0');
       const questionEntities = extractEntitiesFromText(context.question);
       console.log(`[Default Query Tool]    Extracted ${questionEntities.length} potential entities: ${questionEntities.join(', ')}`);
       
       let graphEntities: Map<string, any[]> = new Map();
       if (questionEntities.length > 0) {
         try {
+          console.log('[Default Query Tool]    Calling queryGraphForEntities...');
           graphEntities = await queryGraphForEntities(questionEntities, 5);
           if (graphEntities.size > 0) {
             console.log(`[Default Query Tool] 📊 Found ${graphEntities.size} entities in knowledge graph`);
@@ -193,8 +195,11 @@ export const defaultQueryTool = createTool({
             console.log('[Default Query Tool]    No matching entities found in graph');
           }
         } catch (graphError) {
-          console.log('[Default Query Tool] ⚠️ Graph query failed, continuing with vector search only');
+          console.log('[Default Query Tool] ⚠️ Graph query failed:', graphError);
+          console.log('[Default Query Tool]    Continuing with vector search only');
         }
+      } else {
+        console.log('[Default Query Tool]    No entities extracted from question');
       }
       
       // Step 3: List all indices (exactly like the test file)
