@@ -26,8 +26,8 @@ function extractEntitiesFromText(text: string): string[] {
   const capitalizedPattern = /\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*/g;
   const matches = text.match(capitalizedPattern) || [];
   
-  // Filter out common words
-  const commonWords = new Set(['The', 'This', 'That', 'These', 'Those', 'What', 'When', 'Where', 'Why', 'How']);
+  // Filter out common words and question words
+  const commonWords = new Set(['The', 'This', 'That', 'These', 'Those', 'What', 'When', 'Where', 'Why', 'How', 'Who', 'Which', 'Is', 'Are', 'Was', 'Were', 'Can', 'Could', 'Should', 'Would']);
   
   matches.forEach(match => {
     if (!commonWords.has(match) && match.length > 2) {
