@@ -501,6 +501,160 @@ async function generateChunkSummary(chunkContent: string): Promise<string> {
   }
 }
 
+// Helper function to upload chunks to S3 for Bedrock Knowledge Base
+async function uploadChunksForBedrock(
+  chunks: any[], 
+  originalFilePath: string, 
+  indexName: string
+): Promise<{ success: boolean; chunkCount?: number; s3Prefix?: string; error?: string }> {
+  try {
+    // Use AWS SDK v3 for S3
+    const { S3Client, PutObjectCommand } = await import('@aws-sdk/client-s3');
+    
+    const s3Client = new S3Client({ 
+      region: process.env.S3_VECTORS_REGION || 'us-east-2' 
+    });
+    
+    const bucketName = process.env.S3_VECTORS_BUCKET || 'chatbotvectors362';
+    const originalFileName = basename(originalFilePath);
+    const fileNameWithoutExt = originalFileName.replace(/\.[^/.]+$/, '');
+    const timestamp = new Date().toISOString().split('T')[0];
+    
+    // Create a folder structure for organized storage
+    const s3Prefix = `bedrock-chunks/${fileNameWithoutExt}/${timestamp}`;
+    
+    console.log(`[Bedrock Upload] Starting upload of ${chunks.length} chunks to S3...`);
+    console.log(`[Bedrock Upload] S3 path: s3://${bucketName}/${s3Prefix}/`);
+    
+    let uploadedCount = 0;
+    const uploadPromises = chunks.map(async (chunk, index) => {
+      const chunkNumber = index.toString().padStart(4, '0');
+      const chunkKey = `${s3Prefix}/chunk_${chunkNumber}.txt`;
+      const metadataKey = `${s3Prefix}/chunk_${chunkNumber}.txt.metadata.json`;
+      
+      // Clean content (no embedded metadata)
+      const cleanContent = chunk.content;
+      
+      // Create metadata JSON with proper Bedrock structure
+      // Each attribute needs type specification
+      const metadataJson = {
+        "metadataAttributes": {
+          "sourceDocument": {
+            "value": {
+              "type": "STRING",
+              "stringValue": originalFileName
+            }
+          },
+          "chunkIndex": {
+            "value": {
+              "type": "NUMBER", 
+              "numberValue": index + 1
+            }
+          },
+          "totalChunks": {
+            "value": {
+              "type": "NUMBER",
+              "numberValue": chunks.length
+            }
+          },
+          "pageNumber": {
+            "value": {
+              "type": "NUMBER",
+              "numberValue": chunk.metadata?.pageStart || 1
+            }
+          },
+          "summary": {
+            "value": {
+              "type": "STRING",
+              "stringValue": (chunk.metadata?.summary || 'No summary available').substring(0, 100)
+            }
+          }
+        }
+      };
+      
+      try {
+        // Upload the clean content file
+        const contentCommand = new PutObjectCommand({
+          Bucket: bucketName,
+          Key: chunkKey,
+          Body: cleanContent,
+          ContentType: 'text/plain',
+          Metadata: {
+            'source-document': originalFileName,
+            'chunk-index': index.toString(),
+            'total-chunks': chunks.length.toString()
+          }
+        });
+        
+        // Upload the metadata JSON file
+        const metadataCommand = new PutObjectCommand({
+          Bucket: bucketName,
+          Key: metadataKey,
+          Body: JSON.stringify(metadataJson, null, 2),
+          ContentType: 'application/json'
+        });
+        
+        // Upload both files
+        await Promise.all([
+          s3Client.send(contentCommand),
+          s3Client.send(metadataCommand)
+        ]);
+        
+        uploadedCount++;
+        
+        if ((index + 1) % 50 === 0) {
+          console.log(`[Bedrock Upload] Uploaded ${index + 1}/${chunks.length} chunks with metadata...`);
+        }
+      } catch (error) {
+        console.error(`[Bedrock Upload] Failed to upload chunk ${index}:`, error);
+      }
+    });
+    
+    // Upload in batches to avoid overwhelming S3
+    const batchSize = 10;
+    for (let i = 0; i < uploadPromises.length; i += batchSize) {
+      const batch = uploadPromises.slice(i, i + batchSize);
+      await Promise.all(batch);
+    }
+    
+    console.log(`[Bedrock Upload] Successfully uploaded ${uploadedCount}/${chunks.length} chunks with metadata files`);
+    
+    // Optionally trigger Bedrock ingestion if KB ID is configured
+    if (process.env.BEDROCK_KB_ID) {
+      console.log(`[Bedrock Upload] Triggering Bedrock KB ingestion...`);
+      try {
+        const { BedrockAgentClient, StartIngestionJobCommand } = await import('@aws-sdk/client-bedrock-agent');
+        const bedrockClient = new BedrockAgentClient({ 
+          region: process.env.BEDROCK_KB_REGION || 'us-east-2' 
+        });
+        
+        const command = new StartIngestionJobCommand({
+          knowledgeBaseId: process.env.BEDROCK_KB_ID,
+          dataSourceId: process.env.BEDROCK_DS_ID || 'I3VDDM6TLP'
+        });
+        
+        const response = await bedrockClient.send(command);
+        console.log(`[Bedrock Upload] Ingestion job started: ${response.ingestionJob?.ingestionJobId}`);
+      } catch (error: any) {
+        console.log(`[Bedrock Upload] Note: Could not trigger ingestion:`, error.message || error);
+      }
+    }
+    
+    return {
+      success: true,
+      chunkCount: uploadedCount,
+      s3Prefix: `s3://${bucketName}/${s3Prefix}`
+    };
+    
+  } catch (error) {
+    console.error('[Bedrock Upload] Error uploading chunks:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+}
+
 // Helper function to generate summaries for multiple chunks
 async function generateChunkSummaries(chunks: string[]): Promise<string[]> {
   console.log(`[PDF Processor] Generating summaries for ${chunks.length} chunks...`);
@@ -846,6 +1000,16 @@ export async function processPDF(filepath: string, chunkSize: number = 1000): Pr
     const uploadedCount = await uploadVectorsWithNewman(indexName, vectors);
     
     console.log(`[PDF Processor] Upload complete. Uploaded ${uploadedCount} vectors to index '${indexName}'`);
+    
+    // Upload chunks to S3 for Bedrock Knowledge Base
+    console.log(`[PDF Processor] ===== BEDROCK KNOWLEDGE BASE INTEGRATION =====`);
+    const bedrockUploadResult = await uploadChunksForBedrock(chunks, filepath, indexName);
+    if (bedrockUploadResult.success) {
+      console.log(`[PDF Processor] Successfully uploaded ${bedrockUploadResult.chunkCount} chunks to S3 for Bedrock`);
+      console.log(`[PDF Processor] S3 location: ${bedrockUploadResult.s3Prefix}`);
+    } else {
+      console.log(`[PDF Processor] Warning: Bedrock upload failed but continuing with rest of pipeline`);
+    }
     
     // Create entity-based knowledge graph using pre-extracted entities
     console.log(`[PDF Processor] Scheduling Neptune graph creation as background task...`);
