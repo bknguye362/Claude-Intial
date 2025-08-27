@@ -623,18 +623,25 @@ async function uploadChunksForBedrock(
     if (process.env.BEDROCK_KB_ID) {
       console.log(`[Bedrock Upload] Triggering Bedrock KB ingestion...`);
       try {
-        const { BedrockAgentClient, StartIngestionJobCommand } = await import('@aws-sdk/client-bedrock-agent');
-        const bedrockClient = new BedrockAgentClient({ 
-          region: process.env.BEDROCK_KB_REGION || 'us-east-2' 
-        });
+        // Dynamic import to avoid build errors if package not available
+        const bedrockModule = await import('@aws-sdk/client-bedrock-agent').catch(() => null);
         
-        const command = new StartIngestionJobCommand({
-          knowledgeBaseId: process.env.BEDROCK_KB_ID,
-          dataSourceId: process.env.BEDROCK_DS_ID || 'I3VDDM6TLP'
-        });
-        
-        const response = await bedrockClient.send(command);
-        console.log(`[Bedrock Upload] Ingestion job started: ${response.ingestionJob?.ingestionJobId}`);
+        if (bedrockModule) {
+          const { BedrockAgentClient, StartIngestionJobCommand } = bedrockModule;
+          const bedrockClient = new BedrockAgentClient({ 
+            region: process.env.BEDROCK_KB_REGION || 'us-east-2' 
+          });
+          
+          const command = new StartIngestionJobCommand({
+            knowledgeBaseId: process.env.BEDROCK_KB_ID,
+            dataSourceId: process.env.BEDROCK_DS_ID || 'I3VDDM6TLP'
+          });
+          
+          const response = await bedrockClient.send(command);
+          console.log(`[Bedrock Upload] Ingestion job started: ${response.ingestionJob?.ingestionJobId}`);
+        } else {
+          console.log(`[Bedrock Upload] Bedrock SDK not available, skipping auto-ingestion`);
+        }
       } catch (error: any) {
         console.log(`[Bedrock Upload] Note: Could not trigger ingestion:`, error.message || error);
       }
