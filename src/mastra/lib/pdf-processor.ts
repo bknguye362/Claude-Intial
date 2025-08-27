@@ -623,8 +623,8 @@ async function uploadChunksForBedrock(
     if (process.env.BEDROCK_KB_ID) {
       console.log(`[Bedrock Upload] Triggering Bedrock KB ingestion...`);
       try {
-        // Dynamic import to avoid build errors if package not available
-        const bedrockModule = await import('@aws-sdk/client-bedrock-agent').catch(() => null);
+        // Use eval to bypass TypeScript checking for optional dependency
+        const bedrockModule = await eval(`import('@aws-sdk/client-bedrock-agent')`).catch(() => null);
         
         if (bedrockModule) {
           const { BedrockAgentClient, StartIngestionJobCommand } = bedrockModule;
