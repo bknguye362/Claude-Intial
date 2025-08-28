@@ -138,15 +138,97 @@ async function generateLLMChunks(fullText: string, maxChunkSize: number = 1000):
       if (endPos < fullText.length) {
         const chunk = fullText.slice(currentPos, endPos);
         
+        // Common abbreviations that don't end sentences
+        const abbreviations = [
+          'Mr.', 'Mrs.', 'Ms.', 'Dr.', 'Prof.', 'Sr.', 'Jr.', 'Ph.D', 'M.D', 'B.A', 'M.A', 'B.S', 'M.S',
+          'Lt.', 'Col.', 'Gen.', 'Capt.', 'Sgt.', 'Rev.', 'Hon.', 'Pres.', 'Gov.', 'Sen.', 'Rep.',
+          'Inc.', 'Corp.', 'Co.', 'Ltd.', 'LLC.', 'L.P.', 'P.C.', 'L.L.C.', 'P.L.L.C.',
+          'U.S.', 'U.K.', 'E.U.', 'U.N.', 'U.S.A.', 'U.K.', 'U.S.S.R.', 'N.A.T.O.',
+          'Jan.', 'Feb.', 'Mar.', 'Apr.', 'Jun.', 'Jul.', 'Aug.', 
+          'Sep.', 'Sept.', 'Oct.', 'Nov.', 'Dec.', 'Mon.', 'Tue.', 'Wed.', 'Thu.', 'Fri.', 'Sat.', 'Sun.',
+          'St.', 'Ave.', 'Rd.', 'Blvd.', 'Dr.', 'Ct.', 'Pl.', 'Sq.', 'Ln.', 'Pkwy.', 'Hwy.', 'Fwy.',
+          'No.', 'Vol.', 'vs.', 'etc.', 'i.e.', 'e.g.', 'cf.', 'al.', 'et al.', 'ibid.', 'Id.', 'seq.',
+          'A.M.', 'P.M.', 'a.m.', 'p.m.', 'B.C.', 'A.D.', 'B.C.E.', 'C.E.',
+          'Ph.', 'Ed.', 'M.Ed.', 'LL.B.', 'LL.M.', 'J.D.', 'M.B.A.', 'C.P.A.', 'R.N.', 'M.F.A.',
+          'Esq.', 'Jr.', 'Sr.', 'Ph.D.', 'M.D.', 'D.O.', 'D.D.S.', 'D.V.M.', 'D.P.M.',
+          'Assoc.', 'Asst.', 'Bros.', 'Dept.', 'Est.', 'Fig.', 'Hosp.', 'Inst.', 'Lab.', 'Lib.',
+          'Mt.', 'Ft.', 'Oz.', 'Lb.', 'Kg.', 'Cm.', 'Mm.', 'Km.', 'In.', 'Yd.', 'Mi.'
+        ];
+        
         // Look for sentence endings (. ! ?) in the last part of the chunk
         let bestBreak = -1;
         
         // Search for sentence endings in reverse order (prefer later sentences)
-        const sentenceEndings = ['. ', '.\n', '! ', '!\n', '? ', '?\n', '."', '!"', '?"'];
+        const sentenceEndings = ['. ', '.\n', '! ', '!\n', '? ', '?\n', '."', '!"', '?"', '.\t', '!\t', '?\t'];
+        
         for (const ending of sentenceEndings) {
-          const lastIndex = chunk.lastIndexOf(ending);
-          if (lastIndex > maxChunkSize * 0.5) { // Found in last half of chunk
-            bestBreak = Math.max(bestBreak, lastIndex + ending.length - (ending.includes('\n') ? 1 : 0));
+          let searchPos = chunk.length;
+          
+          // Search backwards for all occurrences
+          while (searchPos > maxChunkSize * 0.5) {
+            const index = chunk.lastIndexOf(ending, searchPos - 1);
+            if (index === -1 || index <= maxChunkSize * 0.5) break;
+            
+            // Check if this is actually a sentence boundary
+            let isValidBoundary = true;
+            
+            // For period endings, check if it's not an abbreviation or decimal
+            if (ending.startsWith('.')) {
+              // Get the word before the period
+              const beforePeriod = chunk.slice(Math.max(0, index - 20), index + 1);
+              
+              // Check if it's a decimal number (e.g., 3.14, 100.5)
+              const beforeChar = index > 0 ? chunk[index - 1] : '';
+              const afterChar = index + 1 < chunk.length ? chunk[index + 1] : '';
+              if (/\d/.test(beforeChar) && /[\d\s]/.test(afterChar)) {
+                // Period is between digits or digit and space (like "3. " or "3.14")
+                // For "3. " we need to check if it's a list item vs decimal
+                if (afterChar === ' ') {
+                  // Check what comes after the space
+                  const nextWord = chunk.slice(index + 2, Math.min(chunk.length, index + 12)).trim();
+                  // If next word starts with lowercase or is a number, likely a decimal or continuation
+                  if (/^[a-z0-9]/.test(nextWord)) {
+                    isValidBoundary = false;
+                  }
+                } else if (/\d/.test(afterChar)) {
+                  // Definitely a decimal like 3.14
+                  isValidBoundary = false;
+                }
+              }
+              
+              // Check against known abbreviations
+              if (isValidBoundary) {
+                for (const abbr of abbreviations) {
+                  if (beforePeriod.endsWith(abbr)) {
+                    isValidBoundary = false;
+                    break;
+                  }
+                }
+              }
+              
+              // Additional checks for valid sentence boundaries
+              if (isValidBoundary && index + ending.length < chunk.length) {
+                const afterPeriod = chunk.slice(index + ending.length, Math.min(chunk.length, index + ending.length + 10));
+                
+                // Check if next character after space is uppercase (likely new sentence)
+                // or if it's a quote or parenthesis start
+                const firstNonSpace = afterPeriod.trim()[0];
+                if (firstNonSpace && !/[A-Z"'(\[]/.test(firstNonSpace)) {
+                  // If next word doesn't start with uppercase, might not be sentence end
+                  // But could still be valid (e.g., starts with number or special char)
+                  if (/[a-z]/.test(firstNonSpace)) {
+                    isValidBoundary = false;
+                  }
+                }
+              }
+            }
+            
+            if (isValidBoundary) {
+              bestBreak = Math.max(bestBreak, index + ending.length - (ending.includes('\n') ? 1 : 0));
+              break; // Found a valid break, stop searching
+            }
+            
+            searchPos = index; // Continue searching before this position
           }
         }
         
