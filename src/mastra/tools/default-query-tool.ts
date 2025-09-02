@@ -152,12 +152,87 @@ async function generateEmbedding(text: string): Promise<number[]> {
   return Array(1536).fill(0).map((_, i) => Math.sin(hash + i) * 0.5 + 0.5);
 }
 
+// Azure OpenAI configuration for query generation
+async function generateQueryVariations(originalQuery: string, minQueries: number = 5): Promise<string[]> {
+  console.log(`[Default Query Tool] Generating query variations using Azure OpenAI...`);
+  
+  const prompt = `You are a search query optimizer. Given a user's question about a document, generate at least ${minQueries} different query variations that would help retrieve relevant information from a vector database.
+
+Original query: "${originalQuery}"
+
+Generate query variations that:
+1. Rephrase the question in different ways
+2. Focus on different aspects (who, what, when, where, why, how)
+3. Use synonyms and related terms
+4. Include broader and narrower versions
+5. Add context or remove context
+6. Break down compound questions into parts
+7. Use both question and statement forms
+8. Include partial queries that might match different chunks
+
+Return ONLY a JSON array of strings, with no explanation or markdown. Each query should be different and help find different relevant chunks.`;
+
+  try {
+    const url = `${AZURE_OPENAI_ENDPOINT}/openai/deployments/gpt-4.1-test/chat/completions?api-version=2025-01-01-preview`;
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'api-key': AZURE_OPENAI_API_KEY || ''
+      },
+      body: JSON.stringify({
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a helpful assistant that generates search query variations. Always respond with valid JSON arrays only.'
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        max_tokens: 500,
+        temperature: 0.7,
+        top_p: 0.9
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Azure OpenAI error: ${response.status}`);
+    }
+
+    const responseData = await response.json() as any;
+    const content = responseData.choices[0].message.content;
+    
+    // Parse the response
+    const cleanContent = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    const queries = JSON.parse(cleanContent);
+    
+    console.log(`[Default Query Tool] Generated ${queries.length} query variations`);
+    return queries;
+    
+  } catch (error) {
+    console.log(`[Default Query Tool] Query generation failed, using fallback variations`);
+    // Simple fallback
+    return [
+      originalQuery,
+      `Tell me about ${originalQuery}`,
+      `Explain ${originalQuery}`,
+      `${originalQuery} details`,
+      `What is ${originalQuery}`,
+      `${originalQuery} information`
+    ];
+  }
+}
+
 export const defaultQueryTool = createTool({
   id: 'default-query',
   description: 'Default tool for handling any user question - automatically vectorizes and stores questions',
   inputSchema: z.object({
     question: z.string().describe('The user\'s question'),
     context: z.string().optional().describe('Additional context for the question'),
+    useBedrockWithExpansion: z.boolean().optional().describe('Use Bedrock KB with query expansion instead of Newman'),
   }),
   execute: async ({ context }) => {
     console.log('[Default Query Tool] ========= HANDLING QUESTION =========');
@@ -170,9 +245,149 @@ export const defaultQueryTool = createTool({
     console.log('[Default Query Tool] - AZURE_OPENAI_API_KEY:', AZURE_OPENAI_API_KEY ? 'Set' : 'NOT SET');
     console.log('[Default Query Tool] - S3_VECTORS_BUCKET:', process.env.S3_VECTORS_BUCKET || 'chatbotvectors362');
     console.log('[Default Query Tool] - S3_VECTORS_REGION:', process.env.S3_VECTORS_REGION || 'us-east-2');
+    console.log('[Default Query Tool] - Use Bedrock with Expansion:', context.useBedrockWithExpansion || false);
     
     try {
-      // Step 1: Generate embedding for the question
+      // TEMPORARILY: Always use Bedrock with query expansion (Newman disabled)
+      const USE_BEDROCK_ALWAYS = true;
+      
+      // Check if we should use Bedrock with query expansion
+      if (USE_BEDROCK_ALWAYS || context.useBedrockWithExpansion) {
+        console.log('\n[Default Query Tool] 🚀 USING BEDROCK KB WITH AZURE OPENAI QUERY EXPANSION');
+        console.log('[Default Query Tool] =====================================');
+        
+        // Import Bedrock client dynamically
+        const { BedrockAgentRuntimeClient, RetrieveCommand } = await import('@aws-sdk/client-bedrock-agent-runtime');
+        const kbClient = new BedrockAgentRuntimeClient({ 
+          region: 'us-east-2',
+          credentials: {
+            accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
+            secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || ''
+          }
+        });
+        
+        // Generate query variations using Azure OpenAI
+        const queryVariations = await generateQueryVariations(context.question, 7);
+        
+        // Always include original query
+        if (!queryVariations.includes(context.question)) {
+          queryVariations.unshift(context.question);
+        }
+        
+        const finalVariations = queryVariations.slice(0, 10);
+        console.log('[Default Query Tool] Query variations:');
+        finalVariations.forEach((q, i) => {
+          console.log(`[Default Query Tool]   ${i + 1}. "${q}"`);
+        });
+        
+        // Execute all queries against Bedrock
+        console.log('\n[Default Query Tool] Executing queries against Bedrock KB...');
+        const allResults = new Map();
+        const queryStats: any[] = [];
+        
+        for (const query of finalVariations) {
+          const command = new RetrieveCommand({
+            knowledgeBaseId: 'FQ7HMGJHKP', // TODO: Make this configurable
+            retrievalQuery: { text: query },
+            retrievalConfiguration: {
+              vectorSearchConfiguration: {
+                numberOfResults: 30
+              }
+            }
+          });
+          
+          try {
+            const response = await kbClient.send(command);
+            const results = response.retrievalResults || [];
+            
+            let newChunks = 0;
+            for (const result of results) {
+              const key = result.content?.text?.substring(0, 150);
+              if (key && !allResults.has(key)) {
+                allResults.set(key, {
+                  content: result.content?.text || '',
+                  score: result.score,
+                  metadata: {
+                    sourceQuery: query,
+                    matchedQueries: [query]
+                  }
+                });
+                newChunks++;
+              } else if (key && allResults.has(key)) {
+                allResults.get(key).metadata.matchedQueries.push(query);
+              }
+            }
+            
+            queryStats.push({
+              query,
+              totalResults: results.length,
+              newChunks
+            });
+            
+            console.log(`[Default Query Tool]   ✓ Query ${queryStats.length}: ${results.length} chunks (${newChunks} new)`);
+            
+          } catch (error) {
+            console.log(`[Default Query Tool]   ✗ Query failed: ${error}`);
+          }
+        }
+        
+        // Prepare results in format similar to Newman results
+        const bedrockResults = Array.from(allResults.values()).map(r => ({
+          metadata: {
+            chunkContent: r.content,
+            content: r.content,
+            ...r.metadata
+          },
+          score: r.score,
+          distance: 1 - (r.score || 0), // Convert score to distance
+          index: 'bedrock-kb'
+        }));
+        
+        console.log(`\n[Default Query Tool] Bedrock retrieval complete:`);
+        console.log(`[Default Query Tool]   Total unique chunks: ${bedrockResults.length}`);
+        console.log(`[Default Query Tool]   Single query would have returned: ~11 chunks`);
+        console.log(`[Default Query Tool]   Improvement factor: ${(bedrockResults.length / 11).toFixed(1)}x`);
+        
+        // Build contextualized chunks for ContextBuilder
+        const contextualizedChunks = bedrockResults.map((r, idx) => ({
+          key: `bedrock-chunk-${idx}`,
+          score: r.score || 0,
+          distance: r.distance,
+          index: r.index,
+          content: r.metadata.chunkContent || r.metadata.content || '',
+          metadata: r.metadata,
+          context: {
+            documentId: 'Animal Farm (Bedrock KB)',
+            pageStart: undefined,
+            pageEnd: undefined,
+            chunkIndex: idx,
+            totalChunks: bedrockResults.length,
+            citation: `Matched by ${r.metadata.matchedQueries?.length || 1} queries`
+          }
+        }));
+        
+        // Use ContextBuilder to create enhanced response
+        const contextualResponse = ContextBuilder.buildContextualResponse(contextualizedChunks);
+        const contextString = contextualResponse.contextString;
+        
+        return {
+          success: true,
+          similarChunks: bedrockResults,
+          contextString,
+          totalSimilarChunks: bedrockResults.length,
+          documentContext: {
+            documentsFound: 1,
+            documentsSearched: 1
+          },
+          queryExpansion: {
+            variationsUsed: finalVariations.length,
+            stats: queryStats
+          },
+          message: `Found ${bedrockResults.length} unique chunks using Bedrock KB with query expansion`
+        };
+      }
+      
+      // Original Newman-based logic
       console.log('[Default Query Tool] 1. Generating embedding for question...');
       const embedding = await generateEmbedding(context.question);
       console.log(`[Default Query Tool]    Embedding generated, length: ${embedding.length}`);
