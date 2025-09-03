@@ -347,25 +347,40 @@ export const defaultQueryTool = createTool({
         // Sort by score and limit to top results to avoid content filter issues
         const sortedResults = Array.from(allResults.values())
           .sort((a, b) => (b.score || 0) - (a.score || 0))
-          .slice(0, 15); // Limit to top 15 chunks to reduce context size
+          .slice(0, 10); // Limit to top 10 chunks to reduce context size (reduced from 15)
         
-        const bedrockResults = sortedResults.map(r => ({
-          content: r.content, // Store content at top level too
-          metadata: {
-            chunkContent: r.content,
-            content: r.content,
-            ...r.metadata
-          },
-          score: r.score,
-          distance: 1 - (r.score || 0), // Convert score to distance
-          index: 'bedrock-kb'
-        }));
+        const bedrockResults = sortedResults.map(r => {
+          // Truncate content to avoid content filter issues
+          const maxChunkLength = 1000; // Limit each chunk to 1000 characters (reduced from 2000)
+          const truncatedContent = r.content.length > maxChunkLength 
+            ? r.content.substring(0, maxChunkLength) + '...[truncated]'
+            : r.content;
+          
+          return {
+            content: truncatedContent, // Store truncated content at top level
+            metadata: {
+              chunkContent: truncatedContent,
+              content: truncatedContent,
+              originalLength: r.content.length,
+              truncated: r.content.length > maxChunkLength,
+              ...r.metadata
+            },
+            score: r.score,
+            distance: 1 - (r.score || 0), // Convert score to distance
+            index: 'bedrock-kb'
+          };
+        });
+        
+        // Calculate total size after truncation
+        const totalContentSize = bedrockResults.reduce((sum, r) => sum + r.content.length, 0);
         
         console.log(`\n[Default Query Tool] Bedrock retrieval complete:`);
         console.log(`[Default Query Tool]   Total unique chunks found: ${allResults.size}`);
         console.log(`[Default Query Tool]   Chunks sent to LLM: ${bedrockResults.length} (limited to avoid content filter)`);
+        console.log(`[Default Query Tool]   Total content size: ${totalContentSize} characters (after truncation)`);
+        console.log(`[Default Query Tool]   Average chunk size: ${Math.round(totalContentSize / bedrockResults.length)} characters`);
+        console.log(`[Default Query Tool]   Expected message size: ~${Math.round(totalContentSize * 1.5)} characters (with metadata)`);
         console.log(`[Default Query Tool]   Single query would have returned: ~11 chunks`);
-        console.log(`[Default Query Tool]   Improvement factor: ${(bedrockResults.length / 11).toFixed(1)}x`);
         
         // Show score distribution of final results
         if (bedrockResults.length > 0) {
