@@ -425,6 +425,16 @@ export const defaultQueryTool = createTool({
         console.log(`[Default Query Tool] Context string length: ${contextualResponse.contextString.length} chars`);
         console.log(`[Default Query Tool] Context preview: "${contextualResponse.contextString.substring(0, 200)}..."`);
         
+        // Final validation before returning
+        console.log(`[Default Query Tool] FINAL RETURN CHECK:`);
+        console.log(`[Default Query Tool]   - success: true`);
+        console.log(`[Default Query Tool]   - similarChunks length: ${contextualResponse.chunks.length}`);
+        console.log(`[Default Query Tool]   - contextString length: ${contextualResponse.contextString.length}`);
+        console.log(`[Default Query Tool]   - totalSimilarChunks: ${contextualResponse.chunks.length}`);
+        if (contextualResponse.chunks.length === 0) {
+          console.log(`[Default Query Tool] ⚠️ WARNING: Returning ZERO chunks! Agent will say "no content found"`);
+        }
+        
         return {
           success: true,
           similarChunks: contextualResponse.chunks,
