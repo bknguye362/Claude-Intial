@@ -78,8 +78,8 @@ export function createOpenAI(options?: any) {
         try {
           const requestBody: any = {
             messages: messageArray.length > 0 ? messageArray : [{ role: 'user', content: 'Hello' }],
-            max_tokens: 8192,  // Increased to ensure complete responses
-            temperature: 0.7,
+            max_tokens: 4096,  // Standard limit for complete responses
+            temperature: 0.5,  // Lower temperature for more focused, complete responses
             stream: true,
           };
           
@@ -689,7 +689,7 @@ export function createOpenAI(options?: any) {
               const secondRequestBody = {
                 messages: messageArray,
                 max_tokens: 4096,
-                temperature: 0.7,
+                temperature: 0.5,  // Match the lower temperature for consistency
                 stream: true,
                 // Don't include tools in the second call
               };
@@ -736,6 +736,15 @@ export function createOpenAI(options?: any) {
                       try {
                         const json = JSON.parse(data);
                         const content = json.choices?.[0]?.delta?.content;
+                        const finishReason = json.choices?.[0]?.finish_reason;
+                        
+                        if (finishReason) {
+                          console.log(`[Azure Direct] Stream finish reason: ${finishReason}`);
+                          if (finishReason === 'length') {
+                            console.log('[Azure Direct] WARNING: Response hit token/length limit!');
+                          }
+                        }
+                        
                         if (content) {
                           yield content;
                         }
