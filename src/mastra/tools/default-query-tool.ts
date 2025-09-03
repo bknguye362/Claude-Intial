@@ -349,6 +349,15 @@ export const defaultQueryTool = createTool({
         console.log(`[Default Query Tool]   Single query would have returned: ~11 chunks`);
         console.log(`[Default Query Tool]   Improvement factor: ${(bedrockResults.length / 11).toFixed(1)}x`);
         
+        // Debug: Check if we have actual content
+        if (bedrockResults.length > 0) {
+          const firstResult = bedrockResults[0];
+          console.log(`[Default Query Tool] First Bedrock result content check:`);
+          console.log(`[Default Query Tool]   - Has content field: ${!!firstResult.content}`);
+          console.log(`[Default Query Tool]   - Content length: ${firstResult.content ? firstResult.content.length : 0}`);
+          console.log(`[Default Query Tool]   - Content preview: "${(firstResult.content || '').substring(0, 100)}..."`);
+        }
+        
         // Build contextualized chunks for ContextBuilder
         const contextualizedChunks = bedrockResults.map((r, idx) => ({
           key: `bedrock-chunk-${idx}`,
@@ -367,9 +376,20 @@ export const defaultQueryTool = createTool({
           }
         }));
         
+        // Debug: Log first chunk content
+        if (contextualizedChunks.length > 0) {
+          console.log(`[Default Query Tool] First chunk content preview: "${contextualizedChunks[0].content.substring(0, 100)}..."`);
+          console.log(`[Default Query Tool] Total contextualized chunks: ${contextualizedChunks.length}`);
+        } else {
+          console.log(`[Default Query Tool] WARNING: No contextualized chunks created!`);
+        }
+        
         // Use ContextBuilder to create enhanced response
         const contextualResponse = ContextBuilder.buildContextualResponse(contextualizedChunks);
-        const contextString = contextualResponse.contextString;
+        
+        // Debug: Log context string
+        console.log(`[Default Query Tool] Context string length: ${contextualResponse.contextString.length} chars`);
+        console.log(`[Default Query Tool] Context preview: "${contextualResponse.contextString.substring(0, 200)}..."`);
         
         return {
           success: true,
