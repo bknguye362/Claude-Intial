@@ -318,13 +318,25 @@ export const defaultQueryTool = createTool({
               }
             }
             
+            // Calculate score range for this query
+            let scoreInfo = '';
+            if (results.length > 0) {
+              const scores = results.map(r => r.score).filter(s => s !== undefined && s !== null);
+              if (scores.length > 0) {
+                const minScore = Math.min(...scores);
+                const maxScore = Math.max(...scores);
+                scoreInfo = `, scores: ${minScore.toFixed(3)}-${maxScore.toFixed(3)}`;
+              }
+            }
+            
             queryStats.push({
               query,
               totalResults: results.length,
-              newChunks
+              newChunks,
+              scoreRange: scoreInfo
             });
             
-            console.log(`[Default Query Tool]   ✓ Query ${queryStats.length}: ${results.length} chunks (${newChunks} new)`);
+            console.log(`[Default Query Tool]   ✓ Query ${queryStats.length}: ${results.length} chunks (${newChunks} new)${scoreInfo}`);
             
           } catch (error) {
             console.log(`[Default Query Tool]   ✗ Query failed: ${error}`);
@@ -349,12 +361,34 @@ export const defaultQueryTool = createTool({
         console.log(`[Default Query Tool]   Single query would have returned: ~11 chunks`);
         console.log(`[Default Query Tool]   Improvement factor: ${(bedrockResults.length / 11).toFixed(1)}x`);
         
+        // Show score distribution of final results
+        if (bedrockResults.length > 0) {
+          const scores = bedrockResults.map(r => r.score).filter(s => s !== undefined && s !== null);
+          if (scores.length > 0) {
+            const minScore = Math.min(...scores);
+            const maxScore = Math.max(...scores);
+            const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
+            console.log(`[Default Query Tool]   Score distribution: min=${minScore.toFixed(3)}, max=${maxScore.toFixed(3)}, avg=${avgScore.toFixed(3)}`);
+            
+            // Show score buckets
+            const buckets = [0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 1.0];
+            console.log(`[Default Query Tool]   Score buckets:`);
+            for (let i = 0; i < buckets.length - 1; i++) {
+              const count = scores.filter(s => s >= buckets[i] && s < buckets[i+1]).length;
+              if (count > 0) {
+                console.log(`[Default Query Tool]     ${buckets[i].toFixed(2)}-${buckets[i+1].toFixed(2)}: ${count} chunks`);
+              }
+            }
+          }
+        }
+        
         // Debug: Check if we have actual content
         if (bedrockResults.length > 0) {
           const firstResult = bedrockResults[0];
           console.log(`[Default Query Tool] First Bedrock result content check:`);
           console.log(`[Default Query Tool]   - Has content field: ${!!firstResult.content}`);
           console.log(`[Default Query Tool]   - Content length: ${firstResult.content ? firstResult.content.length : 0}`);
+          console.log(`[Default Query Tool]   - Score: ${firstResult.score?.toFixed(3)}`);
           console.log(`[Default Query Tool]   - Content preview: "${(firstResult.content || '').substring(0, 100)}..."`);
         }
         
