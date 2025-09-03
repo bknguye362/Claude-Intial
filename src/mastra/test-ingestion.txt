@@ -1,0 +1,1 @@
+Testing Bedrock auto-ingestion after fixing the SDK import. The deployment should now properly trigger Bedrock ingestion when documents are uploaded.

@@ -641,12 +641,29 @@ export function createOpenAI(options?: any) {
                     }
                     
                     // Add tool result message
-                    messageArray.push({
+                    const toolResultMessage = {
                       tool_call_id: toolCall.id,
                       role: 'tool',
                       name: toolName,
                       content: JSON.stringify(result)
-                    });
+                    };
+                    
+                    // Log tool result size for debugging
+                    if (toolName === 'defaultQueryTool' || toolName === 'default-query') {
+                      const resultSize = toolResultMessage.content.length;
+                      console.log(`[Azure Direct] defaultQueryTool result size: ${resultSize} characters`);
+                      
+                      // Check if result contains certain keywords that might trigger filter
+                      const contentLower = toolResultMessage.content.toLowerCase();
+                      const sensitiveKeywords = ['alcohol', 'kill', 'violence', 'death', 'blood', 'murder'];
+                      const foundKeywords = sensitiveKeywords.filter(kw => contentLower.includes(kw));
+                      if (foundKeywords.length > 0) {
+                        console.log(`[Azure Direct] ⚠️ Result contains potentially sensitive keywords: ${foundKeywords.join(', ')}`);
+                        console.log(`[Azure Direct] This combined with large context (${resultSize} chars) may trigger content filters`);
+                      }
+                    }
+                    
+                    messageArray.push(toolResultMessage);
                   } catch (error) {
                     console.error(`[Azure Direct] Error executing tool ${toolName}:`, error);
                     console.error(`[Azure Direct] Error stack:`, error instanceof Error ? error.stack : 'No stack trace');
@@ -684,6 +701,13 @@ export function createOpenAI(options?: any) {
               ).length;
               if (toolResultsWithChunks > 0) {
                 console.log(`[Azure Direct] 📚 ${toolResultsWithChunks} tool result(s) contain query chunks for the LLM`);
+              }
+              
+              // Log message size to debug content filter issue
+              const messageSize = JSON.stringify(messageArray).length;
+              console.log(`[Azure Direct] Second request message array size: ${messageSize} characters`);
+              if (messageSize > 100000) {
+                console.log(`[Azure Direct] ⚠️ WARNING: Very large message (${messageSize} chars) may trigger content filters`);
               }
               
               const secondRequestBody = {
@@ -742,6 +766,12 @@ export function createOpenAI(options?: any) {
                           console.log(`[Azure Direct] Stream finish reason: ${finishReason}`);
                           if (finishReason === 'length') {
                             console.log('[Azure Direct] WARNING: Response hit token/length limit!');
+                          } else if (finishReason === 'content_filter') {
+                            console.log('[Azure Direct] ⚠️ CONTENT FILTER TRIGGERED!');
+                            console.log('[Azure Direct] This may be due to:');
+                            console.log('[Azure Direct]   1. Large context size with certain keywords');
+                            console.log('[Azure Direct]   2. Specific content combinations in chunks');
+                            console.log(`[Azure Direct]   3. Message size was: ${messageSize} characters`);
                           }
                         }
                         
