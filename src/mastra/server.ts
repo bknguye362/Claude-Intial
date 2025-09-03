@@ -326,9 +326,28 @@ const server = createServer(async (req, res) => {
         console.log(`[Server] Full response: "${fullResponseContent}"`);
       }
       
-      // Create the SSE message with proper formatting
-      const resultString = JSON.stringify(result);
-      console.log(`[Server] JSON stringified result length: ${resultString.length} bytes`);
+      // IMPORTANT: Strip out unnecessary data to reduce message size
+      // Only send what the frontend needs to display
+      const lightweightResult = {
+        choices: [{
+          message: {
+            role: result?.choices?.[0]?.message?.role || 'assistant',
+            content: fullResponseContent
+          },
+          finish_reason: result?.choices?.[0]?.finish_reason || 'stop',
+          index: 0
+        }],
+        model: result?.model || 'gpt-4.1-test',
+        // Optional: Include minimal metadata
+        metadata: {
+          chunksRetrieved: (result as any)?.totalSimilarChunks || 0,
+          timestamp: new Date().toISOString()
+        }
+      };
+      
+      // Create the SSE message with the lightweight result
+      const resultString = JSON.stringify(lightweightResult);
+      console.log(`[Server] Lightweight JSON result length: ${resultString.length} bytes (was ${JSON.stringify(result).length} bytes)`);
       
       // Check for potential issues in the JSON
       if (resultString.includes('\n\n')) {

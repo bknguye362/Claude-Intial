@@ -6,3 +6,20 @@ dist/
 .DS_Store
 uploads/*
 !uploads/.gitkeep
+
+# Test files - NEVER commit these
+test-*.js
+test-*.mjs
+analyze-*.js
+bedrock-*.js
+query-*.js
+delete_all*.sh
+indices.json
+indices*.txt
+results.json
+list.json
+# Allow package files
+!package.json
+!package-lock.json
+!tsconfig.json
+!postman-s3-vectors.json
