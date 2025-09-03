@@ -333,6 +333,7 @@ export const defaultQueryTool = createTool({
         
         // Prepare results in format similar to Newman results
         const bedrockResults = Array.from(allResults.values()).map(r => ({
+          content: r.content, // Store content at top level too
           metadata: {
             chunkContent: r.content,
             content: r.content,
@@ -354,7 +355,7 @@ export const defaultQueryTool = createTool({
           score: r.score || 0,
           distance: r.distance,
           index: r.index,
-          content: r.metadata.chunkContent || r.metadata.content || '',
+          content: r.content || r.metadata.chunkContent || r.metadata.content || '',
           metadata: r.metadata,
           context: {
             documentId: 'Animal Farm (Bedrock KB)',
@@ -372,18 +373,21 @@ export const defaultQueryTool = createTool({
         
         return {
           success: true,
-          similarChunks: bedrockResults,
-          contextString,
-          totalSimilarChunks: bedrockResults.length,
+          similarChunks: contextualResponse.chunks,
+          contextString: contextualResponse.contextString,
+          totalSimilarChunks: contextualResponse.chunks.length,
           documentContext: {
-            documentsFound: 1,
-            documentsSearched: 1
+            documentsFound: contextualResponse.documentSummary.length,
+            summary: contextualResponse.documentSummary
           },
+          citations: contextualResponse.citations,
           queryExpansion: {
             variationsUsed: finalVariations.length,
             stats: queryStats
           },
-          message: `Found ${bedrockResults.length} unique chunks using Bedrock KB with query expansion`
+          message: `Found ${bedrockResults.length} unique chunks using Bedrock KB with query expansion`,
+          timestamp: new Date().toISOString(),
+          questionLength: context.question.length
         };
       }
       
