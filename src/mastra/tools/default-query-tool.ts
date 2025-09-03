@@ -393,20 +393,25 @@ export const defaultQueryTool = createTool({
         }
         
         // Build contextualized chunks for ContextBuilder
+        // Don't include individual citations to encourage synthesis
         const contextualizedChunks = bedrockResults.map((r, idx) => ({
           key: `bedrock-chunk-${idx}`,
           score: r.score || 0,
           distance: r.distance,
           index: r.index,
           content: r.content || r.metadata.chunkContent || r.metadata.content || '',
-          metadata: r.metadata,
+          metadata: {
+            ...r.metadata,
+            matchCount: r.metadata.matchedQueries?.length || 1
+          },
           context: {
-            documentId: 'Animal Farm (Bedrock KB)',
+            documentId: 'Animal Farm', // Simplified document name
             pageStart: undefined,
             pageEnd: undefined,
             chunkIndex: idx,
             totalChunks: bedrockResults.length,
-            citation: `Matched by ${r.metadata.matchedQueries?.length || 1} queries`
+            // Remove per-chunk citations to encourage synthesis
+            citation: undefined
           }
         }));
         
@@ -421,15 +426,20 @@ export const defaultQueryTool = createTool({
         // Use ContextBuilder to create enhanced response
         const contextualResponse = ContextBuilder.buildContextualResponse(contextualizedChunks);
         
+        // Add synthesis instruction to the context
+        const synthesisInstruction = `\n\n📝 IMPORTANT: The following information comes from the same document (Animal Farm) but was retrieved through ${finalVariations.length} different query variations to ensure comprehensive coverage. Please synthesize and combine all this information into a cohesive, well-organized response rather than treating each chunk as a separate source. Focus on creating a unified answer that incorporates all relevant details.\n\n`;
+        
+        const enhancedContextString = synthesisInstruction + contextualResponse.contextString;
+        
         // Debug: Log context string
-        console.log(`[Default Query Tool] Context string length: ${contextualResponse.contextString.length} chars`);
-        console.log(`[Default Query Tool] Context preview: "${contextualResponse.contextString.substring(0, 200)}..."`);
+        console.log(`[Default Query Tool] Context string length: ${enhancedContextString.length} chars`);
+        console.log(`[Default Query Tool] Context preview: "${enhancedContextString.substring(0, 200)}..."`);
         
         // Final validation before returning
         console.log(`[Default Query Tool] FINAL RETURN CHECK:`);
         console.log(`[Default Query Tool]   - success: true`);
         console.log(`[Default Query Tool]   - similarChunks length: ${contextualResponse.chunks.length}`);
-        console.log(`[Default Query Tool]   - contextString length: ${contextualResponse.contextString.length}`);
+        console.log(`[Default Query Tool]   - contextString length: ${enhancedContextString.length}`);
         console.log(`[Default Query Tool]   - totalSimilarChunks: ${contextualResponse.chunks.length}`);
         if (contextualResponse.chunks.length === 0) {
           console.log(`[Default Query Tool] ⚠️ WARNING: Returning ZERO chunks! Agent will say "no content found"`);
@@ -438,7 +448,7 @@ export const defaultQueryTool = createTool({
         return {
           success: true,
           similarChunks: contextualResponse.chunks,
-          contextString: contextualResponse.contextString,
+          contextString: enhancedContextString,
           totalSimilarChunks: contextualResponse.chunks.length,
           documentContext: {
             documentsFound: contextualResponse.documentSummary.length,
