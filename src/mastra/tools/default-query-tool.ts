@@ -357,13 +357,13 @@ export const defaultQueryTool = createTool({
             : r.content;
           
           return {
-            content: truncatedContent, // Store truncated content at top level
+            content: truncatedContent, // Store truncated content ONLY here
             metadata: {
-              chunkContent: truncatedContent,
-              content: truncatedContent,
+              // Don't duplicate content in metadata
               originalLength: r.content.length,
               truncated: r.content.length > maxChunkLength,
-              ...r.metadata
+              sourceQuery: r.metadata?.sourceQuery,
+              matchedQueries: r.metadata?.matchedQueries
             },
             score: r.score,
             distance: 1 - (r.score || 0), // Convert score to distance
