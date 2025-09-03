@@ -344,7 +344,12 @@ export const defaultQueryTool = createTool({
         }
         
         // Prepare results in format similar to Newman results
-        const bedrockResults = Array.from(allResults.values()).map(r => ({
+        // Sort by score and limit to top results to avoid content filter issues
+        const sortedResults = Array.from(allResults.values())
+          .sort((a, b) => (b.score || 0) - (a.score || 0))
+          .slice(0, 15); // Limit to top 15 chunks to reduce context size
+        
+        const bedrockResults = sortedResults.map(r => ({
           content: r.content, // Store content at top level too
           metadata: {
             chunkContent: r.content,
@@ -357,7 +362,8 @@ export const defaultQueryTool = createTool({
         }));
         
         console.log(`\n[Default Query Tool] Bedrock retrieval complete:`);
-        console.log(`[Default Query Tool]   Total unique chunks: ${bedrockResults.length}`);
+        console.log(`[Default Query Tool]   Total unique chunks found: ${allResults.size}`);
+        console.log(`[Default Query Tool]   Chunks sent to LLM: ${bedrockResults.length} (limited to avoid content filter)`);
         console.log(`[Default Query Tool]   Single query would have returned: ~11 chunks`);
         console.log(`[Default Query Tool]   Improvement factor: ${(bedrockResults.length / 11).toFixed(1)}x`);
         
