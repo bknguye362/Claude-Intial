@@ -461,11 +461,13 @@ export function createOpenAI(options?: any) {
           try {
             while (true) {
               const { done, value } = await reader.read();
-              if (done) break;
               
-              buffer += decoder.decode(value, { stream: true });
+              if (value) {
+                buffer += decoder.decode(value, { stream: !done });
+              }
+              
               const lines = buffer.split('\n');
-              buffer = lines.pop() || '';
+              buffer = done ? '' : lines.pop() || '';
               
               for (const line of lines) {
                 if (line.startsWith('data: ')) {
@@ -509,6 +511,25 @@ export function createOpenAI(options?: any) {
                     // Ignore parse errors
                   }
                 }
+              }
+              
+              // Process any remaining buffer when done
+              if (done) {
+                if (buffer && buffer.startsWith('data: ')) {
+                  const data = buffer.slice(6);
+                  if (data !== '[DONE]') {
+                    try {
+                      const json = JSON.parse(data);
+                      const delta = json.choices?.[0]?.delta;
+                      if (delta?.content) {
+                        contentBuffer += delta.content;
+                      }
+                    } catch (e) {
+                      // Ignore parse errors
+                    }
+                  }
+                }
+                break;
               }
             }
           } finally {
@@ -699,11 +720,13 @@ export function createOpenAI(options?: any) {
               try {
                 while (true) {
                   const { done, value } = await secondReader.read();
-                  if (done) break;
                   
-                  secondBuffer += secondDecoder.decode(value, { stream: true });
+                  if (value) {
+                    secondBuffer += secondDecoder.decode(value, { stream: !done });
+                  }
+                  
                   const lines = secondBuffer.split('\n');
-                  secondBuffer = lines.pop() || '';
+                  secondBuffer = done ? '' : lines.pop() || '';
                   
                   for (const line of lines) {
                     if (line.startsWith('data: ')) {
@@ -720,6 +743,25 @@ export function createOpenAI(options?: any) {
                         // Ignore parse errors
                       }
                     }
+                  }
+                  
+                  // Process any remaining buffer when done
+                  if (done) {
+                    if (secondBuffer && secondBuffer.startsWith('data: ')) {
+                      const data = secondBuffer.slice(6);
+                      if (data !== '[DONE]') {
+                        try {
+                          const json = JSON.parse(data);
+                          const content = json.choices?.[0]?.delta?.content;
+                          if (content) {
+                            yield content;
+                          }
+                        } catch (e) {
+                          // Ignore parse errors
+                        }
+                      }
+                    }
+                    break;
                   }
                 }
               } finally {
