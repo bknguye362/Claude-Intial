@@ -266,15 +266,67 @@ export const defaultQueryTool = createTool({
           }
         });
         
+        // Step 1: Query knowledge graph for related entities
+        console.log('[Default Query Tool] 📊 GRAPH ENHANCEMENT for Bedrock queries');
+        const questionEntities = extractEntitiesFromText(context.question);
+        console.log(`[Default Query Tool] Extracted ${questionEntities.length} potential entities: ${questionEntities.join(', ')}`);
+        
+        let graphEntities: Map<string, any[]> = new Map();
+        let graphEnhancedQueries: string[] = [];
+        
+        if (questionEntities.length > 0) {
+          try {
+            console.log('[Default Query Tool] Calling queryGraphForEntities...');
+            graphEntities = await queryGraphForEntities(questionEntities, 5);
+            
+            if (graphEntities.size > 0) {
+              console.log(`[Default Query Tool] 📊 Found ${graphEntities.size} entities in knowledge graph`);
+              
+              // Add entity-specific queries to our variations
+              for (const [entityName, relationships] of graphEntities) {
+                // Add queries about this entity
+                graphEnhancedQueries.push(`${entityName} in Animal Farm`);
+                graphEnhancedQueries.push(`Tell me about ${entityName}`);
+                
+                // Add queries about relationships
+                relationships.forEach(rel => {
+                  if (rel.object && rel.object !== entityName) {
+                    graphEnhancedQueries.push(`${entityName} and ${rel.object}`);
+                  }
+                });
+              }
+              
+              console.log(`[Default Query Tool] Generated ${graphEnhancedQueries.length} graph-enhanced queries`);
+            } else {
+              console.log('[Default Query Tool] No matching entities found in graph');
+            }
+          } catch (graphError) {
+            console.log('[Default Query Tool] ⚠️ Graph query failed:', graphError);
+            console.log('[Default Query Tool] Continuing with standard query expansion');
+          }
+        }
+        
         // Generate query variations using Azure OpenAI
         const queryVariations = await generateQueryVariations(context.question, 7);
         
-        // Always include original query
-        if (!queryVariations.includes(context.question)) {
-          queryVariations.unshift(context.question);
-        }
+        // Combine graph-enhanced queries with AI-generated variations
+        const allVariations = [context.question]; // Start with original
         
-        const finalVariations = queryVariations.slice(0, 10);
+        // Add graph-enhanced queries first (they're more targeted)
+        graphEnhancedQueries.forEach(q => {
+          if (!allVariations.includes(q)) {
+            allVariations.push(q);
+          }
+        });
+        
+        // Add AI-generated variations
+        queryVariations.forEach(q => {
+          if (!allVariations.includes(q)) {
+            allVariations.push(q);
+          }
+        });
+        
+        const finalVariations = allVariations.slice(0, 12); // Allow up to 12 queries with graph enhancement
         console.log('[Default Query Tool] Query variations:');
         finalVariations.forEach((q, i) => {
           console.log(`[Default Query Tool]   ${i + 1}. "${q}"`);
@@ -447,10 +499,23 @@ export const defaultQueryTool = createTool({
         // Use ContextBuilder to create enhanced response
         const contextualResponse = ContextBuilder.buildContextualResponse(contextualizedChunks);
         
+        // Build graph context if we have entities
+        let graphContextString = '';
+        if (graphEntities.size > 0) {
+          graphContextString = '\n📊 KNOWLEDGE GRAPH CONTEXT:\n';
+          for (const [entityName, relationships] of graphEntities) {
+            graphContextString += `\n• ${entityName}:\n`;
+            relationships.forEach(rel => {
+              graphContextString += `  - ${rel.predicate}: ${rel.object}\n`;
+            });
+          }
+          graphContextString += '\n';
+        }
+        
         // Add synthesis instruction to the context with content-filter-safe language
         const synthesisInstruction = `\n\n📝 RESPONSE GUIDELINES: Please provide a comprehensive and complete answer based on the following information retrieved from the document. Synthesize all the information into a well-organized response. Important: Ensure your response is complete and not truncated. Focus on providing educational and informative content about the literary work.\n\n`;
         
-        const enhancedContextString = synthesisInstruction + contextualResponse.contextString;
+        const enhancedContextString = synthesisInstruction + graphContextString + contextualResponse.contextString;
         
         // Debug: Log context string
         console.log(`[Default Query Tool] Context string length: ${enhancedContextString.length} chars`);
@@ -478,7 +543,10 @@ export const defaultQueryTool = createTool({
           citations: contextualResponse.citations,
           queryExpansion: {
             variationsUsed: finalVariations.length,
-            stats: queryStats
+            stats: queryStats,
+            graphEnhanced: graphEntities.size > 0,
+            graphEntitiesFound: graphEntities.size,
+            graphQueriesAdded: graphEnhancedQueries.length
           },
           message: `Found ${bedrockResults.length} unique chunks using Bedrock KB with query expansion`,
           timestamp: new Date().toISOString(),
