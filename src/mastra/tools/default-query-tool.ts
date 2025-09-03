@@ -395,6 +395,64 @@ export const defaultQueryTool = createTool({
           }
         }
         
+        // Extract entities from all Bedrock results for graph filtering
+        console.log('\n[Default Query Tool] Extracting entities from Bedrock results for graph filtering...');
+        const bedrockEntities = new Set<string>();
+        
+        // Extract entities from all retrieved chunks
+        for (const result of allResults.values()) {
+          const chunkEntities = extractEntitiesFromText(result.content);
+          chunkEntities.forEach(entity => bedrockEntities.add(entity));
+        }
+        
+        console.log(`[Default Query Tool]   Found ${bedrockEntities.size} unique entities in Bedrock results`);
+        
+        // Query Neptune graph for these entities
+        let bedrockGraphEntities: Map<string, any[]> = new Map();
+        if (bedrockEntities.size > 0) {
+          try {
+            const entitiesToQuery = Array.from(bedrockEntities).slice(0, 10); // Limit to 10 most relevant
+            console.log(`[Default Query Tool]   Querying graph for top ${entitiesToQuery.length} entities...`);
+            bedrockGraphEntities = await queryGraphForEntities(entitiesToQuery, 10);
+            
+            if (bedrockGraphEntities.size > 0) {
+              console.log(`[Default Query Tool]   ✅ Found ${bedrockGraphEntities.size} entities in knowledge graph`);
+              
+              // Create a set of valid entities from graph
+              const validEntities = new Set<string>();
+              for (const [entity, relationships] of bedrockGraphEntities) {
+                validEntities.add(entity.toLowerCase());
+                // Also add related entities
+                relationships.forEach(rel => {
+                  if (rel.object) validEntities.add(rel.object.toLowerCase());
+                });
+              }
+              
+              // Boost scores for chunks containing graph-validated entities
+              console.log(`[Default Query Tool]   Boosting scores for chunks with graph-validated entities...`);
+              for (const [key, result] of allResults) {
+                const contentLower = result.content.toLowerCase();
+                let boostFactor = 1.0;
+                
+                // Check if chunk contains any validated entities
+                for (const entity of validEntities) {
+                  if (contentLower.includes(entity)) {
+                    boostFactor = Math.max(boostFactor, 1.2); // 20% boost for graph-validated content
+                  }
+                }
+                
+                // Apply boost
+                result.score = (result.score || 0.5) * boostFactor;
+                result.graphBoosted = boostFactor > 1.0;
+              }
+              
+              console.log(`[Default Query Tool]   Graph-based filtering/boosting applied`);
+            }
+          } catch (error) {
+            console.log(`[Default Query Tool]   ⚠️ Graph filtering failed:`, error);
+          }
+        }
+        
         // Prepare results in format similar to Newman results
         // Sort by score and limit to top results to avoid content filter issues
         const sortedResults = Array.from(allResults.values())
@@ -415,7 +473,8 @@ export const defaultQueryTool = createTool({
               originalLength: r.content.length,
               truncated: r.content.length > maxChunkLength,
               sourceQuery: r.metadata?.sourceQuery,
-              matchedQueries: r.metadata?.matchedQueries
+              matchedQueries: r.metadata?.matchedQueries,
+              graphBoosted: r.graphBoosted || false
             },
             score: r.score,
             distance: 1 - (r.score || 0), // Convert score to distance
@@ -429,6 +488,7 @@ export const defaultQueryTool = createTool({
         console.log(`\n[Default Query Tool] Bedrock retrieval complete:`);
         console.log(`[Default Query Tool]   Total unique chunks found: ${allResults.size}`);
         console.log(`[Default Query Tool]   Chunks sent to LLM: ${bedrockResults.length} (limited to avoid content filter)`);
+        console.log(`[Default Query Tool]   Chunks with graph boost: ${bedrockResults.filter(r => r.metadata.graphBoosted).length}`);
         console.log(`[Default Query Tool]   Total content size: ${totalContentSize} characters (after truncation)`);
         console.log(`[Default Query Tool]   Average chunk size: ${Math.round(totalContentSize / bedrockResults.length)} characters`);
         console.log(`[Default Query Tool]   Expected message size: ~${Math.round(totalContentSize * 1.5)} characters (with metadata)`);
@@ -499,16 +559,38 @@ export const defaultQueryTool = createTool({
         // Use ContextBuilder to create enhanced response
         const contextualResponse = ContextBuilder.buildContextualResponse(contextualizedChunks);
         
+        // Merge graph entities from both query and Bedrock results
+        const allGraphEntities = new Map([...graphEntities, ...bedrockGraphEntities]);
+        
         // Build graph context if we have entities
         let graphContextString = '';
-        if (graphEntities.size > 0) {
+        if (allGraphEntities.size > 0) {
           graphContextString = '\n📊 KNOWLEDGE GRAPH CONTEXT:\n';
-          for (const [entityName, relationships] of graphEntities) {
-            graphContextString += `\n• ${entityName}:\n`;
-            relationships.forEach(rel => {
-              graphContextString += `  - ${rel.predicate}: ${rel.object}\n`;
-            });
+          
+          // Separate query-based and content-based entities
+          if (graphEntities.size > 0) {
+            graphContextString += '\nEntities from your query:\n';
+            for (const [entityName, relationships] of graphEntities) {
+              graphContextString += `\n• ${entityName}:\n`;
+              relationships.forEach(rel => {
+                graphContextString += `  - ${rel.predicate}: ${rel.object}\n`;
+              });
+            }
           }
+          
+          if (bedrockGraphEntities.size > 0) {
+            graphContextString += '\nEntities found in retrieved content:\n';
+            for (const [entityName, relationships] of bedrockGraphEntities) {
+              // Skip if already shown in query entities
+              if (!graphEntities.has(entityName)) {
+                graphContextString += `\n• ${entityName}:\n`;
+                relationships.forEach(rel => {
+                  graphContextString += `  - ${rel.predicate}: ${rel.object}\n`;
+                });
+              }
+            }
+          }
+          
           graphContextString += '\n';
         }
         
@@ -544,9 +626,11 @@ export const defaultQueryTool = createTool({
           queryExpansion: {
             variationsUsed: finalVariations.length,
             stats: queryStats,
-            graphEnhanced: graphEntities.size > 0,
-            graphEntitiesFound: graphEntities.size,
-            graphQueriesAdded: graphEnhancedQueries.length
+            graphEnhanced: graphEntities.size > 0 || bedrockGraphEntities.size > 0,
+            graphEntitiesFromQuery: graphEntities.size,
+            graphEntitiesFromContent: bedrockGraphEntities.size,
+            graphQueriesAdded: graphEnhancedQueries.length,
+            chunksWithGraphBoost: bedrockResults.filter(r => r.metadata.graphBoosted).length
           },
           message: `Found ${bedrockResults.length} unique chunks using Bedrock KB with query expansion`,
           timestamp: new Date().toISOString(),
