@@ -420,7 +420,7 @@ export const defaultQueryTool = createTool({
           score: r.score || 0,
           distance: r.distance,
           index: r.index,
-          content: r.content || r.metadata.chunkContent || r.metadata.content || '',
+          content: r.content || '',
           metadata: {
             ...r.metadata,
             matchCount: r.metadata.matchedQueries?.length || 1
