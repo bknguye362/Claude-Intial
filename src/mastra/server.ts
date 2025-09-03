@@ -315,10 +315,46 @@ const server = createServer(async (req, res) => {
       
       // Send final result
       console.log('[Server] Sending final response...');
-      res.write(`data: {"status":"complete","result":${JSON.stringify(result)}}\n\n`);
-      res.write('data: [DONE]\n\n');
-      res.end();
-      console.log('[Server] Response sent successfully');
+      
+      // Log the actual content being sent for debugging
+      const fullResponseContent = result?.choices?.[0]?.message?.content || '';
+      console.log(`[Server] Full response content length: ${fullResponseContent.length} chars`);
+      if (fullResponseContent.length > 300) {
+        console.log(`[Server] Response starts with: "${fullResponseContent.substring(0, 100)}..."`);
+        console.log(`[Server] Response ends with: "...${fullResponseContent.substring(fullResponseContent.length - 100)}"`);
+      } else {
+        console.log(`[Server] Full response: "${fullResponseContent}"`);
+      }
+      
+      // Create the SSE message with proper formatting
+      const resultString = JSON.stringify(result);
+      console.log(`[Server] JSON stringified result length: ${resultString.length} bytes`);
+      
+      // Check for potential issues in the JSON
+      if (resultString.includes('\n\n')) {
+        console.log('[Server] WARNING: Response contains double newlines that might break SSE');
+      }
+      
+      // Send the complete result as a single SSE message
+      // SSE format requires "data: " prefix and double newline suffix
+      const sseMessage = `data: {"status":"complete","result":${resultString}}\n\n`;
+      
+      try {
+        res.write(sseMessage);
+        res.write('data: [DONE]\n\n');
+        res.end();
+        console.log('[Server] Response sent successfully');
+        console.log(`[Server] SSE message size: ${sseMessage.length} bytes`);
+      } catch (writeError) {
+        console.error('[Server] Error writing response:', writeError);
+        // Try to send error message
+        try {
+          res.write(`data: {"status":"error","message":"Failed to send complete response"}\n\n`);
+          res.end();
+        } catch (e) {
+          console.error('[Server] Could not send error message:', e);
+        }
+      }
     } catch (error) {
       clearInterval(keepAliveInterval);
       console.error('[Server] Error processing request:', error);
