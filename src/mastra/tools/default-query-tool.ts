@@ -75,6 +75,7 @@ async function queryGraphForEntities(entities: string[], maxEntities: number = 5
           if (matches.length > 0) {
             relatedEntities.set(entity, matches.slice(0, 3)); // Limit to 3 matches per entity
             console.log(`[Default Query Tool] ✅ Found ${matches.length} graph entities for "${entity}"`);
+            console.log(`[Default Query Tool] 🔍 Entity structure for "${entity}":`, JSON.stringify(matches[0], null, 2));
           }
         }
       }
@@ -570,22 +571,32 @@ export const defaultQueryTool = createTool({
           // Separate query-based and content-based entities
           if (graphEntities.size > 0) {
             graphContextString += '\nEntities from your query:\n';
-            for (const [entityName, relationships] of graphEntities) {
+            for (const [entityName, entityList] of graphEntities) {
               graphContextString += `\n• ${entityName}:\n`;
-              relationships.forEach(rel => {
-                graphContextString += `  - ${rel.predicate}: ${rel.object}\n`;
+              entityList.forEach(entity => {
+                const name = entity.name?.[0] || entityName;
+                const description = entity.description?.[0] || 'No description available';
+                const entityType = entity.entityType?.[0] || 'Unknown type';
+                graphContextString += `  - Type: ${entityType}\n`;
+                graphContextString += `  - Name: ${name}\n`;
+                graphContextString += `  - Description: ${description}\n`;
               });
             }
           }
           
           if (bedrockGraphEntities.size > 0) {
             graphContextString += '\nEntities found in retrieved content:\n';
-            for (const [entityName, relationships] of bedrockGraphEntities) {
+            for (const [entityName, entityList] of bedrockGraphEntities) {
               // Skip if already shown in query entities
               if (!graphEntities.has(entityName)) {
                 graphContextString += `\n• ${entityName}:\n`;
-                relationships.forEach(rel => {
-                  graphContextString += `  - ${rel.predicate}: ${rel.object}\n`;
+                entityList.forEach(entity => {
+                  const name = entity.name?.[0] || entityName;
+                  const description = entity.description?.[0] || 'No description available';
+                  const entityType = entity.entityType?.[0] || 'Unknown type';
+                  graphContextString += `  - Type: ${entityType}\n`;
+                  graphContextString += `  - Name: ${name}\n`;
+                  graphContextString += `  - Description: ${description}\n`;
                 });
               }
             }
