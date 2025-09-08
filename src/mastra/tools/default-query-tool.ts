@@ -335,7 +335,7 @@ export const defaultQueryTool = createTool({
         
         // Execute all queries against Bedrock
         console.log('\n[Default Query Tool] Executing queries against Bedrock KB...');
-        const allResults = new Map();
+        let allResults = new Map();
         const queryStats: any[] = [];
         
         for (const query of finalVariations) {
@@ -429,25 +429,71 @@ export const defaultQueryTool = createTool({
                 });
               }
               
-              // Boost scores for chunks containing graph-validated entities
-              console.log(`[Default Query Tool]   Boosting scores for chunks with graph-validated entities...`);
+              // Graph filtering: Either strict filtering or boosting based on configuration
+              const USE_STRICT_FILTERING = true; // Set to false for boosting only
+              
+              if (USE_STRICT_FILTERING) {
+                console.log(`[Default Query Tool]   Applying STRICT graph filtering (only keeping chunks with graph entities)...`);
+              } else {
+                console.log(`[Default Query Tool]   Applying graph BOOSTING (20% score boost for chunks with graph entities)...`);
+              }
+              
+              const filteredResults = new Map();
+              let filteredCount = 0;
+              
               for (const [key, result] of allResults) {
                 const contentLower = result.content.toLowerCase();
-                let boostFactor = 1.0;
+                let hasValidEntity = false;
                 
                 // Check if chunk contains any validated entities
                 for (const entity of validEntities) {
                   if (contentLower.includes(entity)) {
-                    boostFactor = Math.max(boostFactor, 1.2); // 20% boost for graph-validated content
+                    hasValidEntity = true;
+                    result.graphValidated = true;
+                    result.matchedEntity = entity;
+                    // Boost score for graph-validated content
+                    result.score = (result.score || 0.5) * 1.2;
+                    break;
                   }
                 }
                 
-                // Apply boost
-                result.score = (result.score || 0.5) * boostFactor;
-                result.graphBoosted = boostFactor > 1.0;
+                // Apply filtering or boosting based on mode
+                if (USE_STRICT_FILTERING) {
+                  // STRICT MODE: Only keep chunks with validated entities
+                  if (hasValidEntity) {
+                    filteredResults.set(key, result);
+                    filteredCount++;
+                  }
+                } else {
+                  // BOOSTING MODE: Keep all chunks, boost those with entities
+                  filteredResults.set(key, result);
+                  if (hasValidEntity) {
+                    filteredCount++;
+                  }
+                }
               }
               
-              console.log(`[Default Query Tool]   Graph-based filtering/boosting applied`);
+              console.log(`[Default Query Tool]   Graph filtering complete:`);
+              console.log(`[Default Query Tool]     - Original chunks: ${allResults.size}`);
+              
+              if (USE_STRICT_FILTERING) {
+                console.log(`[Default Query Tool]     - After filtering: ${filteredResults.size}`);
+                console.log(`[Default Query Tool]     - Removed: ${allResults.size - filteredResults.size} chunks without graph entities`);
+                console.log(`[Default Query Tool]     - Mode: STRICT FILTERING`);
+              } else {
+                console.log(`[Default Query Tool]     - Chunks with graph boost: ${filteredCount}`);
+                console.log(`[Default Query Tool]     - Chunks without boost: ${allResults.size - filteredCount}`);
+                console.log(`[Default Query Tool]     - Mode: SCORE BOOSTING`);
+              }
+              
+              // Replace allResults with filtered results
+              allResults = filteredResults;
+              
+              // If no chunks pass the filter, log a warning
+              if (USE_STRICT_FILTERING && allResults.size === 0) {
+                console.log(`[Default Query Tool]   ⚠️ WARNING: No chunks contain graph-validated entities!`);
+                console.log(`[Default Query Tool]   Consider using boosting mode or checking graph data`);
+              }
             }
           } catch (error) {
             console.log(`[Default Query Tool]   ⚠️ Graph filtering failed:`, error);
@@ -475,7 +521,8 @@ export const defaultQueryTool = createTool({
               truncated: r.content.length > maxChunkLength,
               sourceQuery: r.metadata?.sourceQuery,
               matchedQueries: r.metadata?.matchedQueries,
-              graphBoosted: r.graphBoosted || false
+              graphValidated: r.graphValidated || false,
+              matchedEntity: r.matchedEntity || null
             },
             score: r.score,
             distance: 1 - (r.score || 0), // Convert score to distance
@@ -487,9 +534,9 @@ export const defaultQueryTool = createTool({
         const totalContentSize = bedrockResults.reduce((sum, r) => sum + r.content.length, 0);
         
         console.log(`\n[Default Query Tool] Bedrock retrieval complete:`);
-        console.log(`[Default Query Tool]   Total unique chunks found: ${allResults.size}`);
-        console.log(`[Default Query Tool]   Chunks sent to LLM: ${bedrockResults.length} (limited to avoid content filter)`);
-        console.log(`[Default Query Tool]   Chunks with graph boost: ${bedrockResults.filter(r => r.metadata.graphBoosted).length}`);
+        console.log(`[Default Query Tool]   Initial chunks retrieved: ${sortedResults.length}`);
+        console.log(`[Default Query Tool]   Graph-validated chunks: ${bedrockResults.filter(r => r.metadata.graphValidated).length}`);
+        console.log(`[Default Query Tool]   Chunks sent to LLM: ${bedrockResults.length} (ALL are graph-validated)`);
         console.log(`[Default Query Tool]   Total content size: ${totalContentSize} characters (after truncation)`);
         console.log(`[Default Query Tool]   Average chunk size: ${Math.round(totalContentSize / bedrockResults.length)} characters`);
         console.log(`[Default Query Tool]   Expected message size: ~${Math.round(totalContentSize * 1.5)} characters (with metadata)`);
@@ -641,7 +688,8 @@ export const defaultQueryTool = createTool({
             graphEntitiesFromQuery: graphEntities.size,
             graphEntitiesFromContent: bedrockGraphEntities.size,
             graphQueriesAdded: graphEnhancedQueries.length,
-            chunksWithGraphBoost: bedrockResults.filter(r => r.metadata.graphBoosted).length
+            graphValidatedChunks: bedrockResults.filter(r => r.metadata.graphValidated).length,
+            strictFiltering: true
           },
           message: `Found ${bedrockResults.length} unique chunks using Bedrock KB with query expansion`,
           timestamp: new Date().toISOString(),
