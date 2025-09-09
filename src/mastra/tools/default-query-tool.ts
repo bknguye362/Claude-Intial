@@ -27,11 +27,21 @@ function extractEntitiesFromText(text: string): string[] {
   const matches = text.match(capitalizedPattern) || [];
   
   // Filter out common words and question words
-  const commonWords = new Set(['The', 'This', 'That', 'These', 'Those', 'What', 'When', 'Where', 'Why', 'How', 'Who', 'Which', 'Is', 'Are', 'Was', 'Were', 'Can', 'Could', 'Should', 'Would']);
+  const commonWords = new Set(['The', 'This', 'That', 'These', 'Those', 'What', 'When', 'Where', 'Why', 'How', 'Who', 'Which', 'Is', 'Are', 'Was', 'Were', 'Can', 'Could', 'Should', 'Would', 'Tell']);
   
   matches.forEach(match => {
     if (!commonWords.has(match) && match.length > 2) {
       entities.push(match);
+      
+      // For multi-word names, also add individual parts (e.g., "Guy Montag" → also add "Montag")
+      const parts = match.split(/\s+/);
+      if (parts.length > 1) {
+        parts.forEach(part => {
+          if (part.length > 2 && !commonWords.has(part)) {
+            entities.push(part);
+          }
+        });
+      }
     }
   });
   
@@ -41,6 +51,11 @@ function extractEntitiesFromText(text: string): string[] {
   while ((quotedMatch = quotedPattern.exec(text)) !== null) {
     entities.push(quotedMatch[1]);
   }
+  
+  // Also look for numbers like "451" which could be important
+  const numberPattern = /\b\d{3,4}\b/g;
+  const numbers = text.match(numberPattern) || [];
+  entities.push(...numbers);
   
   return [...new Set(entities)]; // Remove duplicates
 }
@@ -54,23 +69,20 @@ async function queryGraphForEntities(entities: string[], maxEntities: number = 5
   
   for (const entity of entitiesToQuery) {
     try {
-      console.log(`[Default Query Tool] 🔍 Querying graph for entity: ${entity}`);
+      console.log(`[Default Query Tool] 🔍 Searching graph for entity: ${entity}`);
       
-      // Query for all entities and filter by name
+      // Use the new searchEntitiesByName operation for proper server-side search
       const result = await invokeLambda({
-        operation: 'queryEntitiesByType',
-        limit: 100
+        operation: 'searchEntitiesByName',
+        searchTerm: entity,
+        limit: 50
       });
       
       if (result.body) {
         const response = JSON.parse(result.body);
         if (response.result?.entities) {
-          // Filter entities that match our query
-          const matches = response.result.entities.filter((e: any) => {
-            const name = e.name?.[0] || '';
-            return name.toLowerCase().includes(entity.toLowerCase()) || 
-                   entity.toLowerCase().includes(name.toLowerCase());
-          });
+          // The Lambda now returns properly matched entities
+          const matches = response.result.entities;
           
           if (matches.length > 0) {
             relatedEntities.set(entity, matches.slice(0, 3)); // Limit to 3 matches per entity
@@ -504,7 +516,7 @@ export const defaultQueryTool = createTool({
         // Sort by score and limit to top results to avoid content filter issues
         const sortedResults = Array.from(allResults.values())
           .sort((a, b) => (b.score || 0) - (a.score || 0))
-          .slice(0, 10); // Limit to top 10 chunks to reduce context size (reduced from 15)
+          .slice(0, 30); // Limit to top 30 chunks to provide more context
         
         const bedrockResults = sortedResults.map(r => {
           // Truncate content to avoid content filter issues
