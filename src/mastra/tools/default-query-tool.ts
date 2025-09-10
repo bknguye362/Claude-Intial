@@ -60,6 +60,24 @@ function extractEntitiesFromText(text: string): string[] {
   return [...new Set(entities)]; // Remove duplicates
 }
 
+// Helper function to extract document name from S3 path or hash
+function extractDocumentNameFromPath(sourceDocument: string | undefined): string {
+  if (!sourceDocument) return 'Document';
+  
+  // Remove .pdf extension
+  const cleanName = sourceDocument.replace('.pdf', '');
+  
+  // Check if it's a hash (32+ hex characters)
+  if (/^[a-f0-9]{32,}$/.test(cleanName)) {
+    // For old documents with hash names, return a generic name
+    // These are documents uploaded before our naming system
+    return `Document-${cleanName.substring(0, 8)}`;
+  }
+  
+  // For new documents, the name should be the actual filename
+  return cleanName;
+}
+
 // Query Neptune graph for related entities
 async function queryGraphForEntities(entities: string[], maxEntities: number = 5): Promise<Map<string, any[]>> {
   const relatedEntities = new Map<string, any[]>();
@@ -607,7 +625,7 @@ export const defaultQueryTool = createTool({
             matchCount: r.metadata.matchedQueries?.length || 1
           },
           context: {
-            documentId: r.metadata?.sourceDocument?.replace('.pdf', '') || 'Document',
+            documentId: r.metadata?.sourceDocument?.replace('.pdf', '') || extractDocumentNameFromPath(r.metadata?.sourceDocument) || 'Document',
             pageStart: r.metadata?.pageNumber,
             pageEnd: r.metadata?.pageNumber,
             chunkIndex: r.metadata?.chunkIndex || idx,
