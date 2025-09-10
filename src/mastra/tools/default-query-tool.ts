@@ -298,7 +298,7 @@ export const defaultQueryTool = createTool({
               // Add entity-specific queries to our variations
               for (const [entityName, relationships] of graphEntities) {
                 // Add queries about this entity
-                graphEnhancedQueries.push(`${entityName} in Animal Farm`);
+                graphEnhancedQueries.push(`${entityName}`);
                 graphEnhancedQueries.push(`Tell me about ${entityName}`);
                 
                 // Add queries about relationships
@@ -374,7 +374,11 @@ export const defaultQueryTool = createTool({
                   score: result.score,
                   metadata: {
                     sourceQuery: query,
-                    matchedQueries: [query]
+                    matchedQueries: [query],
+                    sourceDocument: result.metadata?.sourceDocument || 'Unknown',
+                    pageNumber: result.metadata?.pageNumber,
+                    chunkIndex: result.metadata?.chunkIndex,
+                    totalChunks: result.metadata?.totalChunks
                   }
                 });
                 newChunks++;
@@ -534,7 +538,12 @@ export const defaultQueryTool = createTool({
               sourceQuery: r.metadata?.sourceQuery,
               matchedQueries: r.metadata?.matchedQueries,
               graphValidated: r.graphValidated || false,
-              matchedEntity: r.matchedEntity || null
+              matchedEntity: r.matchedEntity || null,
+              // Preserve Bedrock metadata
+              sourceDocument: r.metadata?.sourceDocument,
+              pageNumber: r.metadata?.pageNumber,
+              chunkIndex: r.metadata?.chunkIndex,
+              totalChunks: r.metadata?.totalChunks
             },
             score: r.score,
             distance: 1 - (r.score || 0), // Convert score to distance
@@ -598,11 +607,11 @@ export const defaultQueryTool = createTool({
             matchCount: r.metadata.matchedQueries?.length || 1
           },
           context: {
-            documentId: 'Animal Farm', // Simplified document name
-            pageStart: undefined,
-            pageEnd: undefined,
-            chunkIndex: idx,
-            totalChunks: bedrockResults.length,
+            documentId: r.metadata?.sourceDocument?.replace('.pdf', '') || 'Document',
+            pageStart: r.metadata?.pageNumber,
+            pageEnd: r.metadata?.pageNumber,
+            chunkIndex: r.metadata?.chunkIndex || idx,
+            totalChunks: r.metadata?.totalChunks || bedrockResults.length,
             // Remove per-chunk citations to encourage synthesis
             citation: undefined
           }
