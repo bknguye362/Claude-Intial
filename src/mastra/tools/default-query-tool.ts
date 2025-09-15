@@ -6,6 +6,7 @@ import { hybridSearch } from '../lib/hybrid-search.js';
 import { detectSectionQuery } from '../lib/metadata-filter-simplified.js';
 import { multiQuerySearch } from '../lib/multi-query-search.js';
 import { invokeLambda } from '../lib/neptune-lambda-client.js';
+import { iterativeGraphReasoning, formatReasoningContext } from '../lib/graph-r1-reasoning.js';
 
 // Azure OpenAI configuration for embeddings
 const AZURE_OPENAI_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT || 'https://franklin-open-ai-test.openai.azure.com';
@@ -276,6 +277,7 @@ export const defaultQueryTool = createTool({
     question: z.string().describe('The user\'s question'),
     context: z.string().optional().describe('Additional context for the question'),
     useBedrockWithExpansion: z.boolean().optional().describe('Use Bedrock KB with query expansion instead of Newman'),
+    useIterativeReasoning: z.boolean().optional().describe('Use Graph-R1 iterative reasoning for complex queries'),
   }),
   execute: async ({ context }) => {
     console.log('[Default Query Tool] ========= HANDLING QUESTION =========');
@@ -346,6 +348,21 @@ export const defaultQueryTool = createTool({
           } catch (graphError) {
             console.log('[Default Query Tool] ⚠️ Graph query failed:', graphError);
             console.log('[Default Query Tool] Continuing with standard query expansion');
+          }
+        }
+        
+        // Step 1.5: Use iterative reasoning if requested
+        let iterativeReasoningContext = '';
+        if (context.useIterativeReasoning) {
+          console.log('[Default Query Tool] 🧠 Using Graph-R1 iterative reasoning');
+          try {
+            const reasoningResult = await iterativeGraphReasoning(context.question, 3, 0.7);
+            iterativeReasoningContext = formatReasoningContext(reasoningResult);
+            if (iterativeReasoningContext) {
+              console.log('[Default Query Tool] Iterative reasoning found relevant graph knowledge');
+            }
+          } catch (reasoningError) {
+            console.error('[Default Query Tool] Iterative reasoning failed:', reasoningError);
           }
         }
         
@@ -706,7 +723,7 @@ export const defaultQueryTool = createTool({
         // Add synthesis instruction to the context with content-filter-safe language
         const synthesisInstruction = `\n\n📝 RESPONSE GUIDELINES: Please provide a comprehensive and complete answer based on the following information. Synthesize all the information into a well-organized response. DO NOT include citations, references, or source attributions like [Document], [chunk], or [page] in your response. Present the information naturally as if it's your own knowledge. Important: Ensure your response is complete and not truncated.\n\n`;
         
-        const enhancedContextString = synthesisInstruction + graphContextString + contextualResponse.contextString;
+        const enhancedContextString = synthesisInstruction + iterativeReasoningContext + graphContextString + contextualResponse.contextString;
         
         // Debug: Log context string
         console.log(`[Default Query Tool] Context string length: ${enhancedContextString.length} chars`);
