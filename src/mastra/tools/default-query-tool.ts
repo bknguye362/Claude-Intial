@@ -65,16 +65,28 @@ function extractDocumentNameFromPath(sourceDocument: string | undefined): string
   if (!sourceDocument) return 'Document';
   
   // Remove .pdf extension
-  const cleanName = sourceDocument.replace('.pdf', '');
+  let cleanName = sourceDocument.replace('.pdf', '');
   
   // Check if it's a hash (32+ hex characters)
   if (/^[a-f0-9]{32,}$/.test(cleanName)) {
-    // For old documents with hash names, return a generic name
-    // These are documents uploaded before our naming system
-    return `Document-${cleanName.substring(0, 8)}`;
+    // For documents with hash names, try to extract from Neptune
+    // For now, return a shortened version
+    return `Doc-${cleanName.substring(0, 6)}`;
   }
   
-  // For new documents, the name should be the actual filename
+  // Check if it starts with our naming convention (file-NAME-date)
+  if (cleanName.startsWith('file-')) {
+    // Extract the meaningful part between 'file-' and the date
+    const parts = cleanName.replace('file-', '').split('-');
+    // Remove the date part (last 3 elements: YYYY-MM-DD)
+    if (parts.length > 3 && /^\d{4}$/.test(parts[parts.length - 3])) {
+      parts.splice(-3); // Remove date
+    }
+    // Convert remaining parts to readable name
+    return parts.join(' ').replace(/_/g, ' ');
+  }
+  
+  // For other formats, just return the clean name
   return cleanName;
 }
 
@@ -625,7 +637,7 @@ export const defaultQueryTool = createTool({
             matchCount: r.metadata.matchedQueries?.length || 1
           },
           context: {
-            documentId: r.metadata?.sourceDocument?.replace('.pdf', '') || extractDocumentNameFromPath(r.metadata?.sourceDocument) || 'Document',
+            documentId: extractDocumentNameFromPath(r.metadata?.sourceDocument) || 'Document',
             pageStart: r.metadata?.pageNumber,
             pageEnd: r.metadata?.pageNumber,
             chunkIndex: r.metadata?.chunkIndex || idx,
@@ -692,7 +704,7 @@ export const defaultQueryTool = createTool({
         }
         
         // Add synthesis instruction to the context with content-filter-safe language
-        const synthesisInstruction = `\n\n📝 RESPONSE GUIDELINES: Please provide a comprehensive and complete answer based on the following information retrieved from the document. Synthesize all the information into a well-organized response. Important: Ensure your response is complete and not truncated. Focus on providing educational and informative content about the literary work.\n\n`;
+        const synthesisInstruction = `\n\n📝 RESPONSE GUIDELINES: Please provide a comprehensive and complete answer based on the following information. Synthesize all the information into a well-organized response. DO NOT include citations, references, or source attributions like [Document], [chunk], or [page] in your response. Present the information naturally as if it's your own knowledge. Important: Ensure your response is complete and not truncated.\n\n`;
         
         const enhancedContextString = synthesisInstruction + graphContextString + contextualResponse.contextString;
         
