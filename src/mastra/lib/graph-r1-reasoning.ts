@@ -1,7 +1,7 @@
 // Graph-R1 inspired iterative reasoning system
 // Based on https://github.com/LHRLAB/Graph-R1
 
-import { invokeLambda } from './neptune-lambda-client';
+import { invokeLambda } from './neptune-lambda-client.js';
 
 interface ReasoningStep {
   iteration: number;
