@@ -283,7 +283,8 @@ export const defaultQueryTool = createTool({
     console.log('[Default Query Tool] ========= HANDLING QUESTION =========');
     console.log(`[Default Query Tool] Question: "${context.question}"`);
     console.log(`[Default Query Tool] Context: ${context.context || 'None'}`);
-    
+    console.log('[Default Query Tool] VERSION: 3.0 with Graph Enhancement');
+
     console.log('[Default Query Tool] Environment check:');
     console.log('[Default Query Tool] - AWS_ACCESS_KEY_ID:', process.env.AWS_ACCESS_KEY_ID ? `Set (${process.env.AWS_ACCESS_KEY_ID.substring(0, 8)}...)` : 'NOT SET');
     console.log('[Default Query Tool] - AWS_SECRET_ACCESS_KEY:', process.env.AWS_SECRET_ACCESS_KEY ? 'Set' : 'NOT SET');
