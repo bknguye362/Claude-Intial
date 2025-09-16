@@ -144,27 +144,38 @@ export async function iterativeGraphReasoning(
   maxIterations: number = 3,
   confidenceThreshold: number = 0.8
 ): Promise<ReasoningContext> {
+  console.log('[Graph-R1] === Starting Iterative Graph Reasoning ===');
+  console.log(`[Graph-R1] Query: "${userQuery}"`);
+  console.log(`[Graph-R1] Max iterations: ${maxIterations}, Confidence threshold: ${confidenceThreshold}`);
+
   const context: ReasoningContext = {
     originalQuery: userQuery,
     steps: [],
     allEntities: new Set(),
     allRelationships: new Set()
   };
-  
+
   for (let i = 0; i < maxIterations; i++) {
+    console.log(`\n[Graph-R1] 🔄 Iteration ${i + 1}/${maxIterations}`);
+
     // Step 1: Think
     const thought = think(userQuery, context);
+    console.log(`[Graph-R1] 💭 Thought: ${thought}`);
     
     // Step 2: Generate queries
     const queries = generateGraphQueries(thought, userQuery, context.allEntities);
-    
+    console.log(`[Graph-R1] 🔍 Generated ${queries.length} queries: ${queries.join(', ')}`);
+
     if (queries.length === 0 && i === 0) {
       // If no queries generated, try with the full query
       queries.push(userQuery);
+      console.log(`[Graph-R1] No specific entities found, using full query`);
     }
-    
+
     // Step 3: Retrieve subgraph
+    console.log(`[Graph-R1] 🌐 Retrieving subgraph from Neptune...`);
     const { entities, relationships } = await retrieveSubgraph(queries);
+    console.log(`[Graph-R1] ✅ Retrieved ${entities.length} entities and ${relationships.length} relationship sets`);
     
     // Update context
     entities.forEach(e => {
@@ -179,7 +190,11 @@ export async function iterativeGraphReasoning(
     
     // Step 4: Evaluate completeness
     const evaluation = evaluateCompleteness(context, confidenceThreshold);
-    
+    console.log(`[Graph-R1] 📊 Confidence: ${(evaluation.confidence * 100).toFixed(0)}%`);
+    if (evaluation.missingInfo.length > 0) {
+      console.log(`[Graph-R1] ⚠️ Missing: ${evaluation.missingInfo.join(', ')}`);
+    }
+
     // Record this step
     context.steps.push({
       iteration: i + 1,
@@ -190,13 +205,21 @@ export async function iterativeGraphReasoning(
       confidence: evaluation.confidence,
       needsMoreInfo: evaluation.needsMoreInfo
     });
-    
+
     // Check if we should continue
     if (!evaluation.needsMoreInfo || queries.length === 0) {
+      console.log(`[Graph-R1] ✅ Stopping: ${!evaluation.needsMoreInfo ? 'Sufficient confidence reached' : 'No more queries to explore'}`);
       break;
+    } else {
+      console.log(`[Graph-R1] ⏩ Continuing: Need more information (confidence below ${(confidenceThreshold * 100).toFixed(0)}%)`);
     }
   }
-  
+
+  console.log(`\n[Graph-R1] === Completed Iterative Reasoning ===`);
+  console.log(`[Graph-R1] Total entities discovered: ${context.allEntities.size}`);
+  console.log(`[Graph-R1] Total relationships: ${context.allRelationships.size}`);
+  console.log(`[Graph-R1] Iterations completed: ${context.steps.length}`);
+
   return context;
 }
 

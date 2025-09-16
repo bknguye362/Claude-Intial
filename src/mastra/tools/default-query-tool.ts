@@ -352,18 +352,23 @@ export const defaultQueryTool = createTool({
           }
         }
         
-        // Step 1.5: Use iterative reasoning if requested
+        // Step 1.5: Use Graph-R1 iterative reasoning (enabled by default for enhanced accuracy)
         let iterativeReasoningContext = '';
-        if (context.useIterativeReasoning) {
+        const useIterativeReasoning = context.useIterativeReasoning !== false; // Default to true unless explicitly disabled
+
+        if (useIterativeReasoning) {
           console.log('[Default Query Tool] 🧠 Using Graph-R1 iterative reasoning');
+          console.log('[Default Query Tool] Starting think→query→retrieve→rethink cycle...');
           try {
             const reasoningResult = await iterativeGraphReasoning(context.question, 3, 0.7);
             iterativeReasoningContext = formatReasoningContext(reasoningResult);
             if (iterativeReasoningContext) {
-              console.log('[Default Query Tool] Iterative reasoning found relevant graph knowledge');
+              console.log('[Default Query Tool] ✅ Iterative reasoning found relevant graph knowledge');
+              console.log(`[Default Query Tool] Discovered ${reasoningResult.allEntities.size} entities across ${reasoningResult.steps.length} iterations`);
             }
           } catch (reasoningError) {
-            console.error('[Default Query Tool] Iterative reasoning failed:', reasoningError);
+            console.error('[Default Query Tool] ⚠️ Iterative reasoning failed:', reasoningError);
+            // Continue without iterative reasoning
           }
         }
         
