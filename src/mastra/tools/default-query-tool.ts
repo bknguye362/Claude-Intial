@@ -568,7 +568,7 @@ export const defaultQueryTool = createTool({
         // Sort by score and limit to top results to avoid content filter issues
         const sortedResults = Array.from(allResults.values())
           .sort((a, b) => (b.score || 0) - (a.score || 0))
-          .slice(0, 30); // Limit to top 30 chunks to provide more context
+          .slice(0, 15); // Limit to 15 chunks to prevent response truncation
         
         const bedrockResults = sortedResults.map(r => {
           // Truncate content to avoid content filter issues
@@ -1111,8 +1111,8 @@ export const defaultQueryTool = createTool({
         finalFilteredResults = finalResults;
       }
       
-      // LIMIT TO TOP 30 RESULTS (increased from 10 for better coverage)
-      const top30 = finalFilteredResults.slice(0, 30);
+      // LIMIT TO TOP 15 RESULTS (reduced from 30 to prevent response truncation)
+      const top30 = finalFilteredResults.slice(0, 15);
       console.log(`[Default Query Tool] Limited to top ${top30.length} results`);
       
       if (top30.length > 0) {
