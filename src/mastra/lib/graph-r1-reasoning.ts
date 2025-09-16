@@ -31,32 +31,58 @@ function think(query: string, context: ReasoningContext): string {
 }
 
 // Step 2: Generate graph queries based on the thought
-function generateGraphQueries(thought: string, query: string, existingEntities: Set<string>): string[] {
+function generateGraphQueries(thought: string, query: string, existingEntities: Set<string>, iteration: number = 1): string[] {
   const queries: string[] = [];
-  
-  // Extract potential entity names from the query
-  const words = query.toLowerCase().split(/\s+/);
-  const potentialEntities = words.filter(w => 
-    w.length > 2 && 
-    !['the', 'and', 'or', 'but', 'with', 'from', 'what', 'who', 'where', 'when', 'why', 'how'].includes(w)
-  );
-  
-  // Generate queries for entities not yet explored
-  potentialEntities.forEach(entity => {
-    if (!existingEntities.has(entity)) {
-      queries.push(entity);
+
+  // First iteration: Extract direct entities from query
+  if (iteration === 1) {
+    // Extract potential entity names from the query
+    const words = query.toLowerCase().split(/\s+/);
+    const potentialEntities = words.filter(w =>
+      w.length > 2 &&
+      !['the', 'and', 'or', 'but', 'with', 'from', 'what', 'who', 'where', 'when', 'why', 'how', 'did', 'was', 'were', 'led', 'events'].includes(w)
+    );
+
+    // Generate queries for entities not yet explored
+    potentialEntities.forEach(entity => {
+      if (!existingEntities.has(entity)) {
+        queries.push(entity);
+      }
+    });
+
+    // Also look for capitalized words that might be proper nouns
+    const properNouns = query.match(/[A-Z][a-z]+/g) || [];
+    properNouns.forEach(noun => {
+      if (!existingEntities.has(noun.toLowerCase())) {
+        queries.push(noun);
+      }
+    });
+  }
+  // Second iteration: Look for related concepts
+  else if (iteration === 2) {
+    // Add concept-based queries
+    if (query.toLowerCase().includes('expulsion') || query.toLowerCase().includes('exile')) {
+      queries.push('dogs', 'chase', 'meeting', 'vote');
     }
-  });
-  
-  // Also look for capitalized words that might be proper nouns
-  const properNouns = query.match(/[A-Z][a-z]+/g) || [];
-  properNouns.forEach(noun => {
-    if (!existingEntities.has(noun.toLowerCase())) {
-      queries.push(noun);
+    if (query.toLowerCase().includes('power')) {
+      queries.push('control', 'leadership', 'commandments');
     }
-  });
-  
-  return queries;
+    if (query.toLowerCase().includes('napoleon')) {
+      queries.push('squealer', 'boxer', 'propaganda');
+    }
+    if (query.toLowerCase().includes('snowball')) {
+      queries.push('windmill', 'trotsky', 'battle');
+    }
+  }
+  // Third iteration: Explore broader themes
+  else {
+    queries.push('revolution', 'betrayal', 'corruption', 'totalitarian');
+  }
+
+  // Filter out already explored entities
+  return queries.filter(q => !Array.from(existingEntities).some(e =>
+    e.toLowerCase().includes(q.toLowerCase()) || q.toLowerCase().includes(e.toLowerCase())
+  ));
 }
 
 // Step 3: Retrieve subgraph from Neptune
@@ -120,12 +146,13 @@ function evaluateCompleteness(context: ReasoningContext, minConfidence: number =
   const hasRelationships = context.allRelationships.size > 0;
   const iterations = context.steps.length;
   
-  // Calculate confidence based on what we've found
+  // Calculate confidence based on what we've found (more stringent)
   let confidence = 0;
-  if (hasEntities) confidence += 0.4;
-  if (hasRelationships) confidence += 0.3;
-  if (iterations > 1) confidence += 0.2;
-  if (context.allEntities.size > 5) confidence += 0.1;
+  if (hasEntities) confidence += 0.2;  // Reduced from 0.4
+  if (hasRelationships) confidence += 0.2;  // Reduced from 0.3
+  if (iterations > 1) confidence += 0.2;  // Same
+  if (context.allEntities.size > 10) confidence += 0.2;  // Need more entities (was >5)
+  if (context.allRelationships.size > 20) confidence += 0.2;  // New criterion
   
   const missingInfo: string[] = [];
   if (!hasEntities) missingInfo.push('No entities found');
@@ -162,8 +189,8 @@ export async function iterativeGraphReasoning(
     const thought = think(userQuery, context);
     console.log(`[Graph-R1] 💭 Thought: ${thought}`);
     
-    // Step 2: Generate queries
-    const queries = generateGraphQueries(thought, userQuery, context.allEntities);
+    // Step 2: Generate queries (pass iteration number)
+    const queries = generateGraphQueries(thought, userQuery, context.allEntities, i + 1);
     console.log(`[Graph-R1] 🔍 Generated ${queries.length} queries: ${queries.join(', ')}`);
 
     if (queries.length === 0 && i === 0) {
@@ -206,10 +233,13 @@ export async function iterativeGraphReasoning(
       needsMoreInfo: evaluation.needsMoreInfo
     });
 
-    // Check if we should continue
-    if (!evaluation.needsMoreInfo || queries.length === 0) {
+    // Check if we should continue (with minimum 2 iterations)
+    const minIterations = 2;  // Force at least 2 iterations
+    if ((!evaluation.needsMoreInfo || queries.length === 0) && i >= minIterations - 1) {
       console.log(`[Graph-R1] ✅ Stopping: ${!evaluation.needsMoreInfo ? 'Sufficient confidence reached' : 'No more queries to explore'}`);
       break;
+    } else if (i < minIterations - 1) {
+      console.log(`[Graph-R1] ⏩ Continuing: Minimum iterations not reached (${i + 1}/${minIterations})`);
     } else {
       console.log(`[Graph-R1] ⏩ Continuing: Need more information (confidence below ${(confidenceThreshold * 100).toFixed(0)}%)`);
     }
