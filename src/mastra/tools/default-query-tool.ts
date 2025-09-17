@@ -360,7 +360,7 @@ export const defaultQueryTool = createTool({
           console.log('[Default Query Tool] 🧠 Using Graph-R1 iterative reasoning');
           console.log('[Default Query Tool] Starting think→query→retrieve→rethink cycle...');
           try {
-            const reasoningResult = await iterativeGraphReasoning(context.question, 3, 0.9); // Raised to 90% confidence
+            const reasoningResult = await iterativeGraphReasoning(context.question, 10, 0.8); // 10 iterations max, 80% confidence threshold
             iterativeReasoningContext = formatReasoningContext(reasoningResult);
             if (iterativeReasoningContext) {
               console.log('[Default Query Tool] ✅ Iterative reasoning found relevant graph knowledge');

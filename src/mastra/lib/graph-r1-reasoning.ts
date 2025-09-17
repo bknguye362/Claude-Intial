@@ -23,66 +23,129 @@ interface ReasoningContext {
 
 // Step 1: Think - Analyze the query and current knowledge
 function think(query: string, context: ReasoningContext): string {
-  const currentKnowledge = context.steps.length > 0 
-    ? `Based on ${context.allEntities.size} entities and ${context.allRelationships.size} relationships found so far`
-    : 'Starting fresh analysis';
-    
-  return `Analyzing: "${query}". ${currentKnowledge}. Identifying what information is needed to answer this query completely.`;
+  if (context.steps.length === 0) {
+    return `Starting analysis of: "${query}". Need to identify key entities and relationships to answer this question.`;
+  }
+
+  const lastStep = context.steps[context.steps.length - 1];
+  const foundInLast = lastStep.retrievedEntities.length;
+
+  if (foundInLast === 0) {
+    return `Previous search yielded no results. Need to try different search terms or broader concepts related to: "${query}".`;
+  }
+
+  return `Found ${foundInLast} entities in last search. Total: ${context.allEntities.size} entities and ${context.allRelationships.size} relationships. Analyzing what additional information is needed for: "${query}".`;
 }
 
-// Step 2: Generate graph queries based on the thought
-function generateGraphQueries(thought: string, query: string, existingEntities: Set<string>, iteration: number = 1): string[] {
+// Step 2: Generate graph queries using LLM
+async function generateGraphQueries(
+  thought: string,
+  query: string,
+  context: ReasoningContext,
+  iteration: number = 1
+): Promise<string[]> {
+  // Prepare context summary for LLM
+  const currentKnowledge = context.allEntities.size > 0
+    ? `Current knowledge includes ${context.allEntities.size} entities and ${context.allRelationships.size} relationships.`
+    : 'No entities discovered yet.';
+
+  const exploredEntities = Array.from(context.allEntities).slice(0, 10).join(', ');
+
+  // Call Azure OpenAI to generate queries
+  const AZURE_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT || 'https://franklin-open-ai-test.openai.azure.com';
+  const AZURE_API_KEY = process.env.AZURE_OPENAI_API_KEY || process.env.AZURE_API_KEY || '';
+
+  const prompt = `You are a knowledge graph query generator. Based on the current reasoning state, generate search queries to find relevant entities and relationships.
+
+Original Question: ${query}
+Current Thinking: ${thought}
+${currentKnowledge}
+${exploredEntities ? `Already explored entities (sample): ${exploredEntities}` : ''}
+Iteration: ${iteration}
+
+Generate 3-5 specific search queries that would help answer the original question. These should be:
+1. Entity names (people, places, things)
+2. Concepts or events
+3. Related terms that might exist in a knowledge graph about this topic
+
+Avoid queries for entities you've already explored.
+
+Return ONLY a JSON array of query strings, nothing else.
+Example: ["Napoleon", "windmill", "expulsion event"]`;
+
+  try {
+    const response = await fetch(`${AZURE_ENDPOINT}/openai/deployments/gpt-4o-mini/chat/completions?api-version=2024-02-15-preview`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'api-key': AZURE_API_KEY
+      },
+      body: JSON.stringify({
+        messages: [
+          { role: 'system', content: 'You are a query generator for a knowledge graph. Generate only search terms, return them as a JSON array.' },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.7,
+        max_tokens: 150
+      })
+    });
+
+    if (!response.ok) {
+      console.error('[Graph-R1] LLM query generation failed:', response.status);
+      // Fallback to basic extraction
+      return extractBasicEntities(query, context.allEntities);
+    }
+
+    const data: any = await response.json();
+    const content = data.choices?.[0]?.message?.content || '[]';
+
+    // Parse the JSON response
+    try {
+      const queries = JSON.parse(content);
+      if (Array.isArray(queries)) {
+        // Filter out already explored entities
+        return queries.filter((q: string) =>
+          typeof q === 'string' &&
+          q.length > 0 &&
+          !Array.from(context.allEntities).some(e =>
+            e.toLowerCase().includes(q.toLowerCase()) ||
+            q.toLowerCase().includes(e.toLowerCase())
+          )
+        ).slice(0, 5); // Limit to 5 queries
+      }
+    } catch (parseError) {
+      console.error('[Graph-R1] Failed to parse LLM response:', content);
+    }
+  } catch (error) {
+    console.error('[Graph-R1] LLM query generation error:', error);
+  }
+
+  // Fallback to basic extraction if LLM fails
+  return extractBasicEntities(query, context.allEntities);
+}
+
+// Fallback function for basic entity extraction
+function extractBasicEntities(query: string, existingEntities: Set<string>): string[] {
   const queries: string[] = [];
 
-  // First iteration: Extract direct entities from query
-  if (iteration === 1) {
-    // Extract potential entity names from the query
-    const words = query.toLowerCase().split(/\s+/);
-    const potentialEntities = words.filter(w =>
-      w.length > 2 &&
-      !['the', 'and', 'or', 'but', 'with', 'from', 'what', 'who', 'where', 'when', 'why', 'how', 'did', 'was', 'were', 'led', 'events'].includes(w)
-    );
+  // Extract potential entity names from the query
+  const words = query.toLowerCase().split(/\s+/);
+  const potentialEntities = words.filter(w =>
+    w.length > 2 &&
+    !['the', 'and', 'or', 'but', 'with', 'from', 'what', 'who', 'where', 'when', 'why', 'how'].includes(w)
+  );
 
-    // Generate queries for entities not yet explored
-    potentialEntities.forEach(entity => {
-      if (!existingEntities.has(entity)) {
-        queries.push(entity);
-      }
-    });
+  // Also look for capitalized words
+  const properNouns = query.match(/[A-Z][a-z]+/g) || [];
 
-    // Also look for capitalized words that might be proper nouns
-    const properNouns = query.match(/[A-Z][a-z]+/g) || [];
-    properNouns.forEach(noun => {
-      if (!existingEntities.has(noun.toLowerCase())) {
-        queries.push(noun);
-      }
-    });
-  }
-  // Second iteration: Look for related concepts
-  else if (iteration === 2) {
-    // Add concept-based queries
-    if (query.toLowerCase().includes('expulsion') || query.toLowerCase().includes('exile')) {
-      queries.push('dogs', 'chase', 'meeting', 'vote');
+  [...potentialEntities, ...properNouns].forEach(entity => {
+    const entityLower = entity.toLowerCase();
+    if (!existingEntities.has(entityLower) && !queries.includes(entity)) {
+      queries.push(entity);
     }
-    if (query.toLowerCase().includes('power')) {
-      queries.push('control', 'leadership', 'commandments');
-    }
-    if (query.toLowerCase().includes('napoleon')) {
-      queries.push('squealer', 'boxer', 'propaganda');
-    }
-    if (query.toLowerCase().includes('snowball')) {
-      queries.push('windmill', 'trotsky', 'battle');
-    }
-  }
-  // Third iteration: Explore broader themes
-  else {
-    queries.push('revolution', 'betrayal', 'corruption', 'totalitarian');
-  }
+  });
 
-  // Filter out already explored entities
-  return queries.filter(q => !Array.from(existingEntities).some(e =>
-    e.toLowerCase().includes(q.toLowerCase()) || q.toLowerCase().includes(e.toLowerCase())
-  ));
+  return queries.slice(0, 3); // Return top 3
 }
 
 // Step 3: Retrieve subgraph from Neptune
@@ -136,32 +199,104 @@ async function retrieveSubgraph(queries: string[]): Promise<{ entities: any[], r
   return { entities, relationships };
 }
 
-// Step 4: Evaluate if we have enough information
-function evaluateCompleteness(context: ReasoningContext, minConfidence: number = 0.8): { 
-  confidence: number, 
+// Step 4: Evaluate if we have enough information using LLM
+async function evaluateCompleteness(
+  userQuery: string,
+  context: ReasoningContext,
+  minConfidence: number = 0.8
+): Promise<{
+  confidence: number,
   needsMoreInfo: boolean,
   missingInfo: string[]
-} {
+}> {
+  // First do a basic check
   const hasEntities = context.allEntities.size > 0;
   const hasRelationships = context.allRelationships.size > 0;
   const iterations = context.steps.length;
-  
-  // Calculate confidence based on what we've found (more stringent)
+
+  // If we have very little data, continue searching
+  if (!hasEntities || context.allEntities.size < 3) {
+    return {
+      confidence: 0.2,
+      needsMoreInfo: true,
+      missingInfo: ['Need to find relevant entities']
+    };
+  }
+
+  // Prepare context summary for LLM evaluation
+  const entitySummary = Array.from(context.allEntities).slice(0, 20).join(', ');
+  const relationshipCount = context.allRelationships.size;
+
+  const AZURE_ENDPOINT = process.env.AZURE_OPENAI_ENDPOINT || 'https://franklin-open-ai-test.openai.azure.com';
+  const AZURE_API_KEY = process.env.AZURE_OPENAI_API_KEY || process.env.AZURE_API_KEY || '';
+
+  const prompt = `Evaluate if we have sufficient information to answer this question comprehensively.
+
+Question: ${userQuery}
+Iterations completed: ${iterations}
+Entities found: ${context.allEntities.size} (sample: ${entitySummary})
+Relationships found: ${relationshipCount}
+
+Based on the entities and relationships discovered, assess:
+1. Can the question be answered with current information? (yes/no)
+2. What critical information is still missing? (list key gaps)
+3. Confidence level (0.0-1.0)
+
+Return ONLY a JSON object with this structure:
+{
+  "canAnswer": true/false,
+  "confidence": 0.0-1.0,
+  "missingInfo": ["gap1", "gap2"]
+}`;
+
+  try {
+    const response = await fetch(`${AZURE_ENDPOINT}/openai/deployments/gpt-4o-mini/chat/completions?api-version=2024-02-15-preview`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'api-key': AZURE_API_KEY
+      },
+      body: JSON.stringify({
+        messages: [
+          { role: 'system', content: 'You evaluate if a knowledge graph query has gathered sufficient information. Return only JSON.' },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.3,
+        max_tokens: 200
+      })
+    });
+
+    if (response.ok) {
+      const data: any = await response.json();
+      const content = data.choices?.[0]?.message?.content || '{}';
+
+      try {
+        const evaluation = JSON.parse(content);
+        return {
+          confidence: evaluation.confidence || 0.5,
+          needsMoreInfo: !evaluation.canAnswer && iterations < 10,
+          missingInfo: evaluation.missingInfo || []
+        };
+      } catch (parseError) {
+        console.error('[Graph-R1] Failed to parse evaluation response:', content);
+      }
+    }
+  } catch (error) {
+    console.error('[Graph-R1] LLM evaluation error:', error);
+  }
+
+  // Fallback to simple heuristic if LLM fails
   let confidence = 0;
-  if (hasEntities) confidence += 0.2;  // Reduced from 0.4
-  if (hasRelationships) confidence += 0.2;  // Reduced from 0.3
-  if (iterations > 1) confidence += 0.2;  // Same
-  if (context.allEntities.size > 10) confidence += 0.2;  // Need more entities (was >5)
-  if (context.allRelationships.size > 20) confidence += 0.2;  // New criterion
-  
-  const missingInfo: string[] = [];
-  if (!hasEntities) missingInfo.push('No entities found');
-  if (!hasRelationships) missingInfo.push('No relationships found');
-  
+  if (hasEntities) confidence += 0.3;
+  if (hasRelationships) confidence += 0.2;
+  if (iterations > 2) confidence += 0.1;
+  if (context.allEntities.size > 20) confidence += 0.2;
+  if (context.allRelationships.size > 30) confidence += 0.2;
+
   return {
     confidence,
-    needsMoreInfo: confidence < minConfidence && iterations < 3,
-    missingInfo
+    needsMoreInfo: confidence < minConfidence && iterations < 10,
+    missingInfo: []
   };
 }
 
@@ -189,8 +324,8 @@ export async function iterativeGraphReasoning(
     const thought = think(userQuery, context);
     console.log(`[Graph-R1] 💭 Thought: ${thought}`);
     
-    // Step 2: Generate queries (pass iteration number)
-    const queries = generateGraphQueries(thought, userQuery, context.allEntities, i + 1);
+    // Step 2: Generate queries using LLM
+    const queries = await generateGraphQueries(thought, userQuery, context, i + 1);
     console.log(`[Graph-R1] 🔍 Generated ${queries.length} queries: ${queries.join(', ')}`);
 
     if (queries.length === 0 && i === 0) {
@@ -215,8 +350,8 @@ export async function iterativeGraphReasoning(
       context.allRelationships.add(relKey);
     });
     
-    // Step 4: Evaluate completeness
-    const evaluation = evaluateCompleteness(context, confidenceThreshold);
+    // Step 4: Evaluate completeness using LLM
+    const evaluation = await evaluateCompleteness(userQuery, context, confidenceThreshold);
     console.log(`[Graph-R1] 📊 Confidence: ${(evaluation.confidence * 100).toFixed(0)}%`);
     if (evaluation.missingInfo.length > 0) {
       console.log(`[Graph-R1] ⚠️ Missing: ${evaluation.missingInfo.join(', ')}`);
