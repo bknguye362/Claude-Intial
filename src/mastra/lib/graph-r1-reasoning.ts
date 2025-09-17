@@ -74,7 +74,7 @@ Return ONLY a JSON array of query strings, nothing else.
 Example: ["Napoleon", "windmill", "expulsion event"]`;
 
   try {
-    const response = await fetch(`${AZURE_ENDPOINT}/openai/deployments/gpt-4o-mini/chat/completions?api-version=2024-02-15-preview`, {
+    const response = await fetch(`${AZURE_ENDPOINT}/openai/deployments/gpt-4.1-test/chat/completions?api-version=2025-01-01-preview`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -250,7 +250,7 @@ Return ONLY a JSON object with this structure:
 }`;
 
   try {
-    const response = await fetch(`${AZURE_ENDPOINT}/openai/deployments/gpt-4o-mini/chat/completions?api-version=2024-02-15-preview`, {
+    const response = await fetch(`${AZURE_ENDPOINT}/openai/deployments/gpt-4.1-test/chat/completions?api-version=2025-01-01-preview`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
