@@ -91,7 +91,11 @@ Example: ["Napoleon", "windmill", "expulsion event"]`;
     });
 
     if (!response.ok) {
+      const errorText = await response.text();
       console.error('[Graph-R1] LLM query generation failed:', response.status);
+      console.error('[Graph-R1] Error details:', errorText.substring(0, 200));
+      console.error('[Graph-R1] URL:', `${AZURE_ENDPOINT}/openai/deployments/gpt-4.1-test/chat/completions?api-version=2025-01-01-preview`);
+      console.error('[Graph-R1] API Key present:', !!AZURE_API_KEY);
       // Fallback to basic extraction
       return extractBasicEntities(query, context.allEntities);
     }
@@ -280,6 +284,12 @@ Return ONLY a JSON object with this structure:
       } catch (parseError) {
         console.error('[Graph-R1] Failed to parse evaluation response:', content);
       }
+    } else {
+      const errorText = await response.text();
+      console.error('[Graph-R1] LLM evaluation failed:', response.status);
+      console.error('[Graph-R1] Error details:', errorText.substring(0, 200));
+      console.error('[Graph-R1] URL:', `${AZURE_ENDPOINT}/openai/deployments/gpt-4.1-test/chat/completions?api-version=2025-01-01-preview`);
+      console.error('[Graph-R1] API Key present:', !!AZURE_API_KEY);
     }
   } catch (error) {
     console.error('[Graph-R1] LLM evaluation error:', error);
